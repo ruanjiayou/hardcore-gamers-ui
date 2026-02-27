@@ -1,0 +1,291 @@
+/* 通用面板样式 */
+.panel {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 800px;
+  height: 100%;
+}
+
+.panel h2 {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 游戏列表 */
+.game-list-panel {
+  grid-column: 1 / 2;
+}
+
+.games-grid {
+  display: grid;
+  gap: 12px;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 5px;
+}
+
+.game-card {
+  padding: 16px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  border: 2px solid #e0e0e0;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.game-card:hover {
+  border-color: #667eea;
+  background: #f5f3ff;
+  transform: scale(1.01);
+}
+
+.game-card.active {
+  border-color: #667eea;
+  background: #f0edf9;
+}
+
+.game-icon {
+  font-size: 32px;
+  min-width: 40px;
+}
+
+.game-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.game-name {
+  margin: 0 0 4px 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #333;
+}
+
+.game-desc {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+}
+
+.game-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #999;
+}
+
+/* 排行榜 */
+.leaderboard-panel {
+  grid-column: 3 / 4;
+  grid-row: 1 / 3;
+}
+
+.leaderboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.leaderboard-item {
+  display: grid;
+  grid-template-columns: 50px 1fr 80px;
+  gap: 12px;
+  padding: 12px;
+  align-items: center;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 14px;
+  transition: all 0.3s;
+}
+
+.leaderboard-item:hover {
+  background: #f9f9f9;
+}
+
+.leaderboard-item:last-child {
+  border-bottom: none;
+}
+
+.rank {
+  font-weight: 700;
+  text-align: center;
+  font-size: 16px;
+}
+
+.rank.rank-1 {
+  color: #ffd700;
+  font-size: 20px;
+}
+
+.rank.rank-2 {
+  color: #c0c0c0;
+}
+
+.rank.rank-3 {
+  color: #cd7f32;
+}
+
+.player-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.player-avatar {
+  font-size: 18px;
+  min-width: 24px;
+}
+
+.player-name {
+  font-weight: 600;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-rating {
+  text-align: right;
+  font-weight: 600;
+  color: #667eea;
+}
+
+/* 统计信息 */
+.stats-panel {
+  background-color: white;
+  padding: 20px;
+  border-radius: 5px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  flex: 1;
+}
+
+.stat-card {
+  padding: 16px;
+  background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+  border-radius: 8px;
+  border-left: 4px solid #667eea;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #666;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #667eea;
+}
+
+/* 加载状态 */
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 20px;
+  color: #999;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f0f0f0;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 响应式 */
+@media (max-width: 1400px) {
+  .leaderboard-panel {
+    grid-column: 1 / -1;
+    grid-row: 3 / 4;
+  }
+
+  .stats-panel {
+    grid-column: 1 / -1;
+    grid-row: 4 / 5;
+  }
+}
+
+@media (max-width: 1024px) {
+  .game-list-panel {
+    grid-column: 1 / -1;
+  }
+
+  .leaderboard-panel {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .stats-panel {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .panel {
+    padding: 16px;
+  }
+
+  .panel h2 {
+    font-size: 16px;
+  }
+
+  .leaderboard-item {
+    grid-template-columns: 40px 1fr 60px;
+    padding: 10px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+
+.two-column {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+}
+
+.two-column>button {
+  flex: 1;
+}

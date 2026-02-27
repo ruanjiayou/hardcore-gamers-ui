@@ -1,0 +1,98 @@
+.lobby {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-info-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.user-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f0;
+  border-radius: 8px;
+}
+
+.user-details h2 {
+  margin: 0 0 10px 0;
+  font-size: 20px;
+  color: #333;
+}
+
+.user-stats {
+  display: flex;
+  gap: 20px;
+  font-size: 14px;
+  color: #666;
+}
+
+.lobby-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 600px;
+}
+
+@media (max-width: 1400px) {
+  .lobby-content {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+  }
+
+  .leaderboard-panel {
+    grid-column: 1 / -1;
+  }
+
+  .stats-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1024px) {
+  .lobby-content {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+
+  .leaderboard-panel {
+    grid-column: 1;
+  }
+
+  .stats-panel {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .lobby-container h1 {
+    font-size: 24px;
+    margin-bottom: 15px;
+  }
+
+  .user-info-card {
+    flex-direction: column;
+    text-align: center;
+    margin-bottom: 15px;
+  }
+
+  .user-stats {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .lobby-content {
+    gap: 15px;
+    min-height: auto;
+  }
+}

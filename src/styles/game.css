@@ -1,0 +1,243 @@
+.game-page {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.game-container {
+  height: 100%;
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  max-width: 1200px;
+  width: 100%;
+}
+
+.game-container h2 {
+  margin: 0 0 20px 0;
+  font-size: 24px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.room-list {
+  display: grid;
+  gap: 20px;
+}
+
+.room-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.room-list-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #333;
+}
+
+.room-list-header button {
+  padding: 10px 20px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.room-list-header button:hover {
+  background: #764ba2;
+  transform: translateY(-2px);
+}
+
+.room-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.room-card {
+  padding: 16px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  transition: all 0.3s;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.room-card:hover {
+  border-color: #667eea;
+  background: #f5f3ff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.room-card.playing {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.room-card h4 {
+  margin: 0;
+  font-size: 16px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.room-card .lock {
+  font-size: 14px;
+}
+
+.room-card p {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.room-card button {
+  padding: 10px 16px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s;
+  font-size: 13px;
+}
+
+.room-card button:hover:not(:disabled) {
+  background: #764ba2;
+}
+
+.room-card button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* 模态框 */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  max-width: 450px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content h3 {
+  margin: 0 0 20px 0;
+  font-size: 20px;
+  color: #333;
+}
+
+.modal-content input,
+.modal-content label {
+  display: block;
+  width: 100%;
+  margin-bottom: 15px;
+  padding: 10px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.modal-content label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+}
+
+.modal-content label input {
+  margin: 0;
+  padding: 0;
+  border: none;
+  width: auto;
+}
+
+.modal-content input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.modal-actions button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s;
+  font-size: 14px;
+}
+
+.modal-actions button:first-child {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.modal-actions button:first-child:hover {
+  background: #d0d0d0;
+}
+
+.modal-actions button:last-child {
+  background: #667eea;
+  color: white;
+}
+
+.modal-actions button:last-child:hover {
+  background: #764ba2;
+}
+
+@media (max-width: 768px) {
+  .game-container {
+    padding: 20px;
+  }
+
+  .game-container h2 {
+    font-size: 20px;
+  }
+
+  .room-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-content {
+    padding: 20px;
+  }
+}
