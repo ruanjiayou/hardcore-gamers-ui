@@ -6,6 +6,7 @@ import { roomStore } from '../stores/room';
 import { socketEvents, socketListeners } from '../services/socket';
 import { PlayerList } from '../components/PlayerList';
 import { Chat } from '../components/Chat';
+import '../styles/index.css';
 import '../styles/room.css';
 
 export const RoomPage = observer(() => {
@@ -18,10 +19,13 @@ export const RoomPage = observer(() => {
       return;
     }
     if (!roomStore.currentRoomId) {
-      socketEvents.joinRoom(roomId)
-      socketEvents.getRoomInfo(roomId, (data) => {
-        roomStore.setCurrentRoom(roomId, data)
-      });
+      socketEvents.joinRoom(roomId, '', (success, error) => {
+        if (success) {
+          socketEvents.getRoomInfo(roomId, (data) => {
+            roomStore.setCurrentRoom(roomId, data)
+          });
+        }
+      })
     }
     // 监听玩家加入
     socketListeners.onPlayerJoined((data) => {

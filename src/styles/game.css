@@ -67,19 +67,17 @@
 
 .room-card {
   padding: 16px;
-  background: #f9f9f9;
   border-radius: 8px;
-  border: 1px solid #e0e0e0;
   transition: all 0.3s;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 12px;
 }
 
 .room-card:hover {
-  border-color: #667eea;
+  /* border-color: #667eea;
   background: #f5f3ff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); */
 }
 
 .room-card.playing {

@@ -2,24 +2,15 @@ import React, { useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
 import { gameStore } from '../stores/game';
 import '../styles/components.css';
+import { socketEvents } from '../services/socket';
 
 export const Leaderboard = observer(() => {
   useEffect(() => {
-    // 模拟获取排行榜数据
-    const mockLeaderboard = [
-      { rank: 1, avatar: '👨', name: '玩家A', rating: 1500 },
-      { rank: 2, avatar: '👩', name: '玩家B', rating: 1450 },
-      { rank: 3, avatar: '👦', name: '玩家C', rating: 1400 },
-      { rank: 4, avatar: '👧', name: '玩家D', rating: 1350 },
-      { rank: 5, avatar: '👨‍🦱', name: '玩家E', rating: 1300 },
-      { rank: 6, avatar: '👩‍🦱', name: '玩家F', rating: 1250 },
-      { rank: 7, avatar: '👨', name: '玩家G', rating: 1200 },
-      { rank: 8, avatar: '👩', name: '玩家H', rating: 1150 },
-      { rank: 9, avatar: '👦', name: '玩家I', rating: 1100 },
-      { rank: 10, avatar: '👧', name: '玩家J', rating: 1050 }
-    ];
-
-    gameStore.setLeaderboard(mockLeaderboard);
+    if (gameStore.leaderboard.length === 0) {
+      socketEvents.getLeaderboard(ranks => {
+        gameStore.setLeaderboard(ranks)
+      })
+    }
   }, []);
 
   const getRankMedal = (rank: number) => {

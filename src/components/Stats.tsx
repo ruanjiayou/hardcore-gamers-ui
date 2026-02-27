@@ -2,18 +2,15 @@ import React, { useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
 import { gameStore } from '../stores/game';
 import '../styles/components.css';
+import { socketEvents } from '../services/socket';
 
 export const Stats = observer(() => {
   useEffect(() => {
-    // 模拟获取统计数据
-    const mockStats = {
-      games: { total: 5 },
-      users: { total: 1250 },
-      players: { total: 3500 },
-      rooms: { active: 125 }
-    };
-
-    gameStore.setStats(mockStats);
+    if (!gameStore.stats) {
+      socketEvents.getStats(stats => {
+        gameStore.setStats(stats);
+      })
+    }
   }, []);
 
   if (!gameStore.stats) {

@@ -81,18 +81,25 @@ export function disconnectSocket() {
 
 // 事件监听器
 export const socketEvents = {
+  getStats: (callback: (stats: any) => void) => {
+    getSocket()?.emit('lobby:get-stats', callback);
+  },
   getGames: (callback: (games: any[]) => void) => {
     getSocket()?.emit('lobby:get-games', callback);
   },
-
+  getLeaderboard: (callback: (ranks: any[]) => void) => {
+    console.log('?')
+    getSocket()?.emit('lobby:get-leaderboard', { limit: 10 }, callback);
+  },
   getRooms: (gameId: string, callback: (rooms: any[]) => void) => {
     getSocket()?.emit('lobby:get-rooms', { gameId }, callback);
   },
-
   createRoom: (data: any, callback: (success: boolean, roomId?: string, error?: string) => void) => {
     getSocket()?.emit('lobby:create-room', data, callback);
   },
-
+  joinInviteRoom: (data: any, callback: (success: boolean, roomId?: string, error?: string) => void) =>{
+    getSocket()?.emit('lobby:join-invite-room', data, callback);
+  },
   joinRoom: (roomId: string, password?: string, callback?: (success: boolean, error?: string) => void) => {
     getSocket()?.emit('lobby:join-room', { roomId, password }, callback);
   },

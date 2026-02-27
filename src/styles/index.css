@@ -84,3 +84,38 @@ a:hover {
     transition-duration: 0.01ms !important;
   }
 }
+
+.back-arrow {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-left: 2px solid #333;
+  border-bottom: 2px solid #333;
+  transform: rotate(45deg);
+  cursor: pointer;
+}
+
+/* 带圆形背景的样式 */
+.back-arrow-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #f0f0f0;
+  cursor: pointer;
+  /* transition: background 0.3s; */
+}
+
+.back-arrow-circle:hover {
+  background: #e0e0e0;
+}
+
+.back-arrow-circle .arrow {
+  width: 12px;
+  height: 12px;
+  border-left: 2px solid #333;
+  border-bottom: 2px solid #333;
+  transform: rotate(45deg);
+}
