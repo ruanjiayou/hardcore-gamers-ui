@@ -3,11 +3,12 @@ import { authStore } from '../stores/auth';
 
 let socket: Socket | null = null;
 
-export async function initSocket(): Promise<Socket | null> {
+export async function initSocket(): Promise<{ success: boolean, error?: any }> {
+  const success = true;
   // 如果已经连接，直接返回
   if (socket && socket.connected) {
     console.log('🔄 Socket 已连接，直接返回');
-    return socket;
+    return { success };
   }
 
   // 如果存在旧连接但已断开，清理
@@ -34,6 +35,9 @@ export async function initSocket(): Promise<Socket | null> {
       upgrade: true,
       rejectUnauthorized: false
     });
+    socket.on('disconnect', reason => {
+      console.log('断开原因', reason)
+    })
     return await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup()
@@ -43,7 +47,7 @@ export async function initSocket(): Promise<Socket | null> {
       const onConnect = () => {
         cleanup()
         console.log('✅ WebSocket 连接成功')
-        resolve(socket)
+        resolve({ success })
       }
 
       const onError = (error: any) => {
@@ -61,10 +65,10 @@ export async function initSocket(): Promise<Socket | null> {
       socket?.once('connect', onConnect)
       socket?.once('connect_error', onError)
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Socket 初始化异常:', error);
     socket = null;
-    return null;
+    return { success: false, error };
   }
 }
 export function getSocket(): Socket | null {
@@ -97,7 +101,7 @@ export const socketEvents = {
   createRoom: (data: any, callback: (success: boolean, roomId?: string, error?: string) => void) => {
     getSocket()?.emit('lobby:create-room', data, callback);
   },
-  joinInviteRoom: (data: any, callback: (success: boolean, roomId?: string, error?: string) => void) =>{
+  joinInviteRoom: (data: any, callback: (success: boolean, roomId?: string, error?: string) => void) => {
     getSocket()?.emit('lobby:join-invite-room', data, callback);
   },
   joinRoom: (roomId: string, password?: string, callback?: (success: boolean, error?: string) => void) => {

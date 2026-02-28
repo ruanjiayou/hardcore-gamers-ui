@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
 import { authStore } from './stores/auth'
 import { initSocket, disconnectSocket, getSocket } from './services/socket';
@@ -11,10 +11,9 @@ import { RoomPage } from './pages/Room';
 import { Notifications } from './components/Notifications';
 import './styles/index.css';
 
-export const App = observer(() => {
-  const [isReady, setIsReady] = useState(false);
+function AuthGuard({ children, isReady, setIsReady }: { children: React.ReactNode, isReady: boolean, setIsReady: Function }) {
   const [isLoading, setIsLoading] = useState(false);
-
+  const navigate = useNavigate();
   useEffect(() => {
     const initializeApp = async () => {
       // 如果没有 userId，说明未登陆，显示登陆页
@@ -30,16 +29,19 @@ export const App = observer(() => {
 
         // 1. 初始化 Socket 连接
         console.log('🔌 正在连接 WebSocket...');
-        await initSocket();
-
-        // 3. 加载用户信息
-        console.log('📊 正在加载用户信息...');
-        await loadUserInfo();
-        console.log('✅ 用户信息加载完成');
-
-        // 4. 标记为就绪
-        setIsReady(true);
-        console.log('🎉 应用初始化完成');
+        const { success, error } = await initSocket();
+        console.log(success, error)
+        if (success) {
+          // 2. 加载用户信息
+          console.log('📊 正在加载用户信息...');
+          await loadUserInfo();
+          console.log('✅ 用户信息加载完成');
+          // 3. 标记为就绪
+          setIsReady(true);
+          console.log('🎉 应用初始化完成');
+        } else if (error?.message === '验证失败') {
+          navigate('/login')
+        }
       } catch (error) {
         console.error('❌ 应用初始化失败:', error);
         // 初始化失败时，仍然标记为就绪，显示登陆页
@@ -85,9 +87,9 @@ export const App = observer(() => {
       });
     });
   };
-
+  console.log(isLoading, isReady)
   // 加载中状态
-  if (isLoading || (!authStore.user_id && !isReady)) {
+  if (isLoading) {
     return (
       <div style={{
         minHeight: '100vh',
@@ -121,37 +123,36 @@ export const App = observer(() => {
       </div>
     );
   }
+  return <>{children}</>;
+}
 
+export const App = observer(() => {
+  const [isReady, setIsReady] = useState(false);
   return (
     <BrowserRouter>
       <div className="app">
         <Notifications />
 
-        {/* 只有登陆且准备好的用户才显示导航栏 */}
-        {authStore.isLoggedIn && isReady && <Navbar />}
+        {/* 只有登陆的用户才显示导航栏 */}
+        {authStore.isLoggedIn && <Navbar />}
 
         {/* 路由 */}
-        {isReady ? (
+        <AuthGuard isReady={isReady} setIsReady={setIsReady}>
           <Routes>
-            {/* 未登陆时，所有路由都跳转到登陆页 */}
-            {!authStore.user_id ? (
-              <>
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="*" element={<Navigate to="/login" />} />
-              </>
-            ) : (
-              <>
-                {/* 已登陆的路由 */}
-                <Route path="/lobby" element={<LobbyPage />} />
-                <Route path="/game/:gameId" element={<GamePage />} />
-                <Route path="/room/:roomId" element={<RoomPage />} />
-                <Route path="/login" element={<Navigate to="/lobby" />} />
-                <Route path="/" element={<Navigate to="/lobby" />} />
-                <Route path="*" element={<Navigate to="/lobby" />} />
-              </>
-            )}
+            {isReady ? <>
+              {/* 已登陆的路由 */}
+              <Route path="/lobby" element={<LobbyPage />} />
+              <Route path="/game/:gameId" element={<GamePage />} />
+              <Route path="/room/:roomId" element={<RoomPage />} />
+              <Route path="/login" element={<Navigate to="/lobby" />} />
+              <Route path="/" element={<Navigate to="/lobby" />} />
+              <Route path="*" element={<Navigate to="/lobby" />} />
+            </> : <>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="*" element={<Navigate to="/login" />} />
+            </>}
           </Routes>
-        ) : null}
+        </AuthGuard>
       </div>
     </BrowserRouter>
   );

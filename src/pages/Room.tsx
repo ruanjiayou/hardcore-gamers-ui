@@ -70,7 +70,7 @@ export const RoomPage = observer(() => {
       <div className="room-header">
         <h2>{roomStore.roomInfo?.name}</h2>
         <div className="room-actions">
-          {roomStore.isOwner && (
+          {roomStore.roomInfo?.owner_id === authStore.user_id && (
             <button onClick={handleStartGame}>开始游戏</button>
           )}
           <button onClick={handleLeaveRoom} className="danger">离开房间</button>

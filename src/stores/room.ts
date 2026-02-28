@@ -14,7 +14,7 @@ class RoomStore {
   setCurrentRoom(roomId: string, roomInfo: any) {
     this.currentRoomId = roomId;
     this.roomInfo = roomInfo;
-    this.players = roomInfo.players || [];
+    this.players = roomInfo?.players || [];
   }
 
   setIsOwner(isOwner: boolean) {
