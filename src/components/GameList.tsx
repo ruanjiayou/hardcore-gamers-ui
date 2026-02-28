@@ -1,18 +1,18 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
-import { gameStore } from '../stores/game';
+import store from '../stores'
 import '../styles/components.css';
 
 export const GameList = observer(() => {
   const navigate = useNavigate();
 
   const handleGameClick = (gameId: string) => {
-    gameStore.selectGame(gameId);
+    store.game.selectGame(gameId);
     navigate(`/game/${gameId}`);
   };
 
-  if (gameStore.games.length === 0) {
+  if (store.game.games.length === 0) {
     return (
       <div className="panel game-list-panel">
         <h2>🎯 游戏列表</h2>
@@ -28,10 +28,10 @@ export const GameList = observer(() => {
     <div className="panel game-list-panel">
       <h2>🎯 游戏列表</h2>
       <div className="games-grid">
-        {gameStore.games.map(game => (
+        {store.game.games.map(game => (
           <div
             key={game._id}
-            className={`game-card ${gameStore.selectedGameId === game._id ? 'active' : ''}`}
+            className={`game-card ${store.game.selectedGameId === game._id ? 'active' : ''}`}
             onClick={() => handleGameClick(game._id)}
           >
             <div className="game-icon">{game.icon}</div>

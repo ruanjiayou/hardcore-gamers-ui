@@ -21,12 +21,13 @@ export interface Room {
   createdAt: number;
 }
 
-class GameStore {
+export default class GameStore {
   games: Game[] = [];
   selectedGameId: string | null = null;
   rooms: Room[] = [];
   leaderboard: any[] = [];
   stats: any = null;
+  gamePlayer: any = null;
 
   constructor() {
     makeAutoObservable(this);
@@ -38,6 +39,10 @@ class GameStore {
 
   selectGame(gameId: string) {
     this.selectedGameId = gameId;
+  }
+
+  setGamePlayer(gamePlayer: any) {
+    this.gamePlayer = gamePlayer;
   }
 
   setRooms(rooms: Room[]) {
@@ -70,5 +75,3 @@ class GameStore {
     );
   }
 }
-
-export const gameStore = new GameStore();

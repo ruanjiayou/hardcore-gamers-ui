@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { roomStore } from '../stores/room';
+import store from '../stores'
 import { socketEvents } from '../services/socket';
 
 export const Chat = observer(({ roomId }: { roomId: string }) => {
@@ -20,7 +20,7 @@ export const Chat = observer(({ roomId }: { roomId: string }) => {
     <div className="chat">
       <h3>💬 聊天</h3>
       <div className="messages">
-        {roomStore.messages.map((msg, idx) => (
+        {store.room.messages.map((msg, idx) => (
           <div key={idx} className="message">
             <strong data-player-id={msg.player_id}>{msg.player_name}:</strong> {msg.message}
           </div>

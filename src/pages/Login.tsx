@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { authStore } from '../stores/auth';
+import store from '../stores'
 import { initSocket } from '../services/socket';
 import '../styles/login.css';
 import '../styles/components.css';
@@ -23,7 +23,7 @@ export function LoginPage() {
       });
 
       if (response.data.code === 0) {
-        authStore.setLogin(response.data.data.user, response.data.data.token);
+        store.auth.setLogin(response.data.data.user, response.data.data.token);
         await initSocket();
         navigate('/lobby');
       }
@@ -36,7 +36,7 @@ export function LoginPage() {
 
   const handleGuest = async () => {
     const guestId = `Guest_${Date.now()}`;
-    authStore.setGuest(guestId);
+    store.auth.setGuest(guestId);
     await initSocket();
     navigate('/lobby');
   };

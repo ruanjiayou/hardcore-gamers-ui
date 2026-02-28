@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
-import { authStore } from '../stores/auth'
+import store from '../stores'
 import '../styles/navbar.css';
 
 export const Navbar = observer(() => {
@@ -9,7 +9,7 @@ export const Navbar = observer(() => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const handleLogout = () => {
-    authStore.logout();
+    store.auth.logout();
     setDropdownOpen(false);
     navigate('/login');
   };
@@ -49,7 +49,7 @@ export const Navbar = observer(() => {
               onClick={() => setDropdownOpen(!dropdownOpen)}
             >
               <span className="user-avatar">👤</span>
-              <span className="user-name">{authStore.user?.name || authStore.user_id}</span>
+              <span className="user-name">{store.auth.user?.name || store.auth.user_id}</span>
               <span className="dropdown-icon">▼</span>
             </button>
 

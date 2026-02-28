@@ -3,19 +3,12 @@ import { makeAutoObservable } from 'mobx';
 export interface User {
   _id: string;
   name: string;
-  email?: string;
   avatar?: string;
-  level?: number;
-  rating?: number;
-  stats?: {
-    wins: number;
-    losses: number;
-    totalGames: number;
-    winRate: number;
-  };
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-class AuthStore {
+export default class AuthStore {
   user_id: string | null = null;
   user: User | null = null;
   isLoggedIn = false;
@@ -91,5 +84,3 @@ class AuthStore {
     }
   }
 }
-
-export const authStore = new AuthStore();

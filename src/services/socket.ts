@@ -1,5 +1,5 @@
 import io, { Socket } from 'socket.io-client';
-import { authStore } from '../stores/auth';
+import store from '../stores'
 
 let socket: Socket | null = null;
 
@@ -23,9 +23,9 @@ export async function initSocket(): Promise<{ success: boolean, error?: any }> {
   try {
     socket = io('http://localhost:3000', {
       auth: {
-        user_id: authStore.user_id,
-        isLoggedIn: authStore.isLoggedIn,
-        isGuest: authStore.isGuest
+        user_id: store.auth.user_id,
+        isLoggedIn: store.auth.isLoggedIn,
+        isGuest: store.auth.isGuest
       },
       reconnection: true,
       reconnectionDelay: 1000,
@@ -98,6 +98,9 @@ export const socketEvents = {
   getRooms: (gameId: string, callback: (rooms: any[]) => void) => {
     getSocket()?.emit('lobby:get-rooms', { gameId }, callback);
   },
+  getGamePlayer: (game_id: string, user_id: string, callback: (roomPlayer: any) => void) => {
+    getSocket()?.emit('lobby:get-game-player', { game_id, user_id }, callback);
+  },
   createRoom: (data: any, callback: (success: boolean, roomId?: string, error?: string) => void) => {
     getSocket()?.emit('lobby:create-room', data, callback);
   },
@@ -127,6 +130,9 @@ export const socketEvents = {
 
 // 事件订阅
 export const socketListeners = {
+  onPlayerNetwork: (callback: (data: any) => void) => {
+    getSocket()?.on('room:player-network', callback);
+  },
   onRoomCreated: (callback: (room: any) => void) => {
     getSocket()?.on('room:created', callback);
   },
@@ -135,8 +141,8 @@ export const socketListeners = {
     getSocket()?.on('room:player-joined', callback);
   },
 
-  onPlayerLeft: (callback: (data: any) => void) => {
-    getSocket()?.on('room:player-left', callback);
+  onPlayerLeaved: (callback: (data: any) => void) => {
+    getSocket()?.on('room:player-leaved', callback);
   },
 
   onMessage: (callback: (data: any) => void) => {

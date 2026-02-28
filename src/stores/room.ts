@@ -1,34 +1,38 @@
 import { makeAutoObservable } from 'mobx';
 
-class RoomStore {
+export default class RoomStore {
   currentRoomId: string | null = null;
   roomInfo: any = null;
   players: any[] = [];
-  isOwner = false;
   messages: any[] = [];
 
   constructor() {
     makeAutoObservable(this);
   }
-
+  get isOwner() {
+    return false;
+  }
   setCurrentRoom(roomId: string, roomInfo: any) {
     this.currentRoomId = roomId;
     this.roomInfo = roomInfo;
     this.players = roomInfo?.players || [];
   }
 
-  setIsOwner(isOwner: boolean) {
-    this.isOwner = isOwner;
+  setPlayerNetwork(user_id: string, online: boolean) {
+    this.players.forEach(p => {
+      if (p.user_id === user_id) {
+        p.online = online;
+      }
+    })
   }
-
   addPlayer(player: any) {
     if (!this.players.find(p => p.user_id === player.user_id)) {
       this.players.push(player);
     }
   }
 
-  removePlayer(user_id: string) {
-    this.players = this.players.filter(p => p.user_id !== user_id);
+  removePlayer(player_id: string) {
+    this.players = this.players.filter(p => p._id !== player_id);
   }
 
   addMessage(message: any) {
@@ -39,9 +43,6 @@ class RoomStore {
     this.currentRoomId = null;
     this.roomInfo = null;
     this.players = [];
-    this.isOwner = false;
     this.messages = [];
   }
 }
-
-export const roomStore = new RoomStore();

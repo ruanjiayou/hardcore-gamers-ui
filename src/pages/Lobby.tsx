@@ -1,8 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
-import { authStore } from '../stores/auth';
-import { gameStore } from '../stores/game';
+import store from '../stores'
 import { socketEvents } from '../services/socket';
 import { GameList } from '../components/GameList';
 import { Leaderboard } from '../components/Leaderboard';
@@ -13,14 +12,14 @@ export const LobbyPage = observer(() => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!authStore.user_id) {
+    if (!store.auth.user_id) {
       navigate('/login');
       return;
     }
     console.log('load games?')
     // 加载游戏列表
     socketEvents.getGames((games) => {
-      gameStore.setGames(games);
+      store.game.setGames(games);
     });
   }, [navigate]);
 

@@ -1,9 +1,7 @@
 import React, { useEffect, useState, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { observer, useLocalObservable } from 'mobx-react-lite';
-import { authStore } from '../stores/auth';
-import { gameStore } from '../stores/game';
-import { roomStore } from '../stores/room';
+import store from '../stores'
 import { socketEvents, socketListeners } from '../services/socket';
 import { RoomList } from '../components/RoomList';
 import '../styles/index.css';
@@ -33,7 +31,7 @@ export const GamePage = observer(() => {
   const [passwordInput, setPasswordInput] = useState('');
 
   const handleCreateRoom = () => {
-    if (!authStore.isLoggedIn) {
+    if (!store.auth.isLoggedIn) {
       alert('请先登陆');
       return;
     }
@@ -47,7 +45,7 @@ export const GamePage = observer(() => {
       },
       (success, roomId, error) => {
         if (success && roomId) {
-          roomStore.setCurrentRoom(roomId, { gameId });
+          store.room.setCurrentRoom(roomId, { gameId });
           navigate(`/room/${roomId}`);
           local.setV({ show: false });
         } else {
@@ -58,7 +56,7 @@ export const GamePage = observer(() => {
   };
 
   const handleJoinInviteRoom = () => {
-    if (!authStore.isLoggedIn) {
+    if (!store.auth.isLoggedIn) {
       alert('请先登陆');
       return;
     }
@@ -72,7 +70,7 @@ export const GamePage = observer(() => {
       },
       (success, roomId, error) => {
         if (success && roomId) {
-          roomStore.setCurrentRoom(roomId, { gameId });
+          store.room.setCurrentRoom(roomId, { gameId });
           navigate(`/room/${roomId}`);
           local.setV({ show: false });
         } else {
@@ -83,32 +81,38 @@ export const GamePage = observer(() => {
   };
 
   useEffect(() => {
-    if (!authStore.user_id) {
+    if (!store.auth.user_id) {
       navigate('/login');
       return;
     }
 
     if (!gameId) return;
 
-    gameStore.selectGame(gameId);
+    store.game.selectGame(gameId);
+
+    if (gameId !== store.game?.gamePlayer?.game_id) {
+      socketEvents.getGamePlayer(gameId, store.auth.user_id, (gamePlayer) => {
+        store.game.setGamePlayer(gamePlayer);
+      })
+    }
 
     // 监听房间创建
     socketListeners.onRoomCreated((room) => {
       if (room.gameId === gameId) {
-        gameStore.addRoom(room);
+        store.game.addRoom(room);
       }
     });
 
     // 监听房间销毁
     socketListeners.onRoomDestroyed((data) => {
-      gameStore.removeRoom(data.roomId);
+      store.game.removeRoom(data.roomId);
     });
   }, [gameId, navigate]);
 
   const joinRoom = (roomId: string, password?: string) => {
     socketEvents.joinRoom(roomId, password, (success, error) => {
       if (success) {
-        roomStore.setCurrentRoom(roomId, gameStore.rooms.find(r => r._id === roomId));
+        store.room.setCurrentRoom(roomId, store.game.rooms.find(r => r._id === roomId));
         navigate(`/room/${roomId}`);
       } else {
         alert(error || '加入房间失败');
@@ -123,9 +127,9 @@ export const GamePage = observer(() => {
           <div className='back-arrow-circle' onClick={() => {
             navigate(-1);
           }}><div className="back-arrow"></div></div>
-          🎮 {gameStore.selectedGame?.name}
+          🎮 {store.game.selectedGame?.name}
           <div className='room-card'>
-            {authStore.isLoggedIn && (
+            {store.auth.isLoggedIn && (
               <Fragment>
                 <button onClick={() => { }}>快速匹配</button>
                 <button onClick={() => local.setV({ type: 'invite', show: true, isPrivate: false, password: '' })}>加入房间</button>

@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
-import { authStore } from '../stores/auth';
-import { gameStore } from '../stores/game';
+import store from '../stores'
 import { socketEvents } from '../services/socket';
-import { roomStore } from '../stores/room';
 import '../styles/components.css';
 
 export const RoomList = observer(({ gameId }: { gameId: string }) => {
@@ -19,12 +17,12 @@ export const RoomList = observer(({ gameId }: { gameId: string }) => {
   const getRooms = (id: string) => {
     // 加载房间列表
     socketEvents.getRooms(id, (rooms) => {
-      gameStore.setRooms(rooms);
+      store.game.setRooms(rooms);
     });
   }
 
   const handleJoinRoom = (room: any) => {
-    if (!authStore.isLoggedIn) {
+    if (!store.auth.isLoggedIn) {
       alert('请先登陆');
       return;
     }
@@ -52,8 +50,8 @@ export const RoomList = observer(({ gameId }: { gameId: string }) => {
       </div>
 
       <div className="room-cards">
-        {gameStore.rooms.length === 0 && <span>暂无房间</span>}
-        {gameStore.rooms.map(room => (
+        {store.game.rooms.length === 0 && <span>暂无房间</span>}
+        {store.game.rooms.map(room => (
           <div key={room._id} className={`room-card ${room.status}`}>
             <h4>{room.name}</h4>
             <p>玩家: {room.players.length}/{room.numbers.max}</p>
