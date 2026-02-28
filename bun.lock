@@ -6,6 +6,7 @@
       "name": "hardcore-gamers-lobby",
       "dependencies": {
         "axios": "^1.6.0",
+        "babylonjs": "8.53.0",
         "mobx": "^6.10.2",
         "mobx-react-lite": "^4.0.5",
         "react": "^18.2.0",
@@ -197,6 +198,8 @@
     "asynckit": ["asynckit@0.4.0", "", {}, "sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q=="],
 
     "axios": ["axios@1.13.5", "", { "dependencies": { "follow-redirects": "^1.15.11", "form-data": "^4.0.5", "proxy-from-env": "^1.1.0" } }, "sha512-cz4ur7Vb0xS4/KUN0tPWe44eqxrIu31me+fbang3ijiNscE129POzipJJA6zniq2C/Z6sJCjMimjS8Lc/GAs8Q=="],
+
+    "babylonjs": ["babylonjs@8.53.0", "", {}, "sha512-7X1jiW1nc+EwZZHAt30N0q+1VediTaiEd0mmSzm3ucSq1L6ePLKCe673waLke08vxbZrUTkyN8Bq2xdWchMdbg=="],
 
     "baseline-browser-mapping": ["baseline-browser-mapping@2.10.0", "", { "bin": { "baseline-browser-mapping": "dist/cli.cjs" } }, "sha512-lIyg0szRfYbiy67j9KN8IyeD7q7hcmqnJ1ddWmNt19ItGpNN64mnllmxUNFIOdOm6by97jlL6wfpTTJrmnjWAA=="],
 

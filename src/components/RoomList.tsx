@@ -36,7 +36,7 @@ export const RoomList = observer(({ gameId }: { gameId: string }) => {
 
   const joinRoom = (roomId: string, password?: string) => {
     // TODO: api请求后进入
-    navigate(`/room/${roomId}`);
+    navigate(`/game/${gameId}/room/${roomId}`);
   };
 
   useEffect(() => {

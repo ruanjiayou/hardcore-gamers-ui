@@ -46,7 +46,7 @@ export const GamePage = observer(() => {
       (success, roomId, error) => {
         if (success && roomId) {
           store.room.setCurrentRoom(roomId, { gameId });
-          navigate(`/room/${roomId}`);
+          navigate(`/game/${gameId}/room/${roomId}`);
           local.setV({ show: false });
         } else {
           alert(error || '创建房间失败');
@@ -71,7 +71,7 @@ export const GamePage = observer(() => {
       (success, roomId, error) => {
         if (success && roomId) {
           store.room.setCurrentRoom(roomId, { gameId });
-          navigate(`/room/${roomId}`);
+          navigate(`/game/${gameId}/room/${roomId}`);
           local.setV({ show: false });
         } else {
           alert(error || '加入房间失败');
@@ -113,7 +113,7 @@ export const GamePage = observer(() => {
     socketEvents.joinRoom(roomId, password, (success, error) => {
       if (success) {
         store.room.setCurrentRoom(roomId, store.game.rooms.find(r => r._id === roomId));
-        navigate(`/room/${roomId}`);
+        navigate(`/game/${gameId}/room/${roomId}`);
       } else {
         alert(error || '加入房间失败');
       }

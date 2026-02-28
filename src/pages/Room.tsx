@@ -7,9 +7,11 @@ import { PlayerList } from '../components/PlayerList';
 import { Chat } from '../components/Chat';
 import '../styles/index.css';
 import '../styles/room.css';
+import BabylonCanvas from "../core/BabylonCanvas";
+import { gameManager } from "../core/GameManager";
 
 export const RoomPage = observer(() => {
-  const { roomId } = useParams<{ roomId: string }>();
+  const { roomId, gameId } = useParams<{ roomId: string, gameId: string; }>();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -50,6 +52,9 @@ export const RoomPage = observer(() => {
     socketListeners.onGameStarted(() => {
       navigate(`/game/${store.room.roomInfo?.gameId}`);
     });
+    return () => {
+      gameManager.unload();
+    };
   }, [roomId, navigate]);
 
   const handleLeaveRoom = () => {
@@ -68,19 +73,28 @@ export const RoomPage = observer(() => {
 
   return (
     <div className="room-page">
-      <div className="room-header">
-        <h2>{store.room.roomInfo?.name}</h2>
-        <div className="room-actions">
-          {store.room.roomInfo?.owner_id === store.auth.user_id && (
-            <button onClick={handleStartGame}>开始游戏</button>
-          )}
-          <button onClick={handleLeaveRoom} className="danger">离开房间</button>
+      <div style={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
+        <div style={{ flex: 1 }}>
+          {/* {store.room.roomInfo?.status && (
+              <BabylonCanvas
+                onReady={(canvas: HTMLCanvasElement) => {
+                  if (gameId) {
+                    gameManager.load('ChinaChess', canvas);
+                  }
+                }}
+              />
+            )} */}
         </div>
-      </div>
-
-      <div className="room-body">
-        <PlayerList />
-        <Chat roomId={roomId!} />
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 15 }}>
+          <div className="room-actions">
+            {store.room.roomInfo?.owner_id === store.auth.user_id && (
+              <button onClick={handleStartGame}>开始游戏</button>
+            )}
+            <button onClick={handleLeaveRoom} className="danger">离开房间</button>
+          </div>
+          <PlayerList />
+          <Chat roomId={roomId!} />
+        </div>
       </div>
     </div>
   );

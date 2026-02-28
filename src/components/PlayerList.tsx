@@ -15,7 +15,7 @@ export const PlayerList = observer(() => {
   }, [])
   return (
     <Observer>{() => (
-      <div className="player-list">
+      <div className="player-list" style={{ flex: 1 }}>
         <h3>👥 玩家列表 <span onClick={() => { reload(); }}>↻</span></h3>
         {store.room.players.map(player => (
           <div key={player.user_id} className="player-item">
