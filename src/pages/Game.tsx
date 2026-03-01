@@ -93,6 +93,10 @@ export const GamePage = observer(() => {
     if (gameId !== store.game?.gamePlayer?.game_id) {
       socketEvents.getGamePlayer(gameId, store.auth.user_id, (gamePlayer) => {
         store.game.setGamePlayer(gamePlayer);
+        // 已在游戏房间中
+        if (gamePlayer.room_id) {
+          joinRoom(gamePlayer.room_id)
+        }
       })
     }
 

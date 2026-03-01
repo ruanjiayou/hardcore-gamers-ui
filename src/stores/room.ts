@@ -18,6 +18,11 @@ export default class RoomStore {
     this.players = roomInfo?.players || [];
   }
 
+  setReady() {
+    if (this.roomInfo) {
+      this.roomInfo.status = 'ready'
+    }
+  }
   setPlayerNetwork(user_id: string, online: boolean) {
     this.players.forEach(p => {
       if (p.user_id === user_id) {

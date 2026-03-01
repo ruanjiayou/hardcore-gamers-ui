@@ -6,9 +6,11 @@ import store from '../stores'
 export const PlayerList = observer(() => {
   const reload = () => {
     const roomId = store.room.currentRoomId as string
-    socketEvents.getRoomInfo(roomId, (data) => {
-      store.room.setCurrentRoom(roomId, data)
-    });
+    if (roomId) {
+      socketEvents.getRoomInfo(roomId, (data) => {
+        store.room.setCurrentRoom(roomId, data)
+      });
+    }
   }
   useEffect(() => {
     reload()

@@ -16,7 +16,6 @@ export const LobbyPage = observer(() => {
       navigate('/login');
       return;
     }
-    console.log('load games?')
     // 加载游戏列表
     socketEvents.getGames((games) => {
       store.game.setGames(games);

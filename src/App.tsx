@@ -105,7 +105,7 @@ export const App = observer(() => {
           <Route path="/game/:gameId/room/:roomId" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
             <RoomPage />
           </AuthGuard>} />
-          <Route path="/login" element={<Navigate to="/lobby" />} />
+          <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<Navigate to="/lobby" />} />
           <Route path="*" element={<Navigate to="/lobby" />} />
         </Routes>

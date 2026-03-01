@@ -1,24 +1,24 @@
 import React, { useEffect } from 'react';
-import { observer, useLocalObservable } from 'mobx-react-lite';
+import { Observer, observer, useLocalObservable } from 'mobx-react-lite';
 import store from '../stores'
 import '../styles/components.css';
 import { socketEvents } from '../services/socket';
 
 export const Leaderboard = observer(() => {
   const local = useLocalObservable(() => ({
-    loading: true,
+    loading: false,
     setLoading(is: boolean) {
       local.loading = is;
     }
   }))
   useEffect(() => {
-    if (store.game.leaderboard.length === 0) {
+    if (!local.loading) {
       socketEvents.getLeaderboard(ranks => {
         store.game.setLeaderboard(ranks)
         local.setLoading(false)
       })
     }
-  }, []);
+  }, [local.loading]);
 
   const getRankMedal = (rank: number) => {
     switch (rank) {
@@ -33,7 +33,7 @@ export const Leaderboard = observer(() => {
     }
   };
 
-  return (
+  return <Observer>{() => (
     <div className="panel leaderboard-panel">
       <h2>🏆 排行榜 Top 10</h2>
       <div className="leaderboard">
@@ -51,13 +51,13 @@ export const Leaderboard = observer(() => {
                 </div>
                 <div className="player-info">
                   <span className="player-avatar">{player.avatar}</span>
-                  <span className="player-name">{player.name}</span>
+                  <span className="player-name">{player.user_name}</span>
                 </div>
-                <div className="player-rating">{player.rating}</div>
+                <div className="player-rating">{player.score}</div>
               </div>
             ))
         )}
       </div>
     </div>
-  );
+  )}</Observer>;
 });

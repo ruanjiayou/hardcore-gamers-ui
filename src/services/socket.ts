@@ -98,8 +98,8 @@ export const socketEvents = {
   getRooms: (gameId: string, callback: (rooms: any[]) => void) => {
     getSocket()?.emit('lobby:get-rooms', { gameId }, callback);
   },
-  getGamePlayer: (game_id: string, user_id: string, callback: (roomPlayer: any) => void) => {
-    getSocket()?.emit('lobby:get-game-player', { game_id, user_id }, callback);
+  getGamePlayer: (gameId: string, user_id: string, callback: (roomPlayer: any) => void) => {
+    getSocket()?.emit('lobby:get-game-player', { gameId, user_id }, callback);
   },
   createRoom: (data: any, callback: (success: boolean, roomId?: string, error?: string) => void) => {
     getSocket()?.emit('lobby:create-room', data, callback);
@@ -112,7 +112,7 @@ export const socketEvents = {
   },
 
   getRoomInfo: (roomId: string, callback?: (room: any) => void) => {
-    getSocket()?.emit('lobby:get-room-info', { roomId }, callback);
+    getSocket()?.emit('room:get-info', { roomId }, callback);
   },
 
   leaveRoom: (roomId: string, callback?: (success: boolean) => void) => {
@@ -125,6 +125,10 @@ export const socketEvents = {
 
   startGame: (roomId: string, callback?: (success: boolean, error?: string) => void) => {
     getSocket()?.emit('room:start-game', { roomId }, callback);
+  },
+
+  playerReadyChange: (data: { roomId: string, player_id: string, ready: boolean }, callback: (success: boolean) => void) => {
+    getSocket()?.emit('room:player-ready', data, callback);
   }
 };
 
@@ -143,6 +147,10 @@ export const socketListeners = {
 
   onPlayerLeaved: (callback: (data: any) => void) => {
     getSocket()?.on('room:player-leaved', callback);
+  },
+
+  onRoomReady: (callback: (data: any) => void) => {
+    getSocket()?.on('room:room-ready', callback);
   },
 
   onMessage: (callback: (data: any) => void) => {

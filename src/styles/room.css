@@ -1,6 +1,6 @@
 .room-page {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 20px;
+  padding: 15px;
   display: flex;
   flex-direction: column;
 }
@@ -24,7 +24,7 @@
 
 .room-actions {
   display: flex;
-  gap: 12px;
+  gap: 15px;
   justify-content: center;
 }
 
@@ -36,6 +36,8 @@
   font-weight: 600;
   transition: all 0.3s;
   font-size: 14px;
+  display: block;
+  flex: 1;
 }
 
 .room-actions button:not(.danger) {

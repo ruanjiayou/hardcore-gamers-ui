@@ -6,15 +6,13 @@ export interface IGameModule {
 class GameManager {
   private currentGame: IGameModule | null = null;
 
-  async load(gameId: string, canvas: HTMLCanvasElement) {
+  async load(gameId: string, canvas: HTMLCanvasElement, state: any) {
     if (this.currentGame) {
-      // this.currentGame.destroy();
-      // this.currentGame = null;
       return;
     }
 
-    const module = await import(`../games/${gameId}/index`);
-    this.currentGame = new module.default();
+    const Game = (await import(/* @vite-ignore */`../games/${gameId}/index`)).default;
+    this.currentGame = new Game(state);
     // @ts-ignore
     await this.currentGame.init(canvas);
   }
