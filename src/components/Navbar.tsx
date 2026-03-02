@@ -14,7 +14,7 @@ export const Navbar = observer(() => {
     navigate('/login');
   };
 
-  const handleLogoClick = (e:any) => {
+  const handleLogoClick = (e: any) => {
     e.preventDefault();
     if (window.location.pathname !== '/lobby') {
       navigate('/lobby');
@@ -43,7 +43,7 @@ export const Navbar = observer(() => {
           </div>
 
           {/* 用户下拉菜单 */}
-          <div className="user-dropdown">
+          {store.auth.isLoggedIn && <div className="user-dropdown">
             <button
               className="user-button"
               onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -70,7 +70,7 @@ export const Navbar = observer(() => {
                 </div>
               </div>
             )}
-          </div>
+          </div>}
         </div>
       </div>
     </nav>

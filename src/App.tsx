@@ -73,7 +73,7 @@ function AuthGuard({ children, isReady, setIsReady }: { children: React.ReactNod
         clearTimeout(timeout);
 
         if (userInfo) {
-          store.auth.user = userInfo;
+          store.auth.setUser(userInfo);
           console.log('👤 用户信息:', userInfo.name);
           resolve(null);
         } else {

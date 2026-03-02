@@ -17,10 +17,9 @@ export default class RoomStore {
     this.roomInfo = roomInfo;
     this.players = roomInfo?.players || [];
   }
-
-  setReady() {
+  setRoomStatus(status: 'ready' | 'waiting' | 'playing') {
     if (this.roomInfo) {
-      this.roomInfo.status = 'ready'
+      this.roomInfo.status = status;
     }
   }
   setPlayerNetwork(user_id: string, online: boolean) {

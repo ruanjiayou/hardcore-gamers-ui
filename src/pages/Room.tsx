@@ -1,6 +1,6 @@
 import React, { useEffect, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { observer } from 'mobx-react-lite';
+import { observer, useLocalObservable, useObserver } from 'mobx-react-lite';
 import store from '../stores'
 import { socketEvents, socketListeners } from '../services/socket';
 import { PlayerList } from '../components/PlayerList';
@@ -9,11 +9,15 @@ import '../styles/index.css';
 import '../styles/room.css';
 import BabylonCanvas from "../core/BabylonCanvas";
 import { gameManager } from "../core/GameManager";
+import { runInAction } from 'mobx';
 
 export const RoomPage = observer(() => {
   const { roomId, gameId } = useParams<{ roomId: string, gameId: string; }>();
   const navigate = useNavigate();
-
+  const local = useLocalObservable(() => ({
+    showAgreeDraw: false,
+    loading: false,
+  }));
   useEffect(() => {
     if (!store.auth.user_id || !roomId) {
       navigate('/lobby');
@@ -57,7 +61,7 @@ export const RoomPage = observer(() => {
 
     socketListeners.onRoomReady((data: any) => {
       console.log(data, 'ready')
-      store.room.setReady()
+      store.room.setRoomStatus('ready');
     })
 
     // 监听消息
@@ -67,8 +71,16 @@ export const RoomPage = observer(() => {
 
     // 监听游戏开始
     socketListeners.onGameStarted(() => {
-      navigate(`/game/${store.room.roomInfo?.gameId}`);
+      store.room.setRoomStatus('playing')
     });
+
+    socketListeners.onSeekDraw((data: any) => {
+      if (data.user_id !== store.auth.user_id) {
+        runInAction(() => {
+          local.showAgreeDraw = true;
+        })
+      }
+    })
     return () => {
       gameManager.unload();
     };
@@ -85,7 +97,7 @@ export const RoomPage = observer(() => {
 
   const handleStartGame = () => {
     if (!roomId) return;
-    socketEvents.startGame(roomId, (success) => {
+    socketEvents.startGame({ roomId, player_id: store.game.gamePlayer._id }, (success) => {
       console.log(success, 'start game')
     });
   };
@@ -97,7 +109,21 @@ export const RoomPage = observer(() => {
       }
     })
   }
+  const handleSurrender = () => {
+    if (!roomId) return;
+    socketEvents.surrender({ roomId, player_id: store.game.gamePlayer._id }, (success) => {
+      console.log(success, 'start game')
+    });
+  }
+  const handleSeekDraw = () => {
+    if (!roomId) return;
+    socketEvents.seekdraw(roomId);
+  }
+  const handleAgreeDraw = (agress: boolean) => {
+    if (!roomId) return;
+    socketEvents.agreeDraw(roomId, agress);
 
+  }
   return (
     <div className="room-page">
       <div style={{ display: 'flex', flexDirection: 'row', height: '100%', gap: 15 }}>
@@ -105,7 +131,7 @@ export const RoomPage = observer(() => {
           <BabylonCanvas
             onReady={(canvas: HTMLCanvasElement) => {
               if (gameId) {
-                gameManager.load('ChinaChess', canvas, store.room.roomInfo?.state);
+                // gameManager.load('ChinaChess', canvas, store.room.roomInfo?.state);
               }
             }}
           />
@@ -125,10 +151,15 @@ export const RoomPage = observer(() => {
                 </Fragment>
               )}
             {store.room.roomInfo?.status === 'waiting' && <button onClick={handleLeaveRoom} className="danger">离开房间</button>}
-            {store.room.roomInfo?.status === 'playing' && <button className="danger">认输</button>}
+            {store.room.roomInfo?.status === 'playing' && <Fragment>
+              <button onClick={handleSeekDraw}>求和</button>
+              <button onClick={handleSurrender} className="danger">认输</button>
+            </Fragment>}
           </div>
-          <PlayerList />
-          <Chat roomId={roomId!} />
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 15 }}>
+            <PlayerList />
+            <Chat roomId={roomId!} />
+          </div>
         </div>
       </div>
     </div>

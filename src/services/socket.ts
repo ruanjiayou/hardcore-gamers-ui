@@ -23,11 +23,9 @@ export async function initSocket(): Promise<{ success: boolean, error?: any }> {
   try {
     socket = io('http://localhost:3000', {
       auth: {
-        user_id: store.auth.user_id,
-        isLoggedIn: store.auth.isLoggedIn,
-        isGuest: store.auth.isGuest
+        token: store.auth.token,
       },
-      reconnection: true,
+      reconnection: false,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 5,
@@ -123,10 +121,18 @@ export const socketEvents = {
     getSocket()?.emit('room:send-message', { roomId, message }, callback);
   },
 
-  startGame: (roomId: string, callback?: (success: boolean, error?: string) => void) => {
-    getSocket()?.emit('room:start-game', { roomId }, callback);
+  startGame: (data: { roomId: string, player_id: string }, callback?: (success: boolean, error?: string) => void) => {
+    getSocket()?.emit('room:start-game', data, callback);
   },
-
+  surrender: (data: { roomId: string, player_id: string }, callback: (success: boolean) => void) => {
+    getSocket()?.emit('room:surrender', data, callback);
+  },
+  seekdraw: (roomId: string) => {
+    getSocket()?.emit('room:seek-draw', { roomId });
+  },
+  agreeDraw: (roomId: string, agree: boolean) => {
+    getSocket()?.emit('room:agree-draw', { roomId, agree });
+  },
   playerReadyChange: (data: { roomId: string, player_id: string, ready: boolean }, callback: (success: boolean) => void) => {
     getSocket()?.emit('room:player-ready', data, callback);
   }
@@ -160,7 +166,9 @@ export const socketListeners = {
   onGameStarted: (callback: (data: any) => void) => {
     getSocket()?.on('game:started', callback);
   },
-
+  onSeekDraw: (callback: (data: any) => void) => {
+    getSocket()?.on('room:seek-draw', callback);
+  },
   onRoomDestroyed: (callback: (data: any) => void) => {
     getSocket()?.on('room:destroyed', callback);
   }

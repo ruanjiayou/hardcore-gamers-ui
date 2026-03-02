@@ -17,7 +17,7 @@ export const Chat = observer(({ roomId }: { roomId: string }) => {
   };
 
   return (
-    <div className="chat" style={{ flex: 1 }}>
+    <div className="chat" style={{ flex: '0 0 50%' }}>
       <h3>💬 聊天</h3>
       <div className="messages">
         {store.room.messages.map((msg, idx) => (
