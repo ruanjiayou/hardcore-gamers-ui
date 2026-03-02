@@ -6,13 +6,12 @@ export interface IGameModule {
 class GameManager {
   private currentGame: IGameModule | null = null;
 
-  async load(gameId: string, canvas: HTMLCanvasElement, state: any) {
+  async load(gameId: string, canvas: HTMLCanvasElement, state: any, player: any) {
     if (this.currentGame) {
       return;
     }
-
     const Game = (await import(/* @vite-ignore */`../games/${gameId}/index`)).default;
-    this.currentGame = new Game(state);
+    this.currentGame = new Game(state, player);
     // @ts-ignore
     await this.currentGame.init(canvas);
   }

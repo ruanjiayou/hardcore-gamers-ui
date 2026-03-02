@@ -8,9 +8,9 @@ import '../styles/components.css';
 export const RoomList = observer(({ gameId }: { gameId: string }) => {
   const navigate = useNavigate();
 
-  const [passwordModal, setPasswordModal] = useState<{ show: boolean; roomId: string }>({
+  const [passwordModal, setPasswordModal] = useState<{ show: boolean; room_id: string }>({
     show: false,
-    roomId: ''
+    room_id: ''
   });
   const [passwordInput, setPasswordInput] = useState('');
 
@@ -28,15 +28,14 @@ export const RoomList = observer(({ gameId }: { gameId: string }) => {
     }
 
     if (room.isPrivate) {
-      setPasswordModal({ show: true, roomId: room._id });
+      setPasswordModal({ show: true, room_id: room._id });
     } else {
       joinRoom(room._id);
     }
   };
 
-  const joinRoom = (roomId: string, password?: string) => {
-    // TODO: api请求后进入
-    navigate(`/game/${gameId}/room/${roomId}`);
+  const joinRoom = (room_id: string, password?: string) => {
+    navigate(`/game/${gameId}/room/${room_id}`);
   };
 
   useEffect(() => {
@@ -54,20 +53,20 @@ export const RoomList = observer(({ gameId }: { gameId: string }) => {
         {store.game.rooms.map(room => (
           <div key={room._id} className={`room-card ${room.status}`}>
             <h4>{room.name}</h4>
-            <p>玩家: {room.players.length}/{room.numbers.max}</p>
+            <p>玩家: {room.members.length}/{room.numbers.max}</p>
             {room.isPrivate && <span className="lock">🔒</span>}
             <div className='two-column'>
               <button
                 onClick={() => {
                   if (room.isPrivate) {
-                    setPasswordModal({ show: true, roomId: room._id });
+                    setPasswordModal({ show: true, room_id: room._id });
                   } else {
                     handleJoinRoom(room)
                   }
                 }}
-                disabled={room.players.length >= room.numbers.max || room.status === 'playing'}
+                disabled={room.members.length >= room.numbers.max || room.status === 'playing'}
               >
-                {room.players.length >= room.numbers.max ? '房满' : '加入'}
+                {room.members.length >= room.numbers.max ? '房满' : '加入'}
               </button>
               <button onClick={() => handleJoinRoom(room)}>观看</button>
             </div>
@@ -87,8 +86,8 @@ export const RoomList = observer(({ gameId }: { gameId: string }) => {
               onChange={(e) => setPasswordInput(e.target.value)}
             />
             <div className="modal-actions">
-              <button onClick={() => setPasswordModal({ show: false, roomId: '' })}>取消</button>
-              <button onClick={() => joinRoom(passwordModal.roomId, passwordInput)}>加入</button>
+              <button onClick={() => setPasswordModal({ show: false, room_id: '' })}>取消</button>
+              <button onClick={() => joinRoom(passwordModal.room_id, passwordInput)}>加入</button>
             </div>
           </div>
         </div>

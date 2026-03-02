@@ -9,10 +9,13 @@ export interface Piece {
 
 export default class ChinaChessLogic {
   board: (Piece | null)[][] = [];
-  role: 'red' | 'black' = 'red';
+  player: { role: 'red' | 'black' };
+  state: any;
   currentTurn: PieceColor = "red";
 
-  constructor(state: any) {
+  constructor(state: any, player: any) {
+    this.state = state;
+    this.player = player;
     this.board = this.createInitialBoard();
   }
 

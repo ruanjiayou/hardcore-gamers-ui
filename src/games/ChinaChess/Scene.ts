@@ -7,17 +7,23 @@ export default class ChinaChessScene {
   engine!: BABYLON.Engine;
   scene!: BABYLON.Scene;
   logic!: ChessLogic;
+  inited: boolean = false;
 
   board: BABYLON.GroundMesh | null = null;
   pieceMap = new Map<string, BABYLON.TransformNode>();
 
   selected: { x: number; y: number } | null = null;
 
-  constructor(state:any) {
-    this.logic = new ChessLogic(state)
+  constructor(state: any, player: any) {
+    this.logic = new ChessLogic(state, player)
   }
 
   async init(canvas: HTMLCanvasElement) {
+    if (this.inited) {
+      return;
+    } else {
+      this.inited = true
+    }
     this.engine = new BABYLON.Engine(canvas, true);
     this.scene = new BABYLON.Scene(this.engine);
 
@@ -31,9 +37,18 @@ export default class ChinaChessScene {
     );
     camera.attachControl(canvas, true);
 
-    new BABYLON.HemisphericLight("light",
+    const light = new BABYLON.HemisphericLight("light",
       new BABYLON.Vector3(0, 1, 0),
       this.scene);
+    // 调低强度
+    light.intensity = 0.5;   // 推荐 0.4 ~ 0.7
+
+    // 上方光颜色（别太白）
+    light.diffuse = new BABYLON.Color3(0.5, 0.5, 0.5);
+
+    // 地面反射光调暗（关键！）
+    light.groundColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+
 
     this.createBoard();
     this.createPieces();
@@ -168,6 +183,10 @@ export default class ChinaChessScene {
     bodyMat.diffuseColor = new BABYLON.Color3(0.9, 0.8, 0.6);
     body.material = bodyMat;
 
+    // 降低反射光
+    bodyMat.specularColor = BABYLON.Color3.Black();
+    bodyMat.specularPower = 0;
+
     // 2️⃣ 顶部圆盘（专门放文字）
     const top = BABYLON.MeshBuilder.CreateDisc(
       id + "-top",
@@ -245,34 +264,43 @@ export default class ChinaChessScene {
   setupPicking() {
     this.scene.onPointerObservable.add(pointer => {
       if (!pointer.pickInfo?.hit) return;
-
       const name = pointer.pickInfo.pickedMesh?.name;
       if (!name) return;
 
+      let moveto: { x: number, y: number } | null = null;
       if (name.startsWith("piece")) {
         const [, x, y] = name.split("-");
-        this.selected = { x: +x, y: +y };
+        const selected = { x: +x, y: +y };
+        if (!this.selected) {
+          this.selected = selected;
+          return;
+        } else {
+          moveto = this.selected
+        }
+      }
+      if (name.startsWith('board')) {
+        const x = Math.round(pointer.pickInfo.pickedPoint?._x || -1)
+        const y = Math.round(pointer.pickInfo.pickedPoint?._z || -1)
+        if (x <= 8 && x >= 0 && y >= 0 && y <= 9) {
+          if (this.selected) {
+            moveto = { x: +x, y: +y };
+          }
+        }
       }
 
-      if (name.startsWith("tile") && this.selected) {
-        const [, tx, ty] = name.split("-");
-        const success = this.logic.move(
-          this.selected.x,
-          this.selected.y,
-          +tx, +ty
-        );
-
+      if (moveto && this.selected) {
+        const success = this.logic.move(this.selected.x, this.selected.y, moveto.x, moveto.y);
         if (success) {
           this.moveMesh(
             this.selected.x,
             this.selected.y,
-            +tx, +ty
+            moveto.x,
+            moveto.y,
           );
         }
-
         this.selected = null;
       }
-    });
+    }, BABYLON.PointerEventTypes.POINTERDOWN);
   }
 
   moveMesh(fx: number, fy: number, tx: number, ty: number) {

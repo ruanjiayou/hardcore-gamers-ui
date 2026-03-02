@@ -14,7 +14,8 @@ export interface Room {
   gameId: string;
   name: string;
   ownerId: string;
-  players: any[];
+  members: any[];
+  players?: any[];
   numbers: { min: number, max: number };
   isPrivate: boolean;
   status: string;
@@ -46,6 +47,9 @@ export default class GameStore {
   }
 
   setRooms(rooms: Room[]) {
+    rooms.forEach(room => {
+      room.players = room.members.filter(m => m.type === 'player');
+    })
     this.rooms = rooms;
   }
 
@@ -53,8 +57,8 @@ export default class GameStore {
     this.rooms.push(room);
   }
 
-  removeRoom(roomId: string) {
-    this.rooms = this.rooms.filter(r => r._id !== roomId);
+  removeRoom(room_id: string) {
+    this.rooms = this.rooms.filter(r => r._id !== room_id);
   }
 
   setLeaderboard(leaderboard: any[]) {
@@ -69,9 +73,4 @@ export default class GameStore {
     return this.games.find(g => g._id === this.selectedGameId);
   }
 
-  get availableRooms() {
-    return this.rooms.filter(r =>
-      r.status === 'waiting' && r.players.length < r.numbers.max
-    );
-  }
 }

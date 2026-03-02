@@ -3,13 +3,13 @@ import { observer } from 'mobx-react-lite';
 import store from '../stores'
 import { socketEvents } from '../services/socket';
 
-export const Chat = observer(({ roomId }: { roomId: string }) => {
+export const Chat = observer(({ room_id }: { room_id: string }) => {
   const [message, setMessage] = useState('');
 
   const handleSend = () => {
     if (!message.trim()) return;
 
-    socketEvents.sendMessage(roomId, message, (success) => {
+    socketEvents.sendMessage(room_id, message, (success) => {
       if (success) {
         setMessage('');
       }

@@ -90,7 +90,6 @@ export const socketEvents = {
     getSocket()?.emit('lobby:get-games', callback);
   },
   getLeaderboard: (callback: (ranks: any[]) => void) => {
-    console.log('?')
     getSocket()?.emit('lobby:get-leaderboard', { limit: 10 }, callback);
   },
   getRooms: (gameId: string, callback: (rooms: any[]) => void) => {
@@ -99,42 +98,45 @@ export const socketEvents = {
   getGamePlayer: (gameId: string, user_id: string, callback: (roomPlayer: any) => void) => {
     getSocket()?.emit('lobby:get-game-player', { gameId, user_id }, callback);
   },
-  createRoom: (data: any, callback: (success: boolean, roomId?: string, error?: string) => void) => {
+  createRoom: (data: any, callback: (success: boolean, room_id?: string, error?: string) => void) => {
     getSocket()?.emit('lobby:create-room', data, callback);
   },
-  joinInviteRoom: (data: any, callback: (success: boolean, roomId?: string, error?: string) => void) => {
+  joinInviteRoom: (data: any, callback: (success: boolean, room_id?: string, error?: string) => void) => {
     getSocket()?.emit('lobby:join-invite-room', data, callback);
   },
-  joinRoom: (roomId: string, password?: string, callback?: (success: boolean, error?: string) => void) => {
-    getSocket()?.emit('lobby:join-room', { roomId, password }, callback);
+  joinRoom: (room_id: string, password?: string, callback?: (success: boolean, error?: string) => void) => {
+    getSocket()?.emit('lobby:join-room', { room_id, password }, callback);
   },
 
-  getRoomInfo: (roomId: string, callback?: (room: any) => void) => {
-    getSocket()?.emit('room:get-info', { roomId }, callback);
+  getRoomInfo: (room_id: string, callback?: (room: any) => void) => {
+    getSocket()?.emit('room:get-info', { room_id }, callback);
   },
 
-  leaveRoom: (roomId: string, callback?: (success: boolean) => void) => {
-    getSocket()?.emit('room:leave', { roomId }, callback);
+  leaveRoom: (room_id: string, callback?: (success: boolean) => void) => {
+    getSocket()?.emit('room:leave', { room_id }, callback);
   },
 
-  sendMessage: (roomId: string, message: string, callback?: (success: boolean) => void) => {
-    getSocket()?.emit('room:send-message', { roomId, message }, callback);
+  sendMessage: (room_id: string, message: string, callback?: (success: boolean) => void) => {
+    getSocket()?.emit('room:send-message', { room_id, message }, callback);
   },
 
-  startGame: (data: { roomId: string, player_id: string }, callback?: (success: boolean, error?: string) => void) => {
+  startGame: (data: { room_id: string, player_id: string }, callback?: (success: boolean, error?: string) => void) => {
     getSocket()?.emit('room:start-game', data, callback);
   },
-  surrender: (data: { roomId: string, player_id: string }, callback: (success: boolean) => void) => {
+  surrender: (data: { room_id: string, player_id: string }, callback: (success: boolean) => void) => {
     getSocket()?.emit('room:surrender', data, callback);
   },
-  seekdraw: (roomId: string) => {
-    getSocket()?.emit('room:seek-draw', { roomId });
+  seekdraw: (room_id: string) => {
+    getSocket()?.emit('room:seek-draw', { room_id });
   },
-  agreeDraw: (roomId: string, agree: boolean) => {
-    getSocket()?.emit('room:agree-draw', { roomId, agree });
+  agreeDraw: (room_id: string, agree: boolean) => {
+    getSocket()?.emit('room:agree-draw', { room_id, agree });
   },
-  playerReadyChange: (data: { roomId: string, player_id: string, ready: boolean }, callback: (success: boolean) => void) => {
+  playerReadyChange: (data: { room_id: string, player_id: string, ready: boolean }, callback: (success: boolean) => void) => {
     getSocket()?.emit('room:player-ready', data, callback);
+  },
+  recordAction: (room_id: string, data: any, callback: (success: boolean) => void) => {
+    getSocket()?.emit('room:player-action', data, callback);
   }
 };
 
@@ -149,6 +151,10 @@ export const socketListeners = {
 
   onPlayerJoined: (callback: (data: any) => void) => {
     getSocket()?.on('room:player-joined', callback);
+  },
+
+  onPlayerActioin: (callback: (data: any) => void) => {
+    getSocket()?.on('room:player-action', callback);
   },
 
   onPlayerLeaved: (callback: (data: any) => void) => {

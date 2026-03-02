@@ -3,8 +3,8 @@ import ChessScene from "./Scene";
 export default class ChessGame {
   private scene!: ChessScene;
 
-  constructor(state: any) {
-    this.scene = new ChessScene(state);
+  constructor(state: any, player: any) {
+    this.scene = new ChessScene(state, player);
   }
 
   async init(canvas: HTMLCanvasElement) {

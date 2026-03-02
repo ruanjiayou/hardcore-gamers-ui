@@ -24,9 +24,9 @@ export const GamePage = observer(() => {
       }
     },
   }))
-  const [passwordModal, setPasswordModal] = useState<{ show: boolean; roomId: string }>({
+  const [passwordModal, setPasswordModal] = useState<{ show: boolean; room_id: string }>({
     show: false,
-    roomId: ''
+    room_id: ''
   });
   const [passwordInput, setPasswordInput] = useState('');
 
@@ -43,10 +43,10 @@ export const GamePage = observer(() => {
         isPrivate: local.isPrivate,
         password: local.isPrivate ? local.password : undefined
       },
-      (success, roomId, error) => {
-        if (success && roomId) {
-          store.room.setCurrentRoom(roomId, { gameId });
-          navigate(`/game/${gameId}/room/${roomId}`);
+      (success, room_id, error) => {
+        if (success && room_id) {
+          store.room.setCurrentRoom(room_id, { gameId });
+          navigate(`/game/${gameId}/room/${room_id}`);
           local.setV({ show: false });
         } else {
           alert(error || '创建房间失败');
@@ -68,10 +68,10 @@ export const GamePage = observer(() => {
         isPrivate: local.isPrivate,
         password: local.isPrivate ? local.password : undefined
       },
-      (success, roomId, error) => {
-        if (success && roomId) {
-          store.room.setCurrentRoom(roomId, { gameId });
-          navigate(`/game/${gameId}/room/${roomId}`);
+      (success, room_id, error) => {
+        if (success && room_id) {
+          store.room.setCurrentRoom(room_id, { gameId });
+          navigate(`/game/${gameId}/room/${room_id}`);
           local.setV({ show: false });
         } else {
           alert(error || '加入房间失败');
@@ -109,15 +109,15 @@ export const GamePage = observer(() => {
 
     // 监听房间销毁
     socketListeners.onRoomDestroyed((data) => {
-      store.game.removeRoom(data.roomId);
+      store.game.removeRoom(data.room_id);
     });
   }, [gameId, navigate]);
 
-  const joinRoom = (roomId: string, password?: string) => {
-    socketEvents.joinRoom(roomId, password, (success, error) => {
+  const joinRoom = (room_id: string, password?: string) => {
+    socketEvents.joinRoom(room_id, password, (success, error) => {
       if (success) {
-        store.room.setCurrentRoom(roomId, store.game.rooms.find(r => r._id === roomId));
-        navigate(`/game/${gameId}/room/${roomId}`);
+        store.room.setCurrentRoom(room_id, store.game.rooms.find(r => r._id === room_id));
+        navigate(`/game/${gameId}/room/${room_id}`);
       } else {
         alert(error || '加入房间失败');
       }
@@ -189,8 +189,8 @@ export const GamePage = observer(() => {
                   onChange={(e) => setPasswordInput(e.target.value)}
                 />
                 <div className="modal-actions">
-                  <button onClick={() => setPasswordModal({ show: false, roomId: '' })}>取消</button>
-                  <button onClick={() => joinRoom(passwordModal.roomId, passwordInput)}>加入</button>
+                  <button onClick={() => setPasswordModal({ show: false, room_id: '' })}>取消</button>
+                  <button onClick={() => joinRoom(passwordModal.room_id, passwordInput)}>加入</button>
                 </div>
               </div>
             </div>

@@ -3,6 +3,7 @@ import { makeAutoObservable } from 'mobx';
 export default class RoomStore {
   currentRoomId: string | null = null;
   roomInfo: any = null;
+  members: any[] = [];
   players: any[] = [];
   messages: any[] = [];
 
@@ -12,10 +13,11 @@ export default class RoomStore {
   get isOwner() {
     return false;
   }
-  setCurrentRoom(roomId: string, roomInfo: any) {
-    this.currentRoomId = roomId;
+  setCurrentRoom(room_id: string, roomInfo: any) {
+    this.currentRoomId = room_id;
     this.roomInfo = roomInfo;
-    this.players = roomInfo?.players || [];
+    this.members = roomInfo.members || [];
+    this.players = this.members.filter(m => m.type === 'player');
   }
   setRoomStatus(status: 'ready' | 'waiting' | 'playing') {
     if (this.roomInfo) {

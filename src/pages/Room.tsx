@@ -12,26 +12,30 @@ import { gameManager } from "../core/GameManager";
 import { runInAction } from 'mobx';
 
 export const RoomPage = observer(() => {
-  const { roomId, gameId } = useParams<{ roomId: string, gameId: string; }>();
+  const { room_id, gameId } = useParams<{ room_id: string, gameId: string; }>();
   const navigate = useNavigate();
   const local = useLocalObservable(() => ({
+    inited: false,
     showAgreeDraw: false,
     loading: false,
+    setInit() {
+      local.inited = true
+    }
   }));
   useEffect(() => {
-    if (!store.auth.user_id || !roomId) {
+    if (!store.auth.user_id || !room_id) {
       navigate('/lobby');
       return;
     }
     if (!store.room.currentRoomId) {
 
-      socketEvents.getRoomInfo(roomId, (data) => {
-        store.room.setCurrentRoom(roomId, data)
+      socketEvents.getRoomInfo(room_id, (data) => {
+        store.room.setCurrentRoom(room_id, data)
         socketEvents.getGamePlayer(gameId as string, store.auth.user_id as string, (gamePlayer) => {
           console.log(gamePlayer, 'game player?')
           store.game.setGamePlayer(gamePlayer);
           if (!gamePlayer.room_id) {
-            socketEvents.joinRoom(roomId, '', (success, error) => {
+            socketEvents.joinRoom(room_id, '', (success, error) => {
               console.log('join-room', success)
             })
           }
@@ -59,6 +63,10 @@ export const RoomPage = observer(() => {
       store.room.setPlayerNetwork(data.player_id, data.online)
     })
 
+    socketListeners.onPlayerActioin((data: any) => {
+      console.log(data, '他人回合')
+    })
+
     socketListeners.onRoomReady((data: any) => {
       console.log(data, 'ready')
       store.room.setRoomStatus('ready');
@@ -84,11 +92,11 @@ export const RoomPage = observer(() => {
     return () => {
       gameManager.unload();
     };
-  }, [roomId, navigate]);
+  }, [room_id, navigate]);
 
   const handleLeaveRoom = () => {
-    if (!roomId) return;
-    socketEvents.leaveRoom(roomId, (success) => {
+    if (!room_id) return;
+    socketEvents.leaveRoom(room_id, (success) => {
       console.log('离开房间', success)
       store.room.clear();
       navigate(-1);
@@ -96,33 +104,38 @@ export const RoomPage = observer(() => {
   };
 
   const handleStartGame = () => {
-    if (!roomId) return;
-    socketEvents.startGame({ roomId, player_id: store.game.gamePlayer._id }, (success) => {
+    if (!room_id) return;
+    socketEvents.startGame({ room_id, player_id: store.game.gamePlayer._id }, (success) => {
       console.log(success, 'start game')
     });
   };
 
   const handlePlayerRead = (ready: boolean) => {
-    socketEvents.playerReadyChange({ roomId: roomId as string, player_id: store.game.gamePlayer._id, ready }, (success) => {
+    socketEvents.playerReadyChange({ room_id: room_id as string, player_id: store.game.gamePlayer._id, ready }, (success) => {
       if (success) {
         store.game.setGamePlayer({ ...store.game.gamePlayer, state: 'ready' })
       }
     })
   }
   const handleSurrender = () => {
-    if (!roomId) return;
-    socketEvents.surrender({ roomId, player_id: store.game.gamePlayer._id }, (success) => {
+    if (!room_id) return;
+    socketEvents.surrender({ room_id, player_id: store.game.gamePlayer._id }, (success) => {
       console.log(success, 'start game')
     });
   }
   const handleSeekDraw = () => {
-    if (!roomId) return;
-    socketEvents.seekdraw(roomId);
+    if (!room_id) return;
+    socketEvents.seekdraw(room_id);
   }
   const handleAgreeDraw = (agress: boolean) => {
-    if (!roomId) return;
-    socketEvents.agreeDraw(roomId, agress);
+    if (!room_id) return;
+    socketEvents.agreeDraw(room_id, agress);
 
+  }
+  const handlePlayerAction = (data: any) => {
+    socketEvents.recordAction(room_id as string, data, success => {
+      console.log('己方回合', success)
+    })
   }
   return (
     <div className="room-page">
@@ -130,9 +143,10 @@ export const RoomPage = observer(() => {
         <div style={{ flex: 1 }}>
           <BabylonCanvas
             onReady={(canvas: HTMLCanvasElement) => {
-              if (gameId) {
-                // gameManager.load('ChinaChess', canvas, store.room.roomInfo?.state);
+              if (gameId && store.auth.user_id && !local.inited) {
+                gameManager.load('ChinaChess', canvas, store.room.roomInfo?.state, store.game.gamePlayer);
               }
+              local.inited = true
             }}
           />
         </div>
@@ -158,7 +172,7 @@ export const RoomPage = observer(() => {
           </div>
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 15 }}>
             <PlayerList />
-            <Chat roomId={roomId!} />
+            <Chat room_id={room_id!} />
           </div>
         </div>
       </div>

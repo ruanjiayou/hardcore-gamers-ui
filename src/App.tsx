@@ -36,7 +36,8 @@ function AuthGuard({ children, isReady, setIsReady }: { children: React.ReactNod
           // 3. 标记为就绪
           setIsReady(true);
           console.log('🎉 应用初始化完成');
-        } else if (error?.message === '验证失败') {
+        } else {
+          console.error('失败', error)
           navigate('/login')
         }
       } catch (error) {
@@ -82,7 +83,7 @@ function AuthGuard({ children, isReady, setIsReady }: { children: React.ReactNod
       });
     });
   };
-  return <Loading isLoading={isLoading}>{children}</Loading>;
+  return <Loading isLoading={false}>{children}</Loading>;
 }
 export const App = observer(() => {
   const [isReady, setIsReady] = useState(false);
@@ -102,7 +103,7 @@ export const App = observer(() => {
           <Route path="/game/:gameId" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
             <GamePage />
           </AuthGuard>} />
-          <Route path="/game/:gameId/room/:roomId" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
+          <Route path="/game/:gameId/room/:room_id" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
             <RoomPage />
           </AuthGuard>} />
           <Route path="/login" element={<LoginPage />} />
