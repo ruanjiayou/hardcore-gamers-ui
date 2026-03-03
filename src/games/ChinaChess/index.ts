@@ -14,6 +14,8 @@ export default class ChessGame {
   setState(state: any) {
     if (this.scene) {
       this.scene.logic.setState(state)
+      this.scene.createPieces();
+      this.scene.setupPicking()
     }
   }
 

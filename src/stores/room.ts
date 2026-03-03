@@ -1,10 +1,10 @@
 import { makeAutoObservable } from 'mobx';
 
 export default class RoomStore {
-  currentRoomId: string | null = null;
-  currentMatchId: string = '';
+  currentRoomId: string = '';
   matchState: any = null;
   roomInfo: any = null;
+  roomPlayer: any = null;
   members: any[] = [];
   players: any[] = [];
   messages: any[] = [];
@@ -15,14 +15,14 @@ export default class RoomStore {
   get isOwner() {
     return false;
   }
-  setCurrentRoom(room_id: string, roomInfo: any) {
-    this.currentRoomId = room_id;
+  setCurrentRoom(roomInfo: any) {
+    this.currentRoomId = roomInfo._id;
     this.roomInfo = roomInfo;
     this.members = roomInfo.members || [];
     this.players = this.members.filter(m => m.type === 'player');
   }
-  setCurrentMatchId(match_id: string) {
-    this.currentMatchId = match_id;
+  setCurrentPlayer(player: any) {
+    this.roomPlayer = player;
   }
   setMatchState(state: any) {
     this.matchState = state;
@@ -52,8 +52,8 @@ export default class RoomStore {
   }
 
   clear() {
-    this.currentRoomId = null;
     this.roomInfo = null;
+    this.currentRoomId = ''
     this.players = [];
     this.messages = [];
   }

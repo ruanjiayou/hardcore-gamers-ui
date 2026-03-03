@@ -45,7 +45,6 @@ export const GamePage = observer(() => {
       },
       (success, room_id, error) => {
         if (success && room_id) {
-          store.room.setCurrentRoom(room_id, { gameId });
           navigate(`/game/${gameId}/room/${room_id}`);
           local.setV({ show: false });
         } else {
@@ -70,7 +69,6 @@ export const GamePage = observer(() => {
       },
       (success, room_id, error) => {
         if (success && room_id) {
-          store.room.setCurrentRoom(room_id, { gameId });
           navigate(`/game/${gameId}/room/${room_id}`);
           local.setV({ show: false });
         } else {
@@ -81,17 +79,12 @@ export const GamePage = observer(() => {
   };
 
   useEffect(() => {
-    if (!store.auth.user_id) {
-      navigate('/login');
-      return;
-    }
-
     if (!gameId) return;
 
     store.game.selectGame(gameId);
 
     if (gameId !== store.game?.gamePlayer?.game_id) {
-      socketEvents.getGamePlayer(gameId, store.auth.user_id, (gamePlayer) => {
+      socketEvents.getGamePlayer(gameId, store.auth.user?._id as string, (gamePlayer) => {
         store.game.setGamePlayer(gamePlayer);
         // 已在游戏房间中
         if (gamePlayer.room_id) {

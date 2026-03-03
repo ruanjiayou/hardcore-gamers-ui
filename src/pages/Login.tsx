@@ -24,6 +24,7 @@ export function LoginPage() {
 
       if (response.data.code === 0) {
         store.auth.setLogin(response.data.data.token.access_token);
+        store.auth.setUser(response.data.data.user)
         await initSocket();
         navigate('/lobby');
       }

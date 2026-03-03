@@ -20,8 +20,10 @@ export default class ChinaChessLogic {
   }
 
   setState(state: any) {
-    this.board = state.board;
-    this.player = state.player;
+    if (state) {
+      this.board = state.board;
+      this.player = state.player;
+    }
   }
 
   getPiece(x: number, y: number) {

@@ -12,10 +12,6 @@ export const LobbyPage = observer(() => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!store.auth.user_id) {
-      navigate('/login');
-      return;
-    }
     // 加载游戏列表
     socketEvents.getGames((games) => {
       store.game.setGames(games);

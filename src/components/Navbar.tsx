@@ -49,7 +49,7 @@ export const Navbar = observer(() => {
               onClick={() => setDropdownOpen(!dropdownOpen)}
             >
               <span className="user-avatar">👤</span>
-              <span className="user-name">{store.auth.user?.name || store.auth.user_id}</span>
+              <span className="user-name">{store.auth.user?.name || '-'}</span>
               <span className="dropdown-icon">▼</span>
             </button>
 

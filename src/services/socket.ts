@@ -54,7 +54,6 @@ export async function initSocket(): Promise<{ success: boolean, error?: any }> {
       }
 
       const cleanup = () => {
-        console.log(socket?.connected, 'clearup')
         clearTimeout(timeout)
         socket?.off('connect', onConnect)
         socket?.off('connect_error', onError)
@@ -108,8 +107,8 @@ export const socketEvents = {
     getSocket()?.emit('lobby:join-room', data, callback);
   },
 
-  getRoomInfo: (room_id: string, callback?: (room: any) => void) => {
-    getSocket()?.emit('room:get-info', { room_id }, callback);
+  getRoomDetail: (room_id: string, callback?: (data: { room: any, match_id: string }) => void) => {
+    getSocket()?.emit('room:detail', { room_id }, callback);
   },
 
   leaveRoom: (data: { room_id: string, player_id: string }, callback?: (success: boolean) => void) => {
@@ -123,10 +122,10 @@ export const socketEvents = {
   startGame: (data: { room_id: string, player_id: string }, callback?: (match_id: string, error?: string) => void) => {
     getSocket()?.emit('room:start-game', data, callback);
   },
-  getMatchState: (data: { room_id: string, match_id: string, player_id: string }, callback: (state: any) => void) => {
+  getMatchState: (data: { room_id: string, match_id?: string }, callback: (state: any) => void) => {
     getSocket()?.emit('room:get-match-state', data, callback);
   },
-  surrender: (data: { room_id: string, match_id: string, player_id: string }, callback: (success: boolean) => void) => {
+  surrender: (data: { room_id: string, match_id?: string, player_id: string }, callback: (success: boolean) => void) => {
     getSocket()?.emit('room:surrender', data, callback);
   },
   seekdraw: (room_id: string) => {
@@ -174,7 +173,7 @@ export const socketListeners = {
     getSocket()?.on('room:message', callback);
   },
 
-  onGameStarted: (callback: (data: any) => void) => {
+  onGameStarted: (callback: (data: { room_id: string, match_id: string, timestamp: number }) => void) => {
     getSocket()?.on('room:game-started', callback);
   },
   onSeekDraw: (callback: (data: any) => void) => {

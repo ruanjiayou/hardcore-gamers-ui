@@ -9,7 +9,6 @@ export interface User {
 }
 
 export default class AuthStore {
-  user_id: string = '';
   user: User | null = null;
   isLoggedIn = false;
   isGuest = false;
@@ -24,11 +23,10 @@ export default class AuthStore {
     try {
       const session = localStorage.getItem('gameSession');
       if (session) {
-        const { user_id = '', token = '', user } = JSON.parse(session);
-        this.user_id = user_id;
+        const { token = '', user } = JSON.parse(session);
         this.token = token;
         this.user = user;
-        console.log('📦 从本地存储加载会话:', { user_id, token, user });
+        console.log('📦 从本地存储加载会话');
       }
     } catch (error) {
       console.error('❌ 加载本地存储失败:', error);
@@ -39,7 +37,7 @@ export default class AuthStore {
   setUser(user: User) {
     this.user = user;
     this.isLoggedIn = true;
-    this.user_id = user?._id || '';
+    this.saveToStorage();
   }
 
   setLogin(token: string) {
@@ -51,7 +49,6 @@ export default class AuthStore {
   }
 
   setGuest(user_id: string) {
-    this.user_id = user_id;
     this.isLoggedIn = true;
     this.isGuest = true;
     this.saveToStorage();
@@ -59,7 +56,6 @@ export default class AuthStore {
   }
 
   logout() {
-    this.user_id = '';
     this.user = null;
     this.token = '';
     this.isLoggedIn = false;
@@ -71,7 +67,6 @@ export default class AuthStore {
   private saveToStorage() {
     try {
       localStorage.setItem('gameSession', JSON.stringify({
-        user_id: this.user_id,
         token: this.token,
         user: this.user,
       }));

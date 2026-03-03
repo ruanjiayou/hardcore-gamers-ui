@@ -7,8 +7,8 @@ export const PlayerList = observer(() => {
   const reload = () => {
     const room_id = store.room.currentRoomId as string
     if (room_id) {
-      socketEvents.getRoomInfo(room_id, (data) => {
-        store.room.setCurrentRoom(room_id, data)
+      socketEvents.getRoomDetail(room_id, (data) => {
+        store.room.setCurrentRoom(data.room)
       });
     }
   }
@@ -23,7 +23,7 @@ export const PlayerList = observer(() => {
           <div key={player.user_id} className="player-item">
             <span className="avatar">👤</span>
             <span className="name">{player.user_name}</span>
-            {(store.room.roomInfo?.owner_id === player.user_id || store.auth.user_id === player.user_id) ? (
+            {(store.room.roomInfo?.owner_id === player.user_id || store.auth.user?._id === player.user_id) ? (
               <span className="badge">{store.room.roomInfo?.owner_id === player.user_id ? "房主" : "你"}</span>
             ) : (player.type === 'viewer') ? '旁观' : ''}
           </div>

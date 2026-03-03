@@ -19,26 +19,38 @@ export const RoomPage = observer(() => {
     inited: false,
     showAgreeDraw: false,
     loading: false,
+    game_inited: false,
+    match_id: '',
     setInit() {
       local.inited = true
+    },
+    setGameInited(inited: boolean) {
+      this.game_inited = inited;
+    },
+    setV(key: 'match_id' | 'game_inited', v: any) {
+      if (key === 'match_id') {
+        local.match_id = v;
+      } else if (key === 'game_inited') {
+        local.game_inited = v;
+      }
     }
   }));
   const init = (room_id: string) => {
-    socketEvents.getRoomInfo(room_id, (data) => {
-      store.room.setCurrentRoom(room_id, data)
-      socketEvents.getGamePlayer(gameId as string, store.auth.user_id as string, (gamePlayer) => {
-        store.game.setGamePlayer(gamePlayer);
-        if (room_id !== gamePlayer.room_id) {
-          socketEvents.joinRoom({ room_id, type: '', password: '' }, (success, error) => {
-            console.log('join-room', success)
-          })
-        }
-      })
-
+    socketEvents.getRoomDetail(room_id, (data) => {
+      const { room, match_id } = data;
+      store.room.setCurrentRoom(room)
+      if (!store.game.gamePlayer) {
+        socketEvents.getGamePlayer(room.gameId, store.auth.user?._id as string, (player) => {
+          store.game.setGamePlayer(player);
+        })
+      }
+      if (match_id) {
+        local.setV('match_id', match_id)
+      }
     });
   }
   useEffect(() => {
-    if (!store.auth.user_id || !room_id) {
+    if (!room_id) {
       navigate('/lobby');
       return;
     }
@@ -47,15 +59,11 @@ export const RoomPage = observer(() => {
     socketListeners.onPlayerJoined((data) => {
       store.room.addPlayer(data);
       store.room.addMessage({ player_id: data._id, player_name: data.user_name, message: `玩家 ${data.user_name} 加入房间` })
-      if (data.user_id === store.auth.user_id) {
-        store.game.setGamePlayer(data)
-      }
     });
 
     // 监听玩家离开
     socketListeners.onPlayerLeaved((data) => {
       store.room.removePlayer(data.player_id);
-      store.game.setGamePlayer({ ...store.game.gamePlayer, room_id: '' })
       store.room.addMessage({ player_id: data.player_id, player_name: data.player_name, message: `玩家 ${data.player_name} 加入房间` })
     });
 
@@ -85,12 +93,13 @@ export const RoomPage = observer(() => {
 
     // 监听游戏开始
     socketListeners.onGameStarted((data) => {
-      console.log('started', data)
       store.room.setRoomStatus('playing')
+      local.setGameInited(true)
+      local.setV('match_id', data.match_id)
     });
 
     socketListeners.onSeekDraw((data: any) => {
-      if (data.user_id !== store.auth.user_id) {
+      if (data.user_id !== store.auth.user?._id) {
         runInAction(() => {
           local.showAgreeDraw = true;
         })
@@ -113,15 +122,9 @@ export const RoomPage = observer(() => {
 
   const handleStartGame = () => {
     if (!room_id) return;
-    socketEvents.startGame({ room_id, player_id: store.game.gamePlayer._id }, (match_id, error?: string) => {
-      if (match_id) {
-        store.room.setCurrentMatchId(match_id);
-        socketEvents.getMatchState({ room_id, player_id: store.game.gamePlayer._id, match_id: '' }, state => {
-          gameManager.setState(state);
-        })
-      }
-      if (error) {
-        notificationManager.show(error, 'error');
+    socketEvents.startGame({ room_id, player_id: store.game.gamePlayer._id }, (success) => {
+      if (!success) {
+        notificationManager.show('启动失败', 'error')
       }
     });
   };
@@ -135,7 +138,7 @@ export const RoomPage = observer(() => {
   }
   const handleSurrender = () => {
     if (!room_id) return;
-    socketEvents.surrender({ room_id, match_id: store.room.currentMatchId, player_id: store.game.gamePlayer._id }, (success) => {
+    socketEvents.surrender({ room_id: store.room.currentRoomId, player_id: store.game.gamePlayer._id }, (success) => {
       console.log(success, '认输')
     });
   }
@@ -159,8 +162,13 @@ export const RoomPage = observer(() => {
         <div style={{ flex: 1 }}>
           <BabylonCanvas
             onReady={(canvas: HTMLCanvasElement) => {
-              if (gameId && store.auth.user_id && !local.inited) {
-                gameManager.load('ChinaChess', canvas);
+              if (gameId && !local.inited) {
+                gameManager.load('ChinaChess', canvas).then(() => {
+                  console.log('ready?')
+                  socketEvents.getMatchState({ room_id: store.room.currentRoomId, match_id: local.match_id }, (state) => {
+                    gameManager.setState(state)
+                  })
+                });
               }
               local.inited = true
             }}
@@ -168,7 +176,7 @@ export const RoomPage = observer(() => {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 15 }}>
           <div className="room-actions">
-            {(store.room.roomInfo?.owner_id === store.auth.user_id)
+            {(store.room.roomInfo?.owner_id === store.auth.user?._id)
               ? (
                 <Fragment>
                   {store.room.roomInfo?.status === 'waiting' && <button >等待</button>}

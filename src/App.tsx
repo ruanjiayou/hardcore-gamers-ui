@@ -18,14 +18,14 @@ function AuthGuard({ children, isReady, setIsReady }: { children: React.ReactNod
   useEffect(() => {
     const initializeApp = async () => {
       // 如果没有 userId，说明未登陆，显示登陆页
-      if (!store.auth.user_id) {
+      if (!store.auth.user?._id) {
         setIsReady(true);
         return;
       }
       try {
         setIsLoading(true);
         console.log('🔄 初始化应用...');
-        console.log('📍 user_id:', store.auth.user_id);
+        console.log('📍 user_id:', store.auth.user?._id);
         // 1. 初始化 Socket 连接
         console.log('🔌 正在连接 WebSocket...');
         const { success, error } = await initSocket();
@@ -54,7 +54,7 @@ function AuthGuard({ children, isReady, setIsReady }: { children: React.ReactNod
     return () => {
       disconnectSocket();
     };
-  }, [store.auth.user_id]);
+  }, []);
 
   // 加载用户信息
   const loadUserInfo = async () => {

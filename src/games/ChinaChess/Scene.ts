@@ -318,7 +318,7 @@ export default class ChinaChessScene {
       60,
       30,
       mesh.position.clone(),
-      new BABYLON.Vector3(tx, 0.2, ty),
+      new BABYLON.Vector3(tx, 0, ty),
       BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
     );
   }
