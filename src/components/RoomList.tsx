@@ -4,6 +4,7 @@ import { observer } from 'mobx-react-lite';
 import store from '../stores'
 import { socketEvents } from '../services/socket';
 import '../styles/components.css';
+import { notificationManager } from './Notifications';
 
 export const RoomList = observer(({ gameId }: { gameId: string }) => {
   const navigate = useNavigate();
@@ -30,12 +31,22 @@ export const RoomList = observer(({ gameId }: { gameId: string }) => {
     if (room.isPrivate) {
       setPasswordModal({ show: true, room_id: room._id });
     } else {
-      joinRoom(room._id);
+      gotoRoom(room._id);
     }
   };
 
-  const joinRoom = (room_id: string, password?: string) => {
-    navigate(`/game/${gameId}/room/${room_id}`);
+  const gotoRoom = (room_id: string, password?: string) => {
+    socketEvents.joinRoom({ room_id, type: 'player', password }, (success, player) => {
+      if (success) {
+        if (player) {
+          store.game.setGamePlayer(player)
+        }
+        navigate(`/game/${gameId}/room/${room_id}`);
+      } else {
+        notificationManager.show('加入失败', 'warning');
+      }
+    })
+
   };
 
   useEffect(() => {
@@ -87,7 +98,7 @@ export const RoomList = observer(({ gameId }: { gameId: string }) => {
             />
             <div className="modal-actions">
               <button onClick={() => setPasswordModal({ show: false, room_id: '' })}>取消</button>
-              <button onClick={() => joinRoom(passwordModal.room_id, passwordInput)}>加入</button>
+              <button onClick={() => gotoRoom(passwordModal.room_id, passwordInput)}>加入</button>
             </div>
           </div>
         </div>

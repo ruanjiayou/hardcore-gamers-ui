@@ -10,6 +10,7 @@ import '../styles/room.css';
 import BabylonCanvas from "../core/BabylonCanvas";
 import { gameManager } from "../core/GameManager";
 import { runInAction } from 'mobx';
+import { notificationManager } from '../components/Notifications'
 
 export const RoomPage = observer(() => {
   const { room_id, gameId } = useParams<{ room_id: string, gameId: string; }>();
@@ -22,27 +23,26 @@ export const RoomPage = observer(() => {
       local.inited = true
     }
   }));
+  const init = (room_id: string) => {
+    socketEvents.getRoomInfo(room_id, (data) => {
+      store.room.setCurrentRoom(room_id, data)
+      socketEvents.getGamePlayer(gameId as string, store.auth.user_id as string, (gamePlayer) => {
+        store.game.setGamePlayer(gamePlayer);
+        if (room_id !== gamePlayer.room_id) {
+          socketEvents.joinRoom({ room_id, type: '', password: '' }, (success, error) => {
+            console.log('join-room', success)
+          })
+        }
+      })
+
+    });
+  }
   useEffect(() => {
     if (!store.auth.user_id || !room_id) {
       navigate('/lobby');
       return;
     }
-    if (!store.room.currentRoomId) {
-
-      socketEvents.getRoomInfo(room_id, (data) => {
-        store.room.setCurrentRoom(room_id, data)
-        socketEvents.getGamePlayer(gameId as string, store.auth.user_id as string, (gamePlayer) => {
-          console.log(gamePlayer, 'game player?')
-          store.game.setGamePlayer(gamePlayer);
-          if (!gamePlayer.room_id) {
-            socketEvents.joinRoom(room_id, '', (success, error) => {
-              console.log('join-room', success)
-            })
-          }
-        })
-
-      });
-    }
+    init(room_id)
     // 监听玩家加入
     socketListeners.onPlayerJoined((data) => {
       store.room.addPlayer(data);
@@ -55,6 +55,7 @@ export const RoomPage = observer(() => {
     // 监听玩家离开
     socketListeners.onPlayerLeaved((data) => {
       store.room.removePlayer(data.player_id);
+      store.game.setGamePlayer({ ...store.game.gamePlayer, room_id: '' })
       store.room.addMessage({ player_id: data.player_id, player_name: data.player_name, message: `玩家 ${data.player_name} 加入房间` })
     });
 
@@ -65,6 +66,11 @@ export const RoomPage = observer(() => {
 
     socketListeners.onPlayerActioin((data: any) => {
       console.log(data, '他人回合')
+    })
+
+    socketListeners.onPlayerSurrender((data: { player_id: string, player_name: string }) => {
+      notificationManager.show(`玩家 ${data.player_name} 认输`)
+      init(room_id);
     })
 
     socketListeners.onRoomReady((data: any) => {
@@ -78,7 +84,8 @@ export const RoomPage = observer(() => {
     });
 
     // 监听游戏开始
-    socketListeners.onGameStarted(() => {
+    socketListeners.onGameStarted((data) => {
+      console.log('started', data)
       store.room.setRoomStatus('playing')
     });
 
@@ -96,17 +103,26 @@ export const RoomPage = observer(() => {
 
   const handleLeaveRoom = () => {
     if (!room_id) return;
-    socketEvents.leaveRoom(room_id, (success) => {
+    socketEvents.leaveRoom({ room_id, player_id: store.game.gamePlayer._id }, (success) => {
       console.log('离开房间', success)
       store.room.clear();
+      store.game.setGamePlayer({ ...store.game.gamePlayer, room_id: '' })
       navigate(-1);
     });
   };
 
   const handleStartGame = () => {
     if (!room_id) return;
-    socketEvents.startGame({ room_id, player_id: store.game.gamePlayer._id }, (success) => {
-      console.log(success, 'start game')
+    socketEvents.startGame({ room_id, player_id: store.game.gamePlayer._id }, (match_id, error?: string) => {
+      if (match_id) {
+        store.room.setCurrentMatchId(match_id);
+        socketEvents.getMatchState({ room_id, player_id: store.game.gamePlayer._id, match_id: '' }, state => {
+          gameManager.setState(state);
+        })
+      }
+      if (error) {
+        notificationManager.show(error, 'error');
+      }
     });
   };
 
@@ -119,8 +135,8 @@ export const RoomPage = observer(() => {
   }
   const handleSurrender = () => {
     if (!room_id) return;
-    socketEvents.surrender({ room_id, player_id: store.game.gamePlayer._id }, (success) => {
-      console.log(success, 'start game')
+    socketEvents.surrender({ room_id, match_id: store.room.currentMatchId, player_id: store.game.gamePlayer._id }, (success) => {
+      console.log(success, '认输')
     });
   }
   const handleSeekDraw = () => {
@@ -144,7 +160,7 @@ export const RoomPage = observer(() => {
           <BabylonCanvas
             onReady={(canvas: HTMLCanvasElement) => {
               if (gameId && store.auth.user_id && !local.inited) {
-                gameManager.load('ChinaChess', canvas, store.room.roomInfo?.state, store.game.gamePlayer);
+                gameManager.load('ChinaChess', canvas);
               }
               local.inited = true
             }}

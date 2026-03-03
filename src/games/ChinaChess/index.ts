@@ -11,6 +11,12 @@ export default class ChessGame {
     await this.scene.init(canvas);
   }
 
+  setState(state: any) {
+    if (this.scene) {
+      this.scene.logic.setState(state)
+    }
+  }
+
   destroy() {
     if (this.scene) {
       this.scene.dispose();

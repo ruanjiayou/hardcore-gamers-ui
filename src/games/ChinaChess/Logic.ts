@@ -9,34 +9,19 @@ export interface Piece {
 
 export default class ChinaChessLogic {
   board: (Piece | null)[][] = [];
-  player: { role: 'red' | 'black' };
+  player: { role: 'red' | 'black' } | null = null;
   state: any;
   currentTurn: PieceColor = "red";
 
   constructor(state: any, player: any) {
-    this.state = state;
-    this.player = player;
-    this.board = this.createInitialBoard();
+    if (state) {
+      this.setState(state);
+    }
   }
 
-  createInitialBoard(): (Piece | null)[][] {
-    const e = null;
-
-    const black = (t: string): Piece => ({ type: t, color: "black" });
-    const red = (t: string): Piece => ({ type: t, color: "red" });
-
-    return [
-      [black("r"), black("n"), black("b"), black("a"), black("k"), black("a"), black("b"), black("n"), black("r")],
-      [e, e, e, e, e, e, e, e, e],
-      [e, black("c"), e, e, e, e, e, black("c"), e],
-      [black("p"), e, black("p"), e, black("p"), e, black("p"), e, black("p")],
-      [e, e, e, e, e, e, e, e, e],
-      [e, e, e, e, e, e, e, e, e],
-      [red("p"), e, red("p"), e, red("p"), e, red("p"), e, red("p")],
-      [e, red("c"), e, e, e, e, e, red("c"), e],
-      [e, e, e, e, e, e, e, e, e],
-      [red("r"), red("n"), red("b"), red("a"), red("k"), red("a"), red("b"), red("n"), red("r")]
-    ];
+  setState(state: any) {
+    this.board = state.board;
+    this.player = state.player;
   }
 
   getPiece(x: number, y: number) {

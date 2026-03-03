@@ -3,6 +3,7 @@ import { makeAutoObservable } from 'mobx';
 export interface Game {
   _id: string;
   name: string;
+  title: string;
   icon: string;
   desc: string;
   rooms: number;

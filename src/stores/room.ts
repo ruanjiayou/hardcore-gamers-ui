@@ -2,6 +2,8 @@ import { makeAutoObservable } from 'mobx';
 
 export default class RoomStore {
   currentRoomId: string | null = null;
+  currentMatchId: string = '';
+  matchState: any = null;
   roomInfo: any = null;
   members: any[] = [];
   players: any[] = [];
@@ -19,10 +21,14 @@ export default class RoomStore {
     this.members = roomInfo.members || [];
     this.players = this.members.filter(m => m.type === 'player');
   }
+  setCurrentMatchId(match_id: string) {
+    this.currentMatchId = match_id;
+  }
+  setMatchState(state: any) {
+    this.matchState = state;
+  }
   setRoomStatus(status: 'ready' | 'waiting' | 'playing') {
-    if (this.roomInfo) {
-      this.roomInfo.status = status;
-    }
+    this.roomInfo = { ...this.roomInfo, status };
   }
   setPlayerNetwork(user_id: string, online: boolean) {
     this.players.forEach(p => {

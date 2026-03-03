@@ -83,7 +83,7 @@ function AuthGuard({ children, isReady, setIsReady }: { children: React.ReactNod
       });
     });
   };
-  return <Loading isLoading={false}>{children}</Loading>;
+  return <Loading isLoading={isLoading}>{children}</Loading>;
 }
 export const App = observer(() => {
   const [isReady, setIsReady] = useState(false);
