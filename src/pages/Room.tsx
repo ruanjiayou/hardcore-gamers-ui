@@ -19,19 +19,13 @@ export const RoomPage = observer(() => {
     inited: false,
     showAgreeDraw: false,
     loading: false,
-    game_inited: false,
     match_id: '',
     setInit() {
       local.inited = true
     },
-    setGameInited(inited: boolean) {
-      this.game_inited = inited;
-    },
-    setV(key: 'match_id' | 'game_inited', v: any) {
+    setV(key: 'match_id', v: any) {
       if (key === 'match_id') {
         local.match_id = v;
-      } else if (key === 'game_inited') {
-        local.game_inited = v;
       }
     }
   }));
@@ -94,7 +88,6 @@ export const RoomPage = observer(() => {
     // 监听游戏开始
     socketListeners.onGameStarted((data) => {
       store.room.setRoomStatus('playing')
-      local.setGameInited(true)
       local.setV('match_id', data.match_id)
     });
 
@@ -160,19 +153,18 @@ export const RoomPage = observer(() => {
     <div className="room-page">
       <div style={{ display: 'flex', flexDirection: 'row', height: '100%', gap: 15 }}>
         <div style={{ flex: 1 }}>
-          <BabylonCanvas
+          {local.match_id && <BabylonCanvas
             onReady={(canvas: HTMLCanvasElement) => {
-              if (gameId && !local.inited) {
+              if (gameId && store.auth.user?._id && !local.inited) {
                 gameManager.load('ChinaChess', canvas).then(() => {
-                  console.log('ready?')
                   socketEvents.getMatchState({ room_id: store.room.currentRoomId, match_id: local.match_id }, (state) => {
                     gameManager.setState(state)
                   })
                 });
               }
-              local.inited = true
+              local.setInit()
             }}
-          />
+          />}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 15 }}>
           <div className="room-actions">

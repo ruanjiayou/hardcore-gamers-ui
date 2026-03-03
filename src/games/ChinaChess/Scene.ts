@@ -51,8 +51,8 @@ export default class ChinaChessScene {
 
 
     this.createBoard();
-    this.createPieces();
-    this.setupPicking();
+    // this.createPieces();
+    // this.setupPicking();
 
     this.engine.runRenderLoop(() => this.scene.render());
     window.addEventListener("resize", () => {
