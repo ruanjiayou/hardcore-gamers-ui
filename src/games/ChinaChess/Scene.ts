@@ -263,36 +263,41 @@ export default class ChinaChessScene {
 
   setupPicking() {
     this.scene.onPointerObservable.add(pointer => {
-      if (!this.logic.isMyTurn() || this.logic.isPendding) {
+      if (this.logic.isPendding) {
         return;
       }
       if (!pointer.pickInfo?.hit) return;
       const name = pointer.pickInfo.pickedMesh?.name;
       if (!name) return;
-
+      const p = {
+        x: Math.round(pointer.pickInfo.pickedPoint?._x || -1),
+        y: Math.round(pointer.pickInfo.pickedPoint?._z || -1),
+      }
+      const idx = [p.y, 8 - p.x]
       let moveto: { x: number, y: number } | null = null;
       if (name.startsWith("piece")) {
-        const [, x, y, color] = name.split("-");
+        const color = name.includes('red') ? 'red' : 'black'
+        if (!this.logic.isMyTurn(color)) {
+          return;
+        }
         if (!this.selected) {
           // 选中自己的棋子
-          this.selected = `${x}-${y}`;
+          this.selected = `${p.x}-${p.y}`;
           this.addPieceHightlight(this.selected)
           return;
         } else if (this.pieceMap.get(this.selected)?.name.includes(color)) {
           // 切换选中的棋子
           this.cancelPieceHighlight(this.selected)
-          this.selected = `${x}-${y}`;
+          this.selected = `${p.x}-${p.y}`;
           this.addPieceHightlight(this.selected)
-        } else if (color !== this.logic.currentTurn) {
-          moveto = { x: +x, y: +y };
+        } else if (color !== this.logic.curr_turn) {
+          moveto = { x: +p.x, y: +p.y };
         }
       }
       if (name.startsWith('board')) {
-        const x = Math.round(pointer.pickInfo.pickedPoint?._x || -1)
-        const y = Math.round(pointer.pickInfo.pickedPoint?._z || -1)
-        if (x <= 8 && x >= 0 && y >= 0 && y <= 9) {
+        if (p.x <= 8 && p.x >= 0 && p.y >= 0 && p.y <= 9) {
           if (this.selected) {
-            moveto = { x: +x, y: +y };
+            moveto = { x: +p.x, y: +p.y };
           }
         }
       }

@@ -1,6 +1,4 @@
 import EventEmitter from "eventemitter3"
-import ChessScene from "./Scene";
-import { Socket } from "socket.io-client";
 import SocketTransport from "../../core/GameTransport";
 
 export type PieceColor = "red" | "black";
@@ -15,7 +13,7 @@ export default class ChinaChessLogic extends EventEmitter {
 
   board: (Piece | null)[][];
   player: { _id: string; role: 'red' | 'black' } | null;
-  currentTurn: string;
+  curr_turn: string;
   match_id: string;
   isPendding = false;
 
@@ -23,17 +21,18 @@ export default class ChinaChessLogic extends EventEmitter {
     super()
     this.socket = socket;
     this.player = null;
-    this.currentTurn = '';
+    this.curr_turn = '';
     this.match_id = '';
     this.board = [];
     this.socket.socket.on('room:player-action', (data: { next_turn: string, from: { x: number, y: number }, to: { x: number, y: number } }) => {
-      this.currentTurn = data.next_turn;
+      this.curr_turn = data.next_turn;
+      const from = data.from;
+      const to = data.to
+      const piece = this.getPiece(from.x, from.y);
+      this.board[to.y][to.x] = piece;
+      this.board[from.y][from.x] = null;
 
-      const piece = this.getPiece(data.from.x, data.from.y);
-      this.board[data.to.y][data.to.x] = piece;
-      this.board[data.from.y][data.from.x] = null;
-
-      this.emit('move', data);
+      this.emit('move', { ...data, from, to });
     })
   }
 
@@ -49,13 +48,13 @@ export default class ChinaChessLogic extends EventEmitter {
         this.player = state.player;
       }
       this.match_id = state.match_id;
-      this.currentTurn = state.current_turn;
+      this.curr_turn = state.curr_turn;
       this.emit('state')
     }
   }
 
-  isMyTurn() {
-    return this.player?._id === this.currentTurn;
+  isMyTurn(role: 'red' | 'black') {
+    return this.player?._id === this.curr_turn && this.player.role === role;
   }
 
   getPiece(x: number, y: number) {
@@ -66,10 +65,10 @@ export default class ChinaChessLogic extends EventEmitter {
     const piece = this.getPiece(fx, fy);
     if (!piece) return false;
 
-    if (this.player?._id !== this.currentTurn) return false;
+    if (this.player?._id !== this.curr_turn) return false;
     if (!this.isLegalMove(piece, fx, fy, tx, ty)) return false;
     this.socket.socket.emit('room:player-action', this.match_id, {
-      curr_turn: this.currentTurn,
+      player_id: this.curr_turn,
       from: { x: fx, y: fy },
       to: { x: tx, y: ty },
     }, (success: boolean) => {
