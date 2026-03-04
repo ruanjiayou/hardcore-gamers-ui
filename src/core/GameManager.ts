@@ -1,32 +1,35 @@
+import { Socket } from "socket.io-client";
+import GameTransport from './GameTransport'
+
 export interface IGameModule {
-  init(canvas: HTMLCanvasElement): Promise<void>;
-  setState(state: any): void;
+  logic: any;
+  scene: {
+    init(canvas: HTMLCanvasElement): Promise<void>;
+  };
   destroy(): void;
 }
 
 class GameManager {
-  private currentGame: IGameModule | null = null;
+  inited: boolean = false;
+  game: IGameModule | null = null;
 
-  async load(gameId: string, canvas: HTMLCanvasElement) {
-    if (this.currentGame) {
+  async load(gameId: string, canvas: HTMLCanvasElement, socket: Socket) {
+    if (this.inited) {
       return;
     }
+    this.inited = true
     const Game = (await import(/* @vite-ignore */`../games/${gameId}/index`)).default;
-    this.currentGame = new Game();
+    this.game = new Game(canvas, new GameTransport(socket));
     // @ts-ignore
-    await this.currentGame.init(canvas);
-  }
-
-  setState(state: any) {
-    if (this.currentGame) {
-      this.currentGame.setState(state)
-    }
+    await this.game?.scene.init();
+    return this.game;
   }
 
   unload() {
-    if (this.currentGame) {
-      this.currentGame.destroy();
-      this.currentGame = null;
+    if (this.game) {
+      this.game.destroy();
+      this.game = null;
+      this.inited = false;
     }
   }
 }

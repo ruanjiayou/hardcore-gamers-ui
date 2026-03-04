@@ -1,4 +1,7 @@
-// ChessLogic.ts
+import EventEmitter from "eventemitter3"
+import ChessScene from "./Scene";
+import { Socket } from "socket.io-client";
+import SocketTransport from "../../core/GameTransport";
 
 export type PieceColor = "red" | "black";
 
@@ -7,23 +10,52 @@ export interface Piece {
   color: PieceColor;
 }
 
-export default class ChinaChessLogic {
-  board: (Piece | null)[][] = [];
-  player: { role: 'red' | 'black' } | null = null;
-  state: any;
-  currentTurn: PieceColor = "red";
+export default class ChinaChessLogic extends EventEmitter {
+  socket: SocketTransport;
 
-  constructor(state: any, player: any) {
-    if (state) {
-      this.setState(state);
-    }
+  board: (Piece | null)[][];
+  player: { _id: string; role: 'red' | 'black' } | null;
+  currentTurn: string;
+  match_id: string;
+  isPendding = false;
+
+  constructor(socket: SocketTransport) {
+    super()
+    this.socket = socket;
+    this.player = null;
+    this.currentTurn = '';
+    this.match_id = '';
+    this.board = [];
+    this.socket.socket.on('room:player-action', (data: { next_turn: string, from: { x: number, y: number }, to: { x: number, y: number } }) => {
+      this.currentTurn = data.next_turn;
+
+      const piece = this.getPiece(data.from.x, data.from.y);
+      this.board[data.to.y][data.to.x] = piece;
+      this.board[data.from.y][data.from.x] = null;
+
+      this.emit('move', data);
+    })
   }
 
+  setPlayer(player: any) {
+    if (player) {
+      this.player = player;
+    }
+  }
   setState(state: any) {
     if (state) {
       this.board = state.board;
-      this.player = state.player;
+      if (state.player) {
+        this.player = state.player;
+      }
+      this.match_id = state.match_id;
+      this.currentTurn = state.current_turn;
+      this.emit('state')
     }
+  }
+
+  isMyTurn() {
+    return this.player?._id === this.currentTurn;
   }
 
   getPiece(x: number, y: number) {
@@ -34,14 +66,15 @@ export default class ChinaChessLogic {
     const piece = this.getPiece(fx, fy);
     if (!piece) return false;
 
-    if (piece.color !== this.currentTurn) return false;
-
+    if (this.player?._id !== this.currentTurn) return false;
     if (!this.isLegalMove(piece, fx, fy, tx, ty)) return false;
-
-    this.board[ty][tx] = piece;
-    this.board[fy][fx] = null;
-
-    this.currentTurn = this.currentTurn === "red" ? "black" : "red";
+    this.socket.socket.emit('room:player-action', this.match_id, {
+      curr_turn: this.currentTurn,
+      from: { x: fx, y: fy },
+      to: { x: tx, y: ty },
+    }, (success: boolean) => {
+      this.isPendding = false;
+    })
     return true;
   }
 
@@ -142,4 +175,5 @@ export default class ChinaChessLogic {
 
     return false;
   }
+
 }

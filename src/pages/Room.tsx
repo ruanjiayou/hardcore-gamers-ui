@@ -1,8 +1,9 @@
 import React, { useEffect, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { observer, useLocalObservable, useObserver } from 'mobx-react-lite';
+import { toJS } from 'mobx'
 import store from '../stores'
-import { socketEvents, socketListeners } from '../services/socket';
+import { getSocket, socketEvents, socketListeners } from '../services/socket';
 import { PlayerList } from '../components/PlayerList';
 import { Chat } from '../components/Chat';
 import '../styles/index.css';
@@ -16,16 +17,15 @@ export const RoomPage = observer(() => {
   const { room_id, gameId } = useParams<{ room_id: string, gameId: string; }>();
   const navigate = useNavigate();
   const local = useLocalObservable(() => ({
-    inited: false,
+    game_inited: false,
     showAgreeDraw: false,
-    loading: false,
     match_id: '',
-    setInit() {
-      local.inited = true
-    },
-    setV(key: 'match_id', v: any) {
+    setV(key: 'match_id' | 'game_inited', v: any) {
       if (key === 'match_id') {
         local.match_id = v;
+      }
+      if (key === 'game_inited') {
+        local.game_inited = v;
       }
     }
   }));
@@ -36,6 +36,7 @@ export const RoomPage = observer(() => {
       if (!store.game.gamePlayer) {
         socketEvents.getGamePlayer(room.gameId, store.auth.user?._id as string, (player) => {
           store.game.setGamePlayer(player);
+          gameManager.game?.logic.setPlayer(toJS(store.game.gamePlayer))
         })
       }
       if (match_id) {
@@ -66,9 +67,9 @@ export const RoomPage = observer(() => {
       store.room.setPlayerNetwork(data.player_id, data.online)
     })
 
-    socketListeners.onPlayerActioin((data: any) => {
-      console.log(data, '他人回合')
-    })
+    // socketListeners.onPlayerActioin((data: any) => {
+    //   console.log(data, '他人回合')
+    // })
 
     socketListeners.onPlayerSurrender((data: { player_id: string, player_name: string }) => {
       notificationManager.show(`玩家 ${data.player_name} 认输`)
@@ -103,6 +104,13 @@ export const RoomPage = observer(() => {
     };
   }, [room_id, navigate]);
 
+  useEffect(() => {
+    if (local.match_id && local.game_inited && gameManager.game) {
+      socketEvents.getMatchState({ room_id: store.room.currentRoomId, match_id: local.match_id }, (state) => {
+        gameManager.game?.logic.setState(state)
+      })
+    }
+  }, [local.match_id, local.game_inited])
   const handleLeaveRoom = () => {
     if (!room_id) return;
     socketEvents.leaveRoom({ room_id, player_id: store.game.gamePlayer._id }, (success) => {
@@ -155,14 +163,13 @@ export const RoomPage = observer(() => {
         <div style={{ flex: 1 }}>
           {local.match_id && <BabylonCanvas
             onReady={(canvas: HTMLCanvasElement) => {
-              if (gameId && store.auth.user?._id && !local.inited) {
-                gameManager.load('ChinaChess', canvas).then(() => {
-                  socketEvents.getMatchState({ room_id: store.room.currentRoomId, match_id: local.match_id }, (state) => {
-                    gameManager.setState(state)
-                  })
+              const socket = getSocket()
+              if (gameId && socket) {
+                gameManager.load('ChinaChess', canvas, socket).then((game) => {
+                  game?.logic.setPlayer(toJS(store.game.gamePlayer))
+                  local.setV('game_inited', true)
                 });
               }
-              local.setInit()
             }}
           />}
         </div>

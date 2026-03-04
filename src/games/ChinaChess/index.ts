@@ -1,25 +1,17 @@
-import ChessScene from "./Scene";
+import { Socket } from "socket.io-client";
+import Logic from './Logic'
+import Scene from './Scene'
+export default class Xiangqi {
+  logic: Logic;
+  scene: Scene;
 
-export default class ChessGame {
-  private scene!: ChessScene;
-
-  constructor(state: any, player: any) {
-    this.scene = new ChessScene(state, player);
-  }
-
-  async init(canvas: HTMLCanvasElement) {
-    await this.scene.init(canvas);
-  }
-
-  setState(state: any) {
-    if (this.scene) {
-      this.scene.logic.setState(state)
-      this.scene.createPieces();
-      this.scene.setupPicking()
-    }
+  constructor(canvas: HTMLCanvasElement, socket: Socket) {
+    this.logic = new Logic(socket);
+    this.scene = new Scene(canvas, this.logic)
   }
 
   destroy() {
+    this.logic.removeAllListeners();
     if (this.scene) {
       this.scene.dispose();
     }

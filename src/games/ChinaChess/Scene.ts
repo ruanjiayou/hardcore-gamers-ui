@@ -6,27 +6,28 @@ import ChessLogic from "./Logic";
 export default class ChinaChessScene {
   engine!: BABYLON.Engine;
   scene!: BABYLON.Scene;
-  logic!: ChessLogic;
+  logic: ChessLogic;
   inited: boolean = false;
 
   board: BABYLON.GroundMesh | null = null;
+  highlightLayer: BABYLON.HighlightLayer | null = null;
+
   pieceMap = new Map<string, BABYLON.TransformNode>();
 
-  selected: { x: number; y: number } | null = null;
+  selected: string = '';
 
-  constructor(state: any, player: any) {
-    this.logic = new ChessLogic(state, player)
-  }
+  constructor(canvas: HTMLCanvasElement, logic: ChessLogic) {
+    this.logic = logic;
+    this.logic.on('state', () => {
+      this.createPieces();
+      this.setupPicking();
+    });
+    this.logic.on('move', (data: { from: { x: number, y: number }, to: { x: number, y: number } }) => {
+      this.moveMesh(`${data.from.x}-${data.from.y}`, data.to.x, data.to.y)
+    })
 
-  async init(canvas: HTMLCanvasElement) {
-    if (this.inited) {
-      return;
-    } else {
-      this.inited = true
-    }
     this.engine = new BABYLON.Engine(canvas, true);
     this.scene = new BABYLON.Scene(this.engine);
-
     const camera = new BABYLON.ArcRotateCamera(
       "camera",
       Math.PI / 2,
@@ -49,6 +50,8 @@ export default class ChinaChessScene {
     // 地面反射光调暗（关键！）
     light.groundColor = new BABYLON.Color3(0.05, 0.05, 0.05);
 
+    // 高亮层
+    this.highlightLayer = new BABYLON.HighlightLayer("highlightLayer", this.scene);
 
     this.createBoard();
     // this.createPieces();
@@ -60,17 +63,14 @@ export default class ChinaChessScene {
     });
   }
 
-  gridToWorld(col: number, row: number) {
-    // const { cellSize } = this.boardConfig;
-    const cellSize = 1;
-    const offsetX = 4 * cellSize;     // 8/2
-    const offsetZ = 4.5 * cellSize;   // 9/2
+  async init() {
+    if (this.inited) {
+      return;
+    } else {
+      this.inited = true
+    }
 
-    return new BABYLON.Vector3(
-      col * cellSize - offsetX,
-      0.1,
-      row * cellSize - offsetZ
-    );
+    await this.scene.whenReadyAsync()
   }
 
   createBoard() {
@@ -240,7 +240,7 @@ export default class ChinaChessScene {
         const piece = this.logic.getPiece(x, y);
         if (!piece) continue;
 
-        const mesh = this.createPiece(`piece-${x}-${y}`, x, y, piece.type, piece.color)
+        const mesh = this.createPiece(`piece-${x}-${y}-${piece.color}`, x, y, piece.type, piece.color)
 
         this.pieceMap.set(`${x}-${y}`, mesh);
       }
@@ -263,19 +263,28 @@ export default class ChinaChessScene {
 
   setupPicking() {
     this.scene.onPointerObservable.add(pointer => {
+      if (!this.logic.isMyTurn() || this.logic.isPendding) {
+        return;
+      }
       if (!pointer.pickInfo?.hit) return;
       const name = pointer.pickInfo.pickedMesh?.name;
       if (!name) return;
 
       let moveto: { x: number, y: number } | null = null;
       if (name.startsWith("piece")) {
-        const [, x, y] = name.split("-");
-        const selected = { x: +x, y: +y };
+        const [, x, y, color] = name.split("-");
         if (!this.selected) {
-          this.selected = selected;
+          // 选中自己的棋子
+          this.selected = `${x}-${y}`;
+          this.addPieceHightlight(this.selected)
           return;
-        } else {
-          moveto = this.selected
+        } else if (this.pieceMap.get(this.selected)?.name.includes(color)) {
+          // 切换选中的棋子
+          this.cancelPieceHighlight(this.selected)
+          this.selected = `${x}-${y}`;
+          this.addPieceHightlight(this.selected)
+        } else if (color !== this.logic.currentTurn) {
+          moveto = { x: +x, y: +y };
         }
       }
       if (name.startsWith('board')) {
@@ -287,39 +296,55 @@ export default class ChinaChessScene {
           }
         }
       }
-
       if (moveto && this.selected) {
-        const success = this.logic.move(this.selected.x, this.selected.y, moveto.x, moveto.y);
-        if (success) {
-          this.moveMesh(
-            this.selected.x,
-            this.selected.y,
-            moveto.x,
-            moveto.y,
-          );
-        }
-        this.selected = null;
+        const [x, y] = this.selected.split('-')
+        const success = this.logic.move(+x, +y, moveto.x, moveto.y);
       }
     }, BABYLON.PointerEventTypes.POINTERDOWN);
   }
 
-  moveMesh(fx: number, fy: number, tx: number, ty: number) {
-    const key = `${fx}-${fy}`;
-    const mesh = this.pieceMap.get(key);
-    if (!mesh) return;
+  cancelPieceHighlight(key: string) {
+    const piece = this.pieceMap.get(key);
+    if (piece) {
+      piece.getChildMeshes().forEach(mesh => {
+        this.highlightLayer?.removeMesh(mesh as BABYLON.Mesh);
+      })
+    }
+    this.selected = ''
+  }
+  addPieceHightlight(key: string) {
+    const piece = this.pieceMap.get(this.selected);
+    const color = BABYLON.Color3.Yellow();
+    if (piece && this.highlightLayer) {
+      piece.getChildMeshes().forEach(mesh => {
+        this.highlightLayer?.addMesh(mesh as BABYLON.Mesh, color)
+      })
+    }
+  }
 
-    this.pieceMap.delete(key);
-    this.pieceMap.set(`${tx}-${ty}`, mesh);
-
+  moveMesh(piece_key: string, tx: number, ty: number) {
+    const piece = this.pieceMap.get(piece_key);
+    if (!piece) return;
+    this.cancelPieceHighlight(piece_key);
     BABYLON.Animation.CreateAndStartAnimation(
       "move",
-      mesh,
+      piece,
       "position",
       60,
       30,
-      mesh.position.clone(),
+      piece.position.clone(),
       new BABYLON.Vector3(tx, 0, ty),
-      BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT
+      BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT,
+      undefined,
+      () => {
+        const deleted_piece = this.pieceMap.get(`${tx}-${ty}`);
+        this.pieceMap.delete(piece_key);
+        this.pieceMap.set(`${tx}-${ty}`, piece);
+        if (deleted_piece) {
+          deleted_piece.dispose()
+        }
+      },
+      this.scene
     );
   }
 

@@ -20,6 +20,7 @@ function AuthGuard({ children, isReady, setIsReady }: { children: React.ReactNod
       // 如果没有 userId，说明未登陆，显示登陆页
       if (!store.auth.user?._id) {
         setIsReady(true);
+        navigate('/login');
         return;
       }
       try {
