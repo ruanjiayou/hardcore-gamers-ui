@@ -59,8 +59,8 @@ export const RoomPage = observer(() => {
 
     // 监听玩家离开
     socketListeners.onPlayerLeaved((data) => {
-      store.room.removePlayer(data.player_id);
-      store.room.addMessage({ player_id: data.player_id, player_name: data.player_name, message: `玩家 ${data.player_name} 加入房间` })
+      store.room.removePlayer(data._id);
+      store.room.addMessage({ player_id: data._id, player_name: data.user_name, message: `玩家 ${data.user_name} 离开房间` })
     });
 
     // 监听网络状态
@@ -72,8 +72,12 @@ export const RoomPage = observer(() => {
     //   console.log(data, '他人回合')
     // })
 
-    socketListeners.onPlayerSurrender((data: { player_id: string, player_name: string }) => {
-      notificationManager.show(`玩家 ${data.player_name} 认输`)
+    socketListeners.onGameOver((data: { _id: string, user_name: string }) => {
+      notificationManager.show(`玩家 ${data.user_name} 胜利`)
+      store.game.setGamePlayer(null)
+      gameManager.unload()
+      local.setV('game_inited', false)
+      local.setV('match_id', '')
       init(room_id);
     })
 
@@ -160,8 +164,8 @@ export const RoomPage = observer(() => {
   }
   return (
     <div className="room-page">
-      <div style={{ display: 'flex', flexDirection: 'row', height: '100%', gap: 15 }}>
-        <div style={{ flex: 1 }}>
+      <div className='room-container'>
+        <div className='game-main'>
           {local.match_id && <BabylonCanvas
             onReady={(canvas: HTMLCanvasElement) => {
               const socket = getSocket()
@@ -173,7 +177,7 @@ export const RoomPage = observer(() => {
             }}
           />}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 15 }}>
+        <div className='game-info'>
           <div className="room-actions">
             {(store.room.roomInfo?.owner_id === store.auth.user?._id)
               ? (

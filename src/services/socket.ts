@@ -158,8 +158,8 @@ export const socketListeners = {
   onPlayerActioin: (callback: (data: any) => void) => {
     getSocket()?.on('room:player-action', callback);
   },
-  onPlayerSurrender: (callback: (data: any) => void) => {
-    getSocket()?.on('room:player-surrender', callback);
+  onGameOver: (callback: (data: any) => void) => {
+    getSocket()?.on('room:game-over', callback);
   },
   onPlayerLeaved: (callback: (data: any) => void) => {
     getSocket()?.on('room:player-leaved', callback);
