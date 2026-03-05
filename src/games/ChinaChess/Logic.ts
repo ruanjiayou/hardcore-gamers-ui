@@ -12,22 +12,22 @@ export default class ChinaChessLogic extends EventEmitter {
   socket: SocketTransport;
 
   board: (Piece | null)[][];
-  player: { _id: string; role: 'red' | 'black' } | null;
+  player: { _id: string; role: 'red' | 'black' };
   curr_turn: string;
   match_id: string;
   isPendding = false;
 
-  constructor(socket: SocketTransport) {
+  constructor(socket: SocketTransport, player: any) {
     super()
     this.socket = socket;
-    this.player = null;
+    this.player = player;
     this.curr_turn = '';
     this.match_id = '';
     this.board = [];
-    this.socket.socket.on('room:player-action', (data: { next_turn: string, from: { x: number, y: number }, to: { x: number, y: number } }) => {
+    this.socket.socket.on('room:player-action', (data: { next_turn: string, from: number[], to: number[] }) => {
       this.curr_turn = data.next_turn;
-      const from = data.from;
-      const to = data.to
+      const from = { x: data.from[1], y: data.from[0] };
+      const to = { x: data.to[1], y: data.to[0] };
       const piece = this.getPiece(from.x, from.y);
       this.board[to.y][to.x] = piece;
       this.board[from.y][from.x] = null;
@@ -61,6 +61,13 @@ export default class ChinaChessLogic extends EventEmitter {
     return this.board[y]?.[x] ?? null;
   }
 
+  getPieceByXY(x: number, y: number) {
+    return this.board[y]?.[x] ?? null;
+  }
+  getPieceByIDX(x: number, y: number) {
+    return this.board[x]?.[y] ?? null;
+  }
+
   move(fx: number, fy: number, tx: number, ty: number): boolean {
     const piece = this.getPiece(fx, fy);
     if (!piece) return false;
@@ -69,8 +76,8 @@ export default class ChinaChessLogic extends EventEmitter {
     if (!this.isLegalMove(piece, fx, fy, tx, ty)) return false;
     this.socket.socket.emit('room:player-action', this.match_id, {
       player_id: this.curr_turn,
-      from: { x: fx, y: fy },
-      to: { x: tx, y: ty },
+      from: [fy, fx],
+      to: [ty, tx],
     }, (success: boolean) => {
       this.isPendding = false;
     })

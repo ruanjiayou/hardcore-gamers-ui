@@ -36,10 +36,11 @@ export const RoomPage = observer(() => {
       if (!store.game.gamePlayer) {
         socketEvents.getGamePlayer(room.gameId, store.auth.user?._id as string, (player) => {
           store.game.setGamePlayer(player);
-          gameManager.game?.logic.setPlayer(toJS(store.game.gamePlayer))
+          if (match_id) {
+            local.setV('match_id', match_id)
+          }
         })
-      }
-      if (match_id) {
+      } else if (match_id) {
         local.setV('match_id', match_id)
       }
     });
@@ -165,8 +166,7 @@ export const RoomPage = observer(() => {
             onReady={(canvas: HTMLCanvasElement) => {
               const socket = getSocket()
               if (gameId && socket) {
-                gameManager.load('ChinaChess', canvas, socket).then((game) => {
-                  game?.logic.setPlayer(toJS(store.game.gamePlayer))
+                gameManager.load('ChinaChess', canvas, socket, toJS(store.game.gamePlayer)).then((game) => {
                   local.setV('game_inited', true)
                 });
               }

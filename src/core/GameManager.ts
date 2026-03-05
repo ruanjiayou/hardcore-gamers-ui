@@ -13,13 +13,13 @@ class GameManager {
   inited: boolean = false;
   game: IGameModule | null = null;
 
-  async load(gameId: string, canvas: HTMLCanvasElement, socket: Socket) {
+  async load(gameId: string, canvas: HTMLCanvasElement, socket: Socket, player: any) {
     if (this.inited) {
       return;
     }
     this.inited = true
     const Game = (await import(/* @vite-ignore */`../games/${gameId}/index`)).default;
-    this.game = new Game(canvas, new GameTransport(socket));
+    this.game = new Game(canvas, new GameTransport(socket), player);
     // @ts-ignore
     await this.game?.scene.init();
     return this.game;

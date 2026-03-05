@@ -5,8 +5,8 @@ export default class Xiangqi {
   logic: Logic;
   scene: Scene;
 
-  constructor(canvas: HTMLCanvasElement, socket: GameTransport) {
-    this.logic = new Logic(socket);
+  constructor(canvas: HTMLCanvasElement, socket: GameTransport, player: any) {
+    this.logic = new Logic(socket, player);
     this.scene = new Scene(canvas, this.logic)
   }
 

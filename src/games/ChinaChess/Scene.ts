@@ -23,14 +23,14 @@ export default class ChinaChessScene {
       this.setupPicking();
     });
     this.logic.on('move', (data: { from: { x: number, y: number }, to: { x: number, y: number } }) => {
-      this.moveMesh(`${data.from.x}-${data.from.y}`, data.to.x, data.to.y)
+      this.moveMesh(data.from, data.to)
     })
 
     this.engine = new BABYLON.Engine(canvas, true);
     this.scene = new BABYLON.Scene(this.engine);
     const camera = new BABYLON.ArcRotateCamera(
       "camera",
-      Math.PI / 2,
+      this.logic.player.role === 'red' ? Math.PI / 2 : -Math.PI / 2,
       1.2,
       15,
       new BABYLON.Vector3(4, 0, 4.5),
@@ -166,8 +166,8 @@ export default class ChinaChessScene {
     this.board = board;
   }
 
-  createPiece(id: string, x: number, y: number, type: string, color: "red" | "black") {
-
+  createPiece(x: number, y: number, type: string, color: "red" | "black") {
+    const id = `piece-${type}-${this.getChineseChar(type, color)}-${color}`
     const root = new BABYLON.TransformNode(id, this.scene);
 
     // 1️⃣ 主体圆柱
@@ -195,7 +195,7 @@ export default class ChinaChessScene {
     );
     top.parent = root;
     top.position.y = 0.31;
-    top.rotation.z = Math.PI;
+    top.rotation.z = this.logic.player.role === 'red' ? Math.PI : 0;
     top.rotation.x = Math.PI / 2; // 让圆盘朝上
 
     // 3️⃣ 文字贴图
@@ -240,9 +240,8 @@ export default class ChinaChessScene {
         const piece = this.logic.getPiece(x, y);
         if (!piece) continue;
 
-        const mesh = this.createPiece(`piece-${x}-${y}-${piece.color}`, x, y, piece.type, piece.color)
-
-        this.pieceMap.set(`${x}-${y}`, mesh);
+        const mesh = this.createPiece(x, y, piece.type, piece.color)
+        this.pieceMap.set(`${y}-${x}`, mesh);
       }
     }
   }
@@ -273,7 +272,7 @@ export default class ChinaChessScene {
         x: Math.round(pointer.pickInfo.pickedPoint?._x || -1),
         y: Math.round(pointer.pickInfo.pickedPoint?._z || -1),
       }
-      const idx = [p.y, 8 - p.x]
+      const idx = [p.y, p.x]
       let moveto: { x: number, y: number } | null = null;
       if (name.startsWith("piece")) {
         const color = name.includes('red') ? 'red' : 'black'
@@ -282,14 +281,14 @@ export default class ChinaChessScene {
         }
         if (!this.selected) {
           // 选中自己的棋子
-          this.selected = `${p.x}-${p.y}`;
-          this.addPieceHightlight(this.selected)
+          this.selected = idx.join('-');
+          this.addPieceHightlight()
           return;
         } else if (this.pieceMap.get(this.selected)?.name.includes(color)) {
           // 切换选中的棋子
-          this.cancelPieceHighlight(this.selected)
-          this.selected = `${p.x}-${p.y}`;
-          this.addPieceHightlight(this.selected)
+          this.cancelPieceHighlight()
+          this.selected = idx.join('-');
+          this.addPieceHightlight()
         } else if (color !== this.logic.curr_turn) {
           moveto = { x: +p.x, y: +p.y };
         }
@@ -297,19 +296,19 @@ export default class ChinaChessScene {
       if (name.startsWith('board')) {
         if (p.x <= 8 && p.x >= 0 && p.y >= 0 && p.y <= 9) {
           if (this.selected) {
-            moveto = { x: +p.x, y: +p.y };
+            moveto = { x: p.x, y: p.y };
           }
         }
       }
       if (moveto && this.selected) {
-        const [x, y] = this.selected.split('-')
+        const [y, x] = this.selected.split('-')
         const success = this.logic.move(+x, +y, moveto.x, moveto.y);
       }
     }, BABYLON.PointerEventTypes.POINTERDOWN);
   }
 
-  cancelPieceHighlight(key: string) {
-    const piece = this.pieceMap.get(key);
+  cancelPieceHighlight() {
+    const piece = this.pieceMap.get(this.selected);
     if (piece) {
       piece.getChildMeshes().forEach(mesh => {
         this.highlightLayer?.removeMesh(mesh as BABYLON.Mesh);
@@ -317,7 +316,7 @@ export default class ChinaChessScene {
     }
     this.selected = ''
   }
-  addPieceHightlight(key: string) {
+  addPieceHightlight() {
     const piece = this.pieceMap.get(this.selected);
     const color = BABYLON.Color3.Yellow();
     if (piece && this.highlightLayer) {
@@ -327,10 +326,12 @@ export default class ChinaChessScene {
     }
   }
 
-  moveMesh(piece_key: string, tx: number, ty: number) {
-    const piece = this.pieceMap.get(piece_key);
+  moveMesh(from: { x: number, y: number }, to: { x: number, y: number }) {
+    const src_key = `${from.y}-${from.x}`
+    const dst_key = `${to.y}-${to.x}`;
+    const piece = this.pieceMap.get(src_key);
     if (!piece) return;
-    this.cancelPieceHighlight(piece_key);
+    this.cancelPieceHighlight();
     BABYLON.Animation.CreateAndStartAnimation(
       "move",
       piece,
@@ -338,13 +339,13 @@ export default class ChinaChessScene {
       60,
       30,
       piece.position.clone(),
-      new BABYLON.Vector3(tx, 0, ty),
+      new BABYLON.Vector3(to.x, 0, to.y),
       BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT,
       undefined,
       () => {
-        const deleted_piece = this.pieceMap.get(`${tx}-${ty}`);
-        this.pieceMap.delete(piece_key);
-        this.pieceMap.set(`${tx}-${ty}`, piece);
+        const deleted_piece = this.pieceMap.get(dst_key);
+        this.pieceMap.delete(src_key);
+        this.pieceMap.set(dst_key, piece);
         if (deleted_piece) {
           deleted_piece.dispose()
         }
