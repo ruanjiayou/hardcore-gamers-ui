@@ -7,8 +7,8 @@ import '../styles/components.css';
 export const GameList = observer(() => {
   const navigate = useNavigate();
 
-  const handleGameClick = (gameId: string) => {
-    navigate(`/game/${gameId}`);
+  const handleGameClick = (slug: string) => {
+    navigate(`/game/${slug}`);
   };
 
   if (store.game.games.length === 0) {

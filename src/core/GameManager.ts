@@ -12,8 +12,8 @@ export interface IGameModule {
 class GameManager {
   game: IGameModule | null = null;
 
-  async load(gameId: string, canvas: HTMLCanvasElement, socket: Socket, player: any) {
-    const Game = (await import(/* @vite-ignore */`../games/${gameId}/index`)).default;
+  async load(game_slug: string, canvas: HTMLCanvasElement, socket: Socket, player: any) {
+    const Game = (await import(/* @vite-ignore */`../games/${game_slug}`)).default;
     this.game = new Game(canvas, new GameTransport(socket), player);
     // @ts-ignore
     await this.game?.scene.init();

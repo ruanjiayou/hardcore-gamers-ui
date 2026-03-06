@@ -91,11 +91,11 @@ export const socketEvents = {
   getLeaderboard: (callback: (ranks: any[]) => void) => {
     getSocket()?.emit('lobby:get-leaderboard', { limit: 10 }, callback);
   },
-  getRooms: (gameId: string, callback: (rooms: any[]) => void) => {
-    getSocket()?.emit('lobby:get-rooms', { gameId }, callback);
+  getRooms: (slug: string, callback: (rooms: any[]) => void) => {
+    getSocket()?.emit('lobby:get-rooms', { slug }, callback);
   },
-  getGamePlayer: (gameId: string, user_id: string, callback: (roomPlayer: any) => void) => {
-    getSocket()?.emit('lobby:get-game-player', { gameId, user_id }, callback);
+  getGamePlayer: (game_slug: string, user_id: string, callback: (roomPlayer: any) => void) => {
+    getSocket()?.emit('lobby:get-game-player', { game_slug, user_id }, callback);
   },
   createRoom: (data: any, callback: (success: boolean, room_id?: string, error?: string) => void) => {
     getSocket()?.emit('lobby:create-room', data, callback);

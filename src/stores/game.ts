@@ -12,7 +12,7 @@ export interface Game {
 
 export interface Room {
   _id: string;
-  gameId: string;
+  slug: string;
   name: string;
   ownerId: string;
   members: any[];

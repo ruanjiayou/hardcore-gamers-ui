@@ -14,7 +14,7 @@ import { runInAction } from 'mobx';
 import { notificationManager } from '../components/Notifications'
 
 export const RoomPage = observer(() => {
-  const { room_id, gameId } = useParams<{ room_id: string, gameId: string; }>();
+  const { room_id } = useParams<{ room_id: string; }>();
   const navigate = useNavigate();
   const local = useLocalObservable(() => ({
     showAgreeDraw: false,
@@ -35,7 +35,7 @@ export const RoomPage = observer(() => {
       local.setV('match_id', match_id)
       console.log('加载玩家信息后加载游戏')
       if (!store.game.gamePlayer) {
-        socketEvents.getGamePlayer(room.gameId, store.auth.user?._id as string, (player) => {
+        socketEvents.getGamePlayer(room.game_slug, store.auth.user?._id as string, (player) => {
           store.game.setGamePlayer(player);
         })
       }
@@ -160,8 +160,8 @@ export const RoomPage = observer(() => {
             ready={store.game.gamePlayer ? true : false}
             onReady={(canvas: HTMLCanvasElement) => {
               const socket = getSocket()
-              if (gameId && socket) {
-                gameManager.load('ChinaChess', canvas, socket, toJS(store.game.gamePlayer)).then((game) => {
+              if (store.room?.roomInfo?.game_slug && socket) {
+                gameManager.load('Xiangqi', canvas, socket, toJS(store.game.gamePlayer)).then((game) => {
                   console.log('game loaded')
                 });
               }

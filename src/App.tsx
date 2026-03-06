@@ -89,7 +89,7 @@ function AuthGuard({ children, isReady, setIsReady }: { children: React.ReactNod
 export const App = observer(() => {
   const [isReady, setIsReady] = useState(false);
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={process.env.PUBLIC_URL}>
       <div className="app">
         <Notifications />
 
@@ -98,18 +98,17 @@ export const App = observer(() => {
 
         {/* 路由 */}
         <Routes>
-          <Route path="/lobby" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
+          <Route path="/" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
             <LobbyPage />
           </AuthGuard>} />
-          <Route path="/game/:gameId" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
+          <Route path="/game/:slug" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
             <GamePage />
           </AuthGuard>} />
-          <Route path="/game/:gameId/room/:room_id" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
+          <Route path="/room/:room_id" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
             <RoomPage />
           </AuthGuard>} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<Navigate to="/lobby" />} />
-          <Route path="*" element={<Navigate to="/lobby" />} />
+          <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </div>
     </BrowserRouter>

@@ -9,7 +9,7 @@ import '../styles/game.css';
 import '../styles/room.css';
 
 export const GamePage = observer(() => {
-  const { gameId } = useParams<{ gameId: string }>();
+  const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const local = useLocalObservable(() => ({
     type: '', // create/invite
@@ -38,14 +38,14 @@ export const GamePage = observer(() => {
 
     socketEvents.createRoom(
       {
-        gameId,
+        slug,
         name: local.name,
         isPrivate: local.isPrivate,
         password: local.isPrivate ? local.password : undefined
       },
       (success, room_id, error) => {
         if (success && room_id) {
-          navigate(`/game/${gameId}/room/${room_id}`);
+          navigate(`/game/${slug}/room/${room_id}`);
           local.setV({ show: false });
         } else {
           alert(error || '创建房间失败');
@@ -62,14 +62,14 @@ export const GamePage = observer(() => {
 
     socketEvents.joinInviteRoom(
       {
-        gameId,
+        slug,
         name: local.name,
         isPrivate: local.isPrivate,
         password: local.isPrivate ? local.password : undefined
       },
       (success, room_id, error) => {
         if (success && room_id) {
-          navigate(`/game/${gameId}/room/${room_id}`);
+          navigate(`/room/${room_id}`);
           local.setV({ show: false });
         } else {
           alert(error || '加入房间失败');
@@ -79,12 +79,10 @@ export const GamePage = observer(() => {
   };
 
   useEffect(() => {
-    if (!gameId) return;
+    if (!slug) return;
 
-    store.game.selectGame(gameId);
-
-    if (gameId !== store.game?.gamePlayer?.game_id) {
-      socketEvents.getGamePlayer(gameId, store.auth.user?._id as string, (gamePlayer) => {
+    if (slug !== store.game.gamePlayer?.slug) {
+      socketEvents.getGamePlayer(slug, store.auth.user?._id as string, (gamePlayer) => {
         store.game.setGamePlayer(gamePlayer);
         // 已在游戏房间中
         if (gamePlayer.room_id) {
@@ -95,7 +93,7 @@ export const GamePage = observer(() => {
 
     // 监听房间创建
     socketListeners.onRoomCreated((room) => {
-      if (room.gameId === gameId) {
+      if (room.slug === slug) {
         store.game.addRoom(room);
       }
     });
@@ -104,7 +102,7 @@ export const GamePage = observer(() => {
     socketListeners.onRoomDestroyed((data) => {
       store.game.removeRoom(data.room_id);
     });
-  }, [gameId, navigate]);
+  }, [slug, navigate]);
 
   const joinRoom = (room_id: string, type: string, password?: string) => {
     socketEvents.joinRoom({ room_id, type, password }, (success, player) => {
@@ -112,7 +110,7 @@ export const GamePage = observer(() => {
         if (player) {
           store.game.setGamePlayer(player)
         }
-        navigate(`/game/${gameId}/room/${room_id}`);
+        navigate(`/room/${room_id}`);
       } else {
         alert('加入房间失败');
       }
@@ -126,11 +124,11 @@ export const GamePage = observer(() => {
           <div className='back-arrow-circle' onClick={() => {
             navigate(-1);
           }}><div className="back-arrow"></div></div>
-          🎮 {store.game.selectedGame?.name}
+          🎮 {store.room.roomInfo?.name}
           <div className='room-card'>
             {store.auth.isLoggedIn && (
               <Fragment>
-                <button onClick={() => { }}>快速匹配</button>
+                <button onClick={() => { }}>匹配</button>
                 <button onClick={() => local.setV({ type: 'invite', show: true, isPrivate: false, password: '' })}>加入房间</button>
                 <button onClick={() => local.setV({ type: 'create', show: true, isPrivate: false, password: '' })}>创建房间</button>
               </Fragment>
@@ -191,7 +189,7 @@ export const GamePage = observer(() => {
             </div>
           )}
         </h2>
-        <RoomList gameId={gameId!} />
+        <RoomList game_slug={slug!} />
       </div>
     </div>
   );

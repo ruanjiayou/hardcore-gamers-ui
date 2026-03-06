@@ -1,10 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const PUBLIC_URL = '/lobby';
+
 export default defineConfig({
+  base: PUBLIC_URL,
+  define: {
+    'process.env.PUBLIC_URL': JSON.stringify(PUBLIC_URL)
+  },
   plugins: [react()],
   build: {
-    outDir: 'dist',
+    outDir: 'lobby',
     sourcemap: false
   },
   server: {
