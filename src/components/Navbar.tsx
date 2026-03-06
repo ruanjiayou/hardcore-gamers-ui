@@ -39,7 +39,7 @@ export const Navbar = observer(() => {
           {/* 连接状态 */}
           <div className="connection-status">
             <span className="status-dot"></span>
-            <span className="status-text">已连接</span>
+            {/* <span className="status-text">已连接</span> */}
           </div>
 
           {/* 用户下拉菜单 */}

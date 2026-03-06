@@ -25,7 +25,6 @@ export interface Room {
 
 export default class GameStore {
   games: Game[] = [];
-  selectedGameId: string | null = null;
   rooms: Room[] = [];
   leaderboard: any[] = [];
   stats: any = null;
@@ -37,10 +36,6 @@ export default class GameStore {
 
   setGames(games: Game[]) {
     this.games = games;
-  }
-
-  selectGame(gameId: string) {
-    this.selectedGameId = gameId;
   }
 
   setGamePlayer(gamePlayer: any) {
@@ -68,10 +63,6 @@ export default class GameStore {
 
   setStats(stats: any) {
     this.stats = stats;
-  }
-
-  get selectedGame() {
-    return this.games.find(g => g._id === this.selectedGameId);
   }
 
 }

@@ -10,14 +10,9 @@ export interface IGameModule {
 }
 
 class GameManager {
-  inited: boolean = false;
   game: IGameModule | null = null;
 
   async load(gameId: string, canvas: HTMLCanvasElement, socket: Socket, player: any) {
-    if (this.inited) {
-      return;
-    }
-    this.inited = true
     const Game = (await import(/* @vite-ignore */`../games/${gameId}/index`)).default;
     this.game = new Game(canvas, new GameTransport(socket), player);
     // @ts-ignore
@@ -29,7 +24,6 @@ class GameManager {
     if (this.game) {
       this.game.destroy();
       this.game = null;
-      this.inited = false;
     }
   }
 }

@@ -8,7 +8,6 @@ export const GameList = observer(() => {
   const navigate = useNavigate();
 
   const handleGameClick = (gameId: string) => {
-    store.game.selectGame(gameId);
     navigate(`/game/${gameId}`);
   };
 
@@ -31,7 +30,7 @@ export const GameList = observer(() => {
         {store.game.games.map(game => (
           <div
             key={game._id}
-            className={`game-card ${store.game.selectedGameId === game._id ? 'active' : ''}`}
+            className={`game-card`}
             onClick={() => handleGameClick(game._id)}
           >
             <div className="game-icon">{game.icon}</div>

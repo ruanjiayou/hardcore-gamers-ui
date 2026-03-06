@@ -17,15 +17,14 @@ export const RoomPage = observer(() => {
   const { room_id, gameId } = useParams<{ room_id: string, gameId: string; }>();
   const navigate = useNavigate();
   const local = useLocalObservable(() => ({
-    game_inited: false,
     showAgreeDraw: false,
     match_id: '',
-    setV(key: 'match_id' | 'game_inited', v: any) {
+    setV(key: 'match_id' | 'showAgreeDraw', v: any) {
       if (key === 'match_id') {
         local.match_id = v;
       }
-      if (key === 'game_inited') {
-        local.game_inited = v;
+      if (key === 'showAgreeDraw') {
+        local.showAgreeDraw = v;
       }
     }
   }));
@@ -33,15 +32,12 @@ export const RoomPage = observer(() => {
     socketEvents.getRoomDetail(room_id, (data) => {
       const { room, match_id } = data;
       store.room.setCurrentRoom(room)
+      local.setV('match_id', match_id)
+      console.log('加载玩家信息后加载游戏')
       if (!store.game.gamePlayer) {
         socketEvents.getGamePlayer(room.gameId, store.auth.user?._id as string, (player) => {
           store.game.setGamePlayer(player);
-          if (match_id) {
-            local.setV('match_id', match_id)
-          }
         })
-      } else if (match_id) {
-        local.setV('match_id', match_id)
       }
     });
   }
@@ -74,9 +70,6 @@ export const RoomPage = observer(() => {
 
     socketListeners.onGameOver((data: { _id: string, user_name: string }) => {
       notificationManager.show(`玩家 ${data.user_name} 胜利`)
-      store.game.setGamePlayer(null)
-      gameManager.unload()
-      local.setV('game_inited', false)
       local.setV('match_id', '')
       init(room_id);
     })
@@ -110,12 +103,13 @@ export const RoomPage = observer(() => {
   }, [room_id, navigate]);
 
   useEffect(() => {
-    if (local.match_id && local.game_inited && gameManager.game) {
+    if (local.match_id && gameManager.game) {
+      console.log('加载对局数据')
       socketEvents.getMatchState({ room_id: store.room.currentRoomId, match_id: local.match_id }, (state) => {
         gameManager.game?.logic.setState(state)
       })
     }
-  }, [local.match_id, local.game_inited])
+  }, [local.match_id, gameManager.game])
   const handleLeaveRoom = () => {
     if (!room_id) return;
     socketEvents.leaveRoom({ room_id, player_id: store.game.gamePlayer._id }, (success) => {
@@ -135,10 +129,10 @@ export const RoomPage = observer(() => {
     });
   };
 
-  const handlePlayerRead = (ready: boolean) => {
+  const handlePlayerReady = (ready: boolean) => {
     socketEvents.playerReadyChange({ room_id: room_id as string, player_id: store.game.gamePlayer._id, ready }, (success) => {
       if (success) {
-        store.game.setGamePlayer({ ...store.game.gamePlayer, state: 'ready' })
+        store.game.setGamePlayer({ ...store.game.gamePlayer, state: ready ? 'ready' : 'waiting' })
       }
     })
   }
@@ -157,25 +151,22 @@ export const RoomPage = observer(() => {
     socketEvents.agreeDraw(room_id, agress);
 
   }
-  const handlePlayerAction = (data: any) => {
-    socketEvents.recordAction(room_id as string, data, success => {
-      console.log('己方回合', success)
-    })
-  }
+
   return (
     <div className="room-page">
       <div className='room-container'>
         <div className='game-main'>
-          {local.match_id && <BabylonCanvas
+          <BabylonCanvas
+            ready={store.game.gamePlayer ? true : false}
             onReady={(canvas: HTMLCanvasElement) => {
               const socket = getSocket()
               if (gameId && socket) {
                 gameManager.load('ChinaChess', canvas, socket, toJS(store.game.gamePlayer)).then((game) => {
-                  local.setV('game_inited', true)
+                  console.log('game loaded')
                 });
               }
             }}
-          />}
+          />
         </div>
         <div className='game-info'>
           <div className="room-actions">
@@ -187,8 +178,8 @@ export const RoomPage = observer(() => {
                 </Fragment>
               ) : (
                 <Fragment>
-                  {store.room.roomInfo?.status !== 'playing' && store.game.gamePlayer?.state === 'idle' && <button onClick={() => handlePlayerRead(true)}>准备</button>}
-                  {store.room.roomInfo?.status !== 'playing' && store.game.gamePlayer?.state === 'ready' && <button onClick={() => handlePlayerRead(false)}>取消</button>}
+                  {store.room.roomInfo?.status !== 'playing' && store.game.gamePlayer?.state === 'idle' && <button onClick={() => handlePlayerReady(true)}>准备</button>}
+                  {store.room.roomInfo?.status !== 'playing' && store.game.gamePlayer?.state === 'ready' && <button onClick={() => handlePlayerReady(false)}>取消</button>}
                 </Fragment>
               )}
             {store.room.roomInfo?.status === 'waiting' && <button onClick={handleLeaveRoom} className="danger">离开房间</button>}
