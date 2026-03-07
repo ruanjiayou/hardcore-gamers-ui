@@ -82,7 +82,7 @@ export const GamePage = observer(() => {
     if (!slug) return;
 
     if (slug !== store.game.gamePlayer?.slug) {
-      socketEvents.getGamePlayer(slug, store.auth.user?._id as string, (gamePlayer) => {
+      socketEvents.getGamePlayer(slug, (gamePlayer) => {
         store.game.setGamePlayer(gamePlayer);
         // 已在游戏房间中
         if (gamePlayer.room_id) {

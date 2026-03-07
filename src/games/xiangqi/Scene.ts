@@ -19,35 +19,42 @@ export default class ChinaChessScene {
   constructor(canvas: HTMLCanvasElement, logic: ChessLogic) {
     this.logic = logic;
     this.logic.on('state', () => {
+      this.clear()
       this.createPieces();
-      this.setupPicking();
     });
     this.logic.on('move', (data: { from: { x: number, y: number }, to: { x: number, y: number } }) => {
       this.moveMesh(data.from, data.to)
     })
 
-    this.engine = new BABYLON.Engine(canvas, true);
+    this.engine = new BABYLON.Engine(canvas, true, {
+      antialias: true,
+      preserveDrawingBuffer: true,
+      stencil: true
+    });
+
     this.scene = new BABYLON.Scene(this.engine);
     const camera = new BABYLON.ArcRotateCamera(
       "camera",
       this.logic.player.role === 'red' ? Math.PI / 2 : -Math.PI / 2,
-      1.2,
+      Math.PI / 6,
       15,
       new BABYLON.Vector3(4, 0, 4.5),
       this.scene
     );
     camera.attachControl(canvas, true);
+    const fxaa = new BABYLON.FxaaPostProcess("fxaa", 1.0, null, 1, this.engine);
+    camera.attachPostProcess(fxaa);
 
     const light = new BABYLON.HemisphericLight("light",
-      new BABYLON.Vector3(0, 1, 0),
+      new BABYLON.Vector3(1, 1, 1),
       this.scene);
-    // 调低强度
-    light.intensity = 0.5;   // 推荐 0.4 ~ 0.7
+    // // 调低强度
+    // light.intensity = 0.5;   // 推荐 0.4 ~ 0.7
 
-    // 上方光颜色（别太白）
-    light.diffuse = new BABYLON.Color3(0.5, 0.5, 0.5);
+    // // 上方光颜色（别太白）
+    // light.diffuse = new BABYLON.Color3(0.5, 0.5, 0.5);
 
-    // 地面反射光调暗（关键！）
+    // // 地面反射光调暗（关键！）
     light.groundColor = new BABYLON.Color3(0.05, 0.05, 0.05);
 
     // 高亮层
@@ -55,7 +62,7 @@ export default class ChinaChessScene {
 
     this.createBoard();
     // this.createPieces();
-    // this.setupPicking();
+    this.setupPicking();
 
     this.engine.runRenderLoop(() => this.scene.render());
     window.addEventListener("resize", () => {
@@ -94,16 +101,23 @@ export default class ChinaChessScene {
       "boardTexture",
       texSize,
       this.scene,
-      false
+      true
     );
+    // 纹理采样优化
+    dt.updateSamplingMode(BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+    dt.anisotropicFilteringLevel = 16; // 各向异性过滤
 
-    const ctx = dt.getContext();
+    const ctx = dt.getContext() as CanvasRenderingContext2D;
 
     ctx.fillStyle = "#E8CFA5";
     ctx.fillRect(0, 0, texSize, texSize);
 
     ctx.strokeStyle = "#222";
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 5;
+
+    // 3. 开启抗锯齿
+    ctx.imageSmoothingEnabled = true;
+    ctx.translate(0.5, 0.5); // 避免线条模糊
 
     // 像素比例
     const pxPerUnitX = texSize / width;
@@ -113,10 +127,24 @@ export default class ChinaChessScene {
     const halfLineWidth = ((cols - 1) * cellSize) / 2;
     const halfLineHeight = ((rows - 1) * cellSize) / 2;
 
+    ctx.beginPath();
+    ctx.moveTo(pxPerUnitX * 4, pxPerUnitY * 3)
+    ctx.lineTo(pxPerUnitX * 6, pxPerUnitY * 1);
+    
+    ctx.moveTo(pxPerUnitX * 4, pxPerUnitY * 1)
+    ctx.lineTo(pxPerUnitX * 6, pxPerUnitY * 3);
+
+    
+    ctx.moveTo(pxPerUnitX * 4, pxPerUnitY * 8)
+    ctx.lineTo(pxPerUnitX * 6, pxPerUnitY * 10);
+    
+    ctx.moveTo(pxPerUnitX * 6, pxPerUnitY * 8)
+    ctx.lineTo(pxPerUnitX * 4, pxPerUnitY * 10);
+    ctx.stroke()
+
     for (let row = 0; row < rows; row++) {
       const worldZ = row * cellSize - halfLineHeight;
       const y = texSize / 2 - worldZ * pxPerUnitY;
-
       ctx.beginPath();
       ctx.moveTo(
         texSize / 2 - halfLineWidth * pxPerUnitX,
@@ -164,6 +192,60 @@ export default class ChinaChessScene {
     board.position.y = -0.01
 
     this.board = board;
+  }
+
+  // 独立的文字纹理创建方法
+  createTextTexture(id: string, type: string, color: "red" | "black") {
+    // 使用更高分辨率
+    const size = 1024; // 增加分辨率
+    const texture = new BABYLON.DynamicTexture(
+      id + "-text",
+      { width: size, height: size },
+      this.scene,
+      true // 生成mipmap
+    );
+
+    // 纹理采样优化
+    texture.updateSamplingMode(BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+    texture.anisotropicFilteringLevel = 16;
+
+    // 获取Canvas上下文
+    const ctx = texture.getContext() as CanvasRenderingContext2D;
+
+    // 清除背景（透明）
+    ctx.clearRect(0, 0, size, size);
+
+    // 设置文字样式
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    // 文字描边和填充，使边缘更清晰
+    const text = this.getChineseChar(type, color);
+    const fontSize = 500; // 增大字号
+    ctx.font = `bold ${fontSize}px "Microsoft YaHei", "SimHei", "Arial Unicode MS", sans-serif`;
+
+    // 先画描边
+    ctx.strokeStyle = color === "red" ? "#8B0000" : "#333333";
+    ctx.lineWidth = 20;
+    ctx.strokeText(text, size / 2, size / 2);
+
+    // 再画填充
+    ctx.fillStyle = color;
+    ctx.fillText(text, size / 2, size / 2);
+
+    // 可选：添加轻微的阴影增加立体感
+    ctx.shadowColor = "rgba(0,0,0,0.3)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetX = 5;
+    ctx.shadowOffsetY = 5;
+    ctx.fillText(text, size / 2, size / 2);
+
+    // 重置阴影
+    ctx.shadowColor = "transparent";
+
+    texture.update();
+
+    return texture;
   }
 
   createPiece(x: number, y: number, type: string, color: "red" | "black") {
@@ -224,6 +306,8 @@ export default class ChinaChessScene {
     textMat.backFaceCulling = false;
     textMat.diffuseTexture = texture;
     textMat.specularColor = BABYLON.Color3.Black();
+    // 设置材质透明度
+    textMat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
 
     top.material = textMat;
 
@@ -260,6 +344,21 @@ export default class ChinaChessScene {
     return map[type][color];
   }
 
+  clear() {
+    console.log('dispose')
+    this.pieceMap.forEach((mesh, key) => {
+      if (mesh) {
+        mesh.dispose();
+      }
+    });
+
+    // 清空 Map
+    this.pieceMap.clear();
+
+    // 可选：强制触发场景更新
+    this.scene.render();
+  }
+
   setupPicking() {
     this.scene.onPointerObservable.add(pointer => {
       if (this.logic.isPendding) {
@@ -268,38 +367,44 @@ export default class ChinaChessScene {
       if (!pointer.pickInfo?.hit) return;
       const name = pointer.pickInfo.pickedMesh?.name;
       if (!name) return;
+      const color = name.includes('red') ? 'red' : 'black'
+      if (!this.logic.isMyTurn()) {
+        return;
+      }
+
       const p = {
         x: Math.round(pointer.pickInfo.pickedPoint?._x || -1),
         y: Math.round(pointer.pickInfo.pickedPoint?._z || -1),
       }
       const idx = [p.y, p.x]
       let moveto: { x: number, y: number } | null = null;
-      if (name.startsWith("piece")) {
-        const color = name.includes('red') ? 'red' : 'black'
-        if (!this.logic.isMyTurn(color)) {
-          return;
-        }
-        if (!this.selected) {
-          // 选中自己的棋子
-          this.selected = idx.join('-');
-          this.addPieceHightlight()
-          return;
-        } else if (this.pieceMap.get(this.selected)?.name.includes(color)) {
-          // 切换选中的棋子
-          this.cancelPieceHighlight()
-          this.selected = idx.join('-');
-          this.addPieceHightlight()
-        } else if (color !== this.logic.curr_turn) {
-          moveto = { x: +p.x, y: +p.y };
-        }
-      }
-      if (name.startsWith('board')) {
-        if (p.x <= 8 && p.x >= 0 && p.y >= 0 && p.y <= 9) {
-          if (this.selected) {
-            moveto = { x: p.x, y: p.y };
+      if (!this.selected) {
+        // 选中自己的棋子
+        this.selected = idx.join('-');
+        this.addPieceHightlight()
+        return;
+      } else {
+        if (name.startsWith('piece')) {
+          if (color === this.logic.player.role) {
+            // 切换选中的棋子
+            this.cancelPieceHighlight()
+            this.selected = idx.join('-');
+            this.addPieceHightlight()
+            return;
+          } else {
+            moveto = { x: +p.x, y: +p.y };
+          }
+        } else if (name.startsWith('board')) {
+          //棋盘上移动
+          if (p.x <= 8 && p.x >= 0 && p.y >= 0 && p.y <= 9) {
+            if (this.selected) {
+              moveto = { x: p.x, y: p.y };
+            }
           }
         }
+
       }
+      
       if (moveto && this.selected) {
         const [y, x] = this.selected.split('-')
         const success = this.logic.move(+x, +y, moveto.x, moveto.y);

@@ -31,7 +31,7 @@ export const GameList = observer(() => {
           <div
             key={game._id}
             className={`game-card`}
-            onClick={() => handleGameClick(game._id)}
+            onClick={() => handleGameClick(game.slug)}
           >
             <div className="game-icon">{game.icon}</div>
             <div className="game-content">

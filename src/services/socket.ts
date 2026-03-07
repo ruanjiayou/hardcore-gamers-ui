@@ -94,8 +94,8 @@ export const socketEvents = {
   getRooms: (slug: string, callback: (rooms: any[]) => void) => {
     getSocket()?.emit('lobby:get-rooms', { slug }, callback);
   },
-  getGamePlayer: (game_slug: string, user_id: string, callback: (roomPlayer: any) => void) => {
-    getSocket()?.emit('lobby:get-game-player', { game_slug, user_id }, callback);
+  getGamePlayer: (name: string, callback: (roomPlayer: any) => void) => {
+    getSocket()?.emit('lobby:get-game-player', name, callback);
   },
   createRoom: (data: any, callback: (success: boolean, room_id?: string, error?: string) => void) => {
     getSocket()?.emit('lobby:create-room', data, callback);
@@ -122,7 +122,7 @@ export const socketEvents = {
   startGame: (data: { room_id: string, player_id: string }, callback?: (match_id: string, error?: string) => void) => {
     getSocket()?.emit('room:start-game', data, callback);
   },
-  getMatchState: (data: { room_id: string, match_id?: string }, callback: (state: any) => void) => {
+  getMatchState: (data: { game_id: string, match_id?: string }, callback: (state: any) => void) => {
     getSocket()?.emit('room:get-match-state', data, callback);
   },
   surrender: (data: { room_id: string, match_id?: string, player_id: string }, callback: (success: boolean) => void) => {
@@ -137,9 +137,6 @@ export const socketEvents = {
   playerReadyChange: (data: { room_id: string, player_id: string, ready: boolean }, callback: (success: boolean) => void) => {
     getSocket()?.emit('room:player-ready', data, callback);
   },
-  recordAction: (room_id: string, data: any, callback: (success: boolean) => void) => {
-    getSocket()?.emit('room:player-action', data, callback);
-  }
 };
 
 // 事件订阅
@@ -173,7 +170,7 @@ export const socketListeners = {
     getSocket()?.on('room:message', callback);
   },
 
-  onGameStarted: (callback: (data: { room_id: string, match_id: string, timestamp: number }) => void) => {
+  onGameStarted: (callback: (data: { room_id: string, match_id: string, curr_turn: string, timestamp: number }) => void) => {
     getSocket()?.on('room:game-started', callback);
   },
   onSeekDraw: (callback: (data: any) => void) => {

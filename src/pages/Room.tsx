@@ -19,26 +19,23 @@ export const RoomPage = observer(() => {
   const local = useLocalObservable(() => ({
     showAgreeDraw: false,
     match_id: '',
-    setV(key: 'match_id' | 'showAgreeDraw', v: any) {
-      if (key === 'match_id') {
-        local.match_id = v;
-      }
+    setV(key: 'showAgreeDraw' | 'match_id', v: any) {
       if (key === 'showAgreeDraw') {
         local.showAgreeDraw = v;
+      } else if (key === 'match_id') {
+        local.match_id = v;
       }
     }
   }));
   const init = (room_id: string) => {
     socketEvents.getRoomDetail(room_id, (data) => {
-      const { room, match_id } = data;
+      const { room } = data;
       store.room.setCurrentRoom(room)
-      local.setV('match_id', match_id)
+      local.setV('match_id', data.match_id)
       console.log('加载玩家信息后加载游戏')
-      if (!store.game.gamePlayer) {
-        socketEvents.getGamePlayer(room.game_slug, store.auth.user?._id as string, (player) => {
-          store.game.setGamePlayer(player);
-        })
-      }
+      socketEvents.getGamePlayer(room.game_id, (player) => {
+        store.game.setGamePlayer(player);
+      })
     });
   }
   useEffect(() => {
@@ -70,8 +67,8 @@ export const RoomPage = observer(() => {
 
     socketListeners.onGameOver((data: { _id: string, user_name: string }) => {
       notificationManager.show(`玩家 ${data.user_name} 胜利`)
-      local.setV('match_id', '')
-      init(room_id);
+      store.room.setRoomStatus('waiting')
+      loadState({ game_id: store.room.roomInfo.game_id, match_id: '', })
     })
 
     socketListeners.onRoomReady((data: any) => {
@@ -88,6 +85,7 @@ export const RoomPage = observer(() => {
     socketListeners.onGameStarted((data) => {
       store.room.setRoomStatus('playing')
       local.setV('match_id', data.match_id)
+      loadState({ match_id: data.match_id, game_id: store.room.roomInfo?.game_id });
     });
 
     socketListeners.onSeekDraw((data: any) => {
@@ -102,14 +100,12 @@ export const RoomPage = observer(() => {
     };
   }, [room_id, navigate]);
 
-  useEffect(() => {
-    if (local.match_id && gameManager.game) {
-      console.log('加载对局数据')
-      socketEvents.getMatchState({ room_id: store.room.currentRoomId, match_id: local.match_id }, (state) => {
-        gameManager.game?.logic.setState(state)
-      })
-    }
-  }, [local.match_id, gameManager.game])
+  const loadState = (data: { match_id: string, game_id: string }) => {
+    console.log(data, '加载对局数据')
+    socketEvents.getMatchState(data, (state) => {
+      gameManager.game?.logic.setState(state)
+    })
+  }
   const handleLeaveRoom = () => {
     if (!room_id) return;
     socketEvents.leaveRoom({ room_id, player_id: store.game.gamePlayer._id }, (success) => {
@@ -138,7 +134,7 @@ export const RoomPage = observer(() => {
   }
   const handleSurrender = () => {
     if (!room_id) return;
-    socketEvents.surrender({ room_id: store.room.currentRoomId, player_id: store.game.gamePlayer._id }, (success) => {
+    socketEvents.surrender({ room_id: store.room.currentRoomId, match_id: local.match_id, player_id: store.game.gamePlayer._id }, (success) => {
       console.log(success, '认输')
     });
   }
@@ -157,12 +153,13 @@ export const RoomPage = observer(() => {
       <div className='room-container'>
         <div className='game-main'>
           <BabylonCanvas
-            ready={store.game.gamePlayer ? true : false}
+            ready={store.game.gamePlayer && store.room.roomInfo ? true : false}
             onReady={(canvas: HTMLCanvasElement) => {
               const socket = getSocket()
-              if (store.room?.roomInfo?.game_slug && socket) {
-                gameManager.load('Xiangqi', canvas, socket, toJS(store.game.gamePlayer)).then((game) => {
+              if (socket) {
+                gameManager.load('xiangqi', canvas, socket, toJS(store.game.gamePlayer)).then(() => {
                   console.log('game loaded')
+                  loadState({ game_id: store.room.roomInfo.game_id, match_id: local.match_id, })
                 });
               }
             }}
