@@ -47,13 +47,15 @@ export const RoomPage = observer(() => {
     // 监听玩家加入
     socketListeners.onPlayerJoined((data) => {
       store.room.addPlayer(data);
-      store.room.addMessage({ player_id: data._id, player_name: data.user_name, message: `玩家 ${data.user_name} 加入房间` })
+      store.room.addMessage({ player_id: data._id, player_name: "系统", message: `玩家 ${data.nick_name} 加入房间` })
+      init(room_id)
     });
 
     // 监听玩家离开
     socketListeners.onPlayerLeaved((data) => {
       store.room.removePlayer(data._id);
-      store.room.addMessage({ player_id: data._id, player_name: data.user_name, message: `玩家 ${data.user_name} 离开房间` })
+      store.room.addMessage({ player_id: data._id, player_name: '系统', message: `玩家 ${data.nick_name} 离开房间` })
+      init(room_id)
     });
 
     // 监听网络状态
