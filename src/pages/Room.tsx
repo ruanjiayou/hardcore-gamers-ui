@@ -14,7 +14,7 @@ import { runInAction } from 'mobx';
 import { notificationManager } from '../components/Notifications'
 
 export const RoomPage = observer(() => {
-  const { room_id } = useParams<{ room_id: string; }>();
+  const { slug, room_id } = useParams<{ slug: string, room_id: string; }>();
   const navigate = useNavigate();
   const local = useLocalObservable(() => ({
     showAgreeDraw: false,
@@ -157,7 +157,7 @@ export const RoomPage = observer(() => {
             onReady={(canvas: HTMLCanvasElement) => {
               const socket = getSocket()
               if (socket) {
-                gameManager.load('xiangqi', canvas, socket, toJS(store.game.gamePlayer)).then(() => {
+                gameManager.load(slug as string, canvas, socket, toJS(store.game.gamePlayer)).then(() => {
                   console.log('game loaded')
                   loadState({ game_id: store.room.roomInfo.game_id, match_id: local.match_id, })
                 });
@@ -185,7 +185,7 @@ export const RoomPage = observer(() => {
               <button onClick={handleSurrender} className="danger">认输</button>
             </Fragment>}
           </div>
-          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 15 }}>
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             <PlayerList />
             <Chat room_id={room_id!} />
           </div>

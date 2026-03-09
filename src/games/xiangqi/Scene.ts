@@ -31,6 +31,7 @@ export default class ChinaChessScene {
       preserveDrawingBuffer: true,
       stencil: true
     });
+    this.engine.setHardwareScalingLevel(1 / window.devicePixelRatio)
 
     this.scene = new BABYLON.Scene(this.engine);
     const camera = new BABYLON.ArcRotateCamera(
