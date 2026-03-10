@@ -41,7 +41,7 @@ export const RoomList = observer(({ game_slug }: { game_slug: string }) => {
         if (player) {
           store.game.setGamePlayer(player)
         }
-        navigate(`/room/${room_id}`);
+        navigate(`/game/${game_slug}/room/${room_id}`);
       } else {
         notificationManager.show('加入失败', 'warning');
       }

@@ -69,7 +69,7 @@ export const GamePage = observer(() => {
       },
       (success, room_id, error) => {
         if (success && room_id) {
-          navigate(`/room/${room_id}`);
+          navigate(`/game/${slug}/room/${room_id}`);
           local.setV({ show: false });
         } else {
           alert(error || '加入房间失败');
@@ -110,7 +110,7 @@ export const GamePage = observer(() => {
         if (player) {
           store.game.setGamePlayer(player)
         }
-        navigate(`/room/${room_id}`);
+        navigate(`/game/${slug}/room/${room_id}`);
       } else {
         alert('加入房间失败');
       }
@@ -129,8 +129,8 @@ export const GamePage = observer(() => {
             {store.auth.isLoggedIn && (
               <Fragment>
                 <button onClick={() => { }}>匹配</button>
-                <button onClick={() => local.setV({ type: 'invite', show: true, isPrivate: false, password: '' })}>加入房间</button>
-                <button onClick={() => local.setV({ type: 'create', show: true, isPrivate: false, password: '' })}>创建房间</button>
+                <button onClick={() => local.setV({ type: 'invite', show: true, isPrivate: false, password: '' })}>加入</button>
+                <button onClick={() => local.setV({ type: 'create', show: true, isPrivate: false, password: '' })}>创建</button>
               </Fragment>
             )}
           </div>

@@ -19,6 +19,9 @@ body {
   touch-action: manipulation;
 }
 
+canvas:focus {
+  outline: none;
+}
 .app {
   display: flex;
   flex-direction: column;
