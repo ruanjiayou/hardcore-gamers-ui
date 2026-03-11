@@ -40,7 +40,7 @@
 .lobby-content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 1rem;
   min-height: 600px;
 }
 

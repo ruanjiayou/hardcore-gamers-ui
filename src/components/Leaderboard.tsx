@@ -51,7 +51,7 @@ export const Leaderboard = observer(() => {
                 </div>
                 <div className="player-info">
                   <span className="player-avatar">{player.avatar}</span>
-                  <span className="player-name">{player.user_name}</span>
+                  <span className="player-name">{player.nick_name}</span>
                 </div>
                 <div className="player-rating">{player.score}</div>
               </div>

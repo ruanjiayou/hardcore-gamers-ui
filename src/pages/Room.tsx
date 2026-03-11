@@ -34,6 +34,9 @@ export const RoomPage = observer(() => {
       local.setV('match_id', data.match_id)
       console.log('加载玩家信息后加载游戏')
       socketEvents.getGamePlayer(room.game_id, (player) => {
+        if (!store.game.gamePlayer && player.room_id) {
+          joinRoom(player.room_id, '')
+        }
         store.game.setGamePlayer(player);
       })
     });
@@ -63,13 +66,10 @@ export const RoomPage = observer(() => {
       store.room.setPlayerNetwork(data.player_id, data.online)
     })
 
-    // socketListeners.onPlayerActioin((data: any) => {
-    //   console.log(data, '他人回合')
-    // })
-
-    socketListeners.onGameOver((data: { _id: string, user_name: string }) => {
-      notificationManager.show(`玩家 ${data.user_name} 胜利`)
+    socketListeners.onGameOver((data: { _id: string, nick_name: string }) => {
+      notificationManager.show(`玩家 ${data.nick_name} 胜利`)
       store.room.setRoomStatus('waiting')
+      store.game.setGamePlayer({ ...store.game.gamePlayer, state: 'idle' })
       loadState({ game_id: store.room.roomInfo.game_id, match_id: '', })
     })
 
@@ -102,6 +102,11 @@ export const RoomPage = observer(() => {
     };
   }, [room_id, navigate]);
 
+  const joinRoom = (room_id: string, type: string, password?: string) => {
+    socketEvents.joinRoom({ room_id, type, password }, (success, player) => {
+      console.log('重新加入房间', success)
+    });
+  };
   const loadState = (data: { match_id: string, game_id: string }) => {
     console.log(data, '加载对局数据')
     socketEvents.getMatchState(data, (state) => {
@@ -169,18 +174,8 @@ export const RoomPage = observer(() => {
         </div>
         <div className='game-info'>
           <div className="room-actions">
-            {(store.room.roomInfo?.owner_id === store.auth.user?._id)
-              ? (
-                <Fragment>
-                  {store.room.roomInfo?.status === 'waiting' && <button >等待</button>}
-                  {store.room.roomInfo?.status === 'ready' && <button onClick={handleStartGame}>开始游戏</button>}
-                </Fragment>
-              ) : (
-                <Fragment>
-                  {store.room.roomInfo?.status !== 'playing' && store.game.gamePlayer?.state === 'idle' && <button onClick={() => handlePlayerReady(true)}>准备</button>}
-                  {store.room.roomInfo?.status !== 'playing' && store.game.gamePlayer?.state === 'ready' && <button onClick={() => handlePlayerReady(false)}>取消</button>}
-                </Fragment>
-              )}
+            {store.room.roomInfo?.status !== 'playing' && store.game.gamePlayer?.state === 'idle' && <button onClick={() => handlePlayerReady(true)}>准备</button>}
+            {store.room.roomInfo?.status !== 'playing' && store.game.gamePlayer?.state === 'ready' && <button onClick={() => handlePlayerReady(false)}>取消</button>}
             {store.room.roomInfo?.status === 'waiting' && <button onClick={handleLeaveRoom} className="danger">离开房间</button>}
             {store.room.roomInfo?.status === 'playing' && <Fragment>
               <button onClick={handleSeekDraw}>求和</button>

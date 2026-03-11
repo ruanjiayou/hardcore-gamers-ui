@@ -21,7 +21,7 @@ export async function initSocket(): Promise<{ success: boolean, error?: any }> {
   console.log('🔌 初始化 Socket.io 连接...');
 
   try {
-    socket = io('http://localhost:3000', {
+    socket = io('ws://' + window.location.host, {
       auth: {
         token: store.auth.token,
       },
@@ -91,8 +91,8 @@ export const socketEvents = {
   getLeaderboard: (callback: (ranks: any[]) => void) => {
     getSocket()?.emit('lobby:get-leaderboard', { limit: 10 }, callback);
   },
-  getRooms: (slug: string, callback: (rooms: any[]) => void) => {
-    getSocket()?.emit('lobby:get-rooms', { slug }, callback);
+  getRooms: (game_id: string, callback: (rooms: any[]) => void) => {
+    getSocket()?.emit('lobby:get-rooms', { game_id }, callback);
   },
   getGamePlayer: (name: string, callback: (roomPlayer: any) => void) => {
     getSocket()?.emit('lobby:get-game-player', name, callback);

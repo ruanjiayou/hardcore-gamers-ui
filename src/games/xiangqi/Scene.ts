@@ -1,18 +1,37 @@
 // ChessScene.ts
-
-import * as BABYLON from "babylonjs";
+import {
+  Scene,
+  Engine,
+  MeshBuilder,
+  Vector3,
+  Color3,
+  StandardMaterial,
+  TransformNode,
+  GroundMesh,
+  HighlightLayer,
+  Texture,
+  DynamicTexture,
+  Material,
+  PointerEventTypes,
+  Mesh,
+  Animation,
+  ArcRotateCamera,
+  FxaaPostProcess,
+  HemisphericLight,
+} from "@babylonjs/core"
+import { GridMaterial } from "@babylonjs/materials/grid";
 import ChessLogic from "./Logic";
 
 export default class ChinaChessScene {
-  engine!: BABYLON.Engine;
-  scene!: BABYLON.Scene;
+  engine!: Engine;
+  scene!: Scene;
   logic: ChessLogic;
   inited: boolean = false;
 
-  board: BABYLON.GroundMesh | null = null;
-  highlightLayer: BABYLON.HighlightLayer | null = null;
+  board: GroundMesh | null = null;
+  highlightLayer: HighlightLayer | null = null;
 
-  pieceMap = new Map<string, BABYLON.TransformNode>();
+  pieceMap = new Map<string, TransformNode>();
 
   selected: string = '';
 
@@ -26,43 +45,43 @@ export default class ChinaChessScene {
       this.moveMesh(data.from, data.to)
     })
 
-    this.engine = new BABYLON.Engine(canvas, true, {
+    this.engine = new Engine(canvas, true, {
       antialias: true,
       preserveDrawingBuffer: true,
       stencil: true
     });
     this.engine.setHardwareScalingLevel(1 / window.devicePixelRatio)
 
-    this.scene = new BABYLON.Scene(this.engine);
-    const camera = new BABYLON.ArcRotateCamera(
+    this.scene = new Scene(this.engine);
+    const camera = new ArcRotateCamera(
       "camera",
       this.logic.player.role === 'red' ? Math.PI / 2 : -Math.PI / 2,
       Math.PI / 6,
       15,
-      new BABYLON.Vector3(4, 0, 4.5),
+      new Vector3(4, 0, 4.5),
       this.scene
     );
     camera.attachControl(canvas, true);
-    const fxaa = new BABYLON.FxaaPostProcess("fxaa", 1.0, null, 1, this.engine);
+    const fxaa = new FxaaPostProcess("fxaa", 1.0, null, 1, this.engine);
     camera.attachPostProcess(fxaa);
 
-    const light = new BABYLON.HemisphericLight("light",
-      new BABYLON.Vector3(1, 1, 1),
+    const light = new HemisphericLight("light",
+      new Vector3(1, 1, 1),
       this.scene);
     // // 调低强度
     // light.intensity = 0.5;   // 推荐 0.4 ~ 0.7
 
     // // 上方光颜色（别太白）
-    // light.diffuse = new BABYLON.Color3(0.5, 0.5, 0.5);
+    // light.diffuse = new Color3(0.5, 0.5, 0.5);
 
     // // 地面反射光调暗（关键！）
-    light.groundColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+    light.groundColor = new Color3(0.05, 0.05, 0.05);
 
     // 高亮层
-    this.highlightLayer = new BABYLON.HighlightLayer("highlightLayer", this.scene);
+    this.highlightLayer = new HighlightLayer("highlightLayer", this.scene);
 
     this.createBoard();
-    // this.createPieces();
+    // this.createDebugHelper({})
     this.setupPicking();
 
     this.engine.runRenderLoop(() => this.scene.render());
@@ -81,6 +100,107 @@ export default class ChinaChessScene {
     await this.scene.whenReadyAsync()
   }
 
+  createDebugHelper(options: any) {
+
+    const {
+      size = 10,
+      step = 1,
+      gridSize = 10,
+      axisDiameter = 0.04
+    } = options;
+
+    const root = new TransformNode("debugHelper", this.scene);
+
+    const createMaterial = (color: any) => {
+      const mat = new StandardMaterial("mat", this.scene);
+      mat.emissiveColor = color;
+      mat.disableLighting = true;
+      return mat;
+    }
+
+    const matX = createMaterial(new Color3(1, 0, 0));
+    const matY = createMaterial(new Color3(0, 1, 0));
+    const matZ = createMaterial(new Color3(0, 0, 1));
+    const matTick = createMaterial(new Color3(0.7, 0.7, 0.7));
+
+    const createAxis = (dir: any, mat: any) => {
+
+      const axis = MeshBuilder.CreateCylinder("axis", {
+        height: size,
+        diameter: axisDiameter
+      }, this.scene);
+
+      axis.material = mat;
+      axis.parent = root;
+
+      if (dir.x) axis.rotation.z = Math.PI / 2;
+      if (dir.z) axis.rotation.x = Math.PI / 2;
+
+      axis.position = dir.scale(size / 2);
+
+      for (let i = step; i <= size; i += step) {
+
+        const major = i % 5 === 0;
+
+        const tick = MeshBuilder.CreateCylinder("tick", {
+          height: major ? 0.5 : 0.25,
+          diameter: axisDiameter * 0.6
+        }, this.scene);
+
+        tick.material = matTick;
+        tick.parent = root;
+
+        const p = dir.scale(i);
+
+        if (dir.x) {
+          tick.rotation.z = Math.PI / 2;
+          tick.position = p;
+        }
+
+        if (dir.y) {
+          tick.position = p;
+        }
+
+        if (dir.z) {
+          tick.rotation.x = Math.PI / 2;
+          tick.position = p;
+        }
+      }
+    }
+
+    createAxis(new Vector3(1, 0, 0), matX);
+    createAxis(new Vector3(0, 1, 0), matY);
+    createAxis(new Vector3(0, 0, 1), matZ);
+
+    // 原点球
+    const origin = MeshBuilder.CreateSphere("origin", {
+      diameter: 0.15
+    }, this.scene);
+
+    origin.material = createMaterial(new Color3(1, 1, 0));
+    origin.parent = root;
+
+    // Grid
+    const grid = MeshBuilder.CreateGround("grid", {
+      width: gridSize,
+      height: gridSize,
+      subdivisions: gridSize
+    }, this.scene);
+
+    const gridMat = new GridMaterial("gridMat", this.scene);
+    gridMat.majorUnitFrequency = 5;
+    gridMat.minorUnitVisibility = 0.45;
+    gridMat.gridRatio = 1;
+    gridMat.backFaceCulling = false;
+    gridMat.mainColor = new Color3(0.4, 0.4, 0.4);
+    gridMat.lineColor = new Color3(0.7, 0.7, 0.7);
+    gridMat.opacity = 0.6;
+
+    grid.material = gridMat;
+    grid.parent = root;
+
+    return root;
+  }
   createBoard() {
     const cols = 9;
     const rows = 10;
@@ -90,7 +210,7 @@ export default class ChinaChessScene {
     const width = (cols - 1) * cellSize + margin * 2;
     const height = (rows - 1) * cellSize + margin * 2;
 
-    const board = BABYLON.MeshBuilder.CreateGround(
+    const board = MeshBuilder.CreateGround(
       "board",
       { width, height },
       this.scene
@@ -98,14 +218,14 @@ export default class ChinaChessScene {
 
     const texSize = 2048;
 
-    const dt = new BABYLON.DynamicTexture(
+    const dt = new DynamicTexture(
       "boardTexture",
       texSize,
       this.scene,
       true
     );
     // 纹理采样优化
-    dt.updateSamplingMode(BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+    dt.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
     dt.anisotropicFilteringLevel = 16; // 各向异性过滤
 
     const ctx = dt.getContext() as CanvasRenderingContext2D;
@@ -131,14 +251,14 @@ export default class ChinaChessScene {
     ctx.beginPath();
     ctx.moveTo(pxPerUnitX * 4, pxPerUnitY * 3)
     ctx.lineTo(pxPerUnitX * 6, pxPerUnitY * 1);
-    
+
     ctx.moveTo(pxPerUnitX * 4, pxPerUnitY * 1)
     ctx.lineTo(pxPerUnitX * 6, pxPerUnitY * 3);
 
-    
+
     ctx.moveTo(pxPerUnitX * 4, pxPerUnitY * 8)
     ctx.lineTo(pxPerUnitX * 6, pxPerUnitY * 10);
-    
+
     ctx.moveTo(pxPerUnitX * 6, pxPerUnitY * 8)
     ctx.lineTo(pxPerUnitX * 4, pxPerUnitY * 10);
     ctx.stroke()
@@ -182,10 +302,10 @@ export default class ChinaChessScene {
 
     dt.update();
 
-    const mat = new BABYLON.StandardMaterial("boardMat", this.scene);
+    const mat = new StandardMaterial("boardMat", this.scene);
     mat.backFaceCulling = false;
     mat.diffuseTexture = dt;
-    mat.specularColor = BABYLON.Color3.Black();
+    mat.specularColor = Color3.Black();
 
     board.material = mat;
     board.position.x = 4;
@@ -199,7 +319,7 @@ export default class ChinaChessScene {
   createTextTexture(id: string, type: string, color: "red" | "black") {
     // 使用更高分辨率
     const size = 1024; // 增加分辨率
-    const texture = new BABYLON.DynamicTexture(
+    const texture = new DynamicTexture(
       id + "-text",
       { width: size, height: size },
       this.scene,
@@ -207,7 +327,7 @@ export default class ChinaChessScene {
     );
 
     // 纹理采样优化
-    texture.updateSamplingMode(BABYLON.Texture.TRILINEAR_SAMPLINGMODE);
+    texture.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
     texture.anisotropicFilteringLevel = 16;
 
     // 获取Canvas上下文
@@ -251,10 +371,10 @@ export default class ChinaChessScene {
 
   createPiece(x: number, y: number, type: string, color: "red" | "black") {
     const id = `piece-${type}-${this.getChineseChar(type, color)}-${color}`
-    const root = new BABYLON.TransformNode(id, this.scene);
+    const root = new TransformNode(id, this.scene);
 
     // 1️⃣ 主体圆柱
-    const body = BABYLON.MeshBuilder.CreateCylinder(
+    const body = MeshBuilder.CreateCylinder(
       id + "-body",
       { diameter: 0.9, height: 0.3 },
       this.scene
@@ -262,16 +382,16 @@ export default class ChinaChessScene {
     body.parent = root;
     body.position.y = 0.15;
 
-    const bodyMat = new BABYLON.StandardMaterial("bodyMat", this.scene);
-    bodyMat.diffuseColor = new BABYLON.Color3(0.9, 0.8, 0.6);
+    const bodyMat = new StandardMaterial("bodyMat", this.scene);
+    bodyMat.diffuseColor = new Color3(0.9, 0.8, 0.6);
     body.material = bodyMat;
 
     // 降低反射光
-    bodyMat.specularColor = BABYLON.Color3.Black();
+    bodyMat.specularColor = Color3.Black();
     bodyMat.specularPower = 0;
 
     // 2️⃣ 顶部圆盘（专门放文字）
-    const top = BABYLON.MeshBuilder.CreateDisc(
+    const top = MeshBuilder.CreateDisc(
       id + "-top",
       { radius: 0.42 },
       this.scene
@@ -282,7 +402,7 @@ export default class ChinaChessScene {
     top.rotation.x = Math.PI / 2; // 让圆盘朝上
 
     // 3️⃣ 文字贴图
-    const texture = new BABYLON.DynamicTexture(
+    const texture = new DynamicTexture(
       id + "-text",
       { width: 512, height: 512 },
       this.scene,
@@ -302,13 +422,13 @@ export default class ChinaChessScene {
       true
     );
 
-    const textMat = new BABYLON.StandardMaterial("textMat", this.scene);
+    const textMat = new StandardMaterial("textMat", this.scene);
     textMat.useAlphaFromDiffuseTexture = true;
     textMat.backFaceCulling = false;
     textMat.diffuseTexture = texture;
-    textMat.specularColor = BABYLON.Color3.Black();
+    textMat.specularColor = Color3.Black();
     // 设置材质透明度
-    textMat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
+    textMat.transparencyMode = Material.MATERIAL_ALPHABLEND;
 
     top.material = textMat;
 
@@ -405,29 +525,29 @@ export default class ChinaChessScene {
         }
 
       }
-      
+
       if (moveto && this.selected) {
         const [y, x] = this.selected.split('-')
         const success = this.logic.move(+x, +y, moveto.x, moveto.y);
       }
-    }, BABYLON.PointerEventTypes.POINTERDOWN);
+    }, PointerEventTypes.POINTERDOWN);
   }
 
   cancelPieceHighlight() {
     const piece = this.pieceMap.get(this.selected);
     if (piece) {
       piece.getChildMeshes().forEach(mesh => {
-        this.highlightLayer?.removeMesh(mesh as BABYLON.Mesh);
+        this.highlightLayer?.removeMesh(mesh as Mesh);
       })
     }
     this.selected = ''
   }
   addPieceHightlight() {
     const piece = this.pieceMap.get(this.selected);
-    const color = BABYLON.Color3.Yellow();
+    const color = Color3.Yellow();
     if (piece && this.highlightLayer) {
       piece.getChildMeshes().forEach(mesh => {
-        this.highlightLayer?.addMesh(mesh as BABYLON.Mesh, color)
+        this.highlightLayer?.addMesh(mesh as Mesh, color)
       })
     }
   }
@@ -438,15 +558,15 @@ export default class ChinaChessScene {
     const piece = this.pieceMap.get(src_key);
     if (!piece) return;
     this.cancelPieceHighlight();
-    BABYLON.Animation.CreateAndStartAnimation(
+    Animation.CreateAndStartAnimation(
       "move",
       piece,
       "position",
       60,
       30,
       piece.position.clone(),
-      new BABYLON.Vector3(to.x, 0, to.y),
-      BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT,
+      new Vector3(to.x, 0, to.y),
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
       undefined,
       () => {
         const deleted_piece = this.pieceMap.get(dst_key);

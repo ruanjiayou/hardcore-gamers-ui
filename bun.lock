@@ -5,6 +5,8 @@
     "": {
       "name": "hardcore-gamers-lobby",
       "dependencies": {
+        "@babylonjs/core": "8.54.1",
+        "@babylonjs/materials": "8.54.1",
         "axios": "^1.6.0",
         "babylonjs": "8.53.0",
         "eventemitter3": "5.0.4",
@@ -63,6 +65,10 @@
     "@babel/traverse": ["@babel/traverse@7.29.0", "", { "dependencies": { "@babel/code-frame": "^7.29.0", "@babel/generator": "^7.29.0", "@babel/helper-globals": "^7.28.0", "@babel/parser": "^7.29.0", "@babel/template": "^7.28.6", "@babel/types": "^7.29.0", "debug": "^4.3.1" } }, "sha512-4HPiQr0X7+waHfyXPZpWPfWL/J7dcN1mx9gL6WdQVMbPnF3+ZhSMs8tCxN7oHddJE9fhNE7+lxdnlyemKfJRuA=="],
 
     "@babel/types": ["@babel/types@7.29.0", "", { "dependencies": { "@babel/helper-string-parser": "^7.27.1", "@babel/helper-validator-identifier": "^7.28.5" } }, "sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A=="],
+
+    "@babylonjs/core": ["@babylonjs/core@8.54.1", "", {}, "sha512-1GDLlNkQ3pG9DlQSzt1SOy41Ub3c+cXhvmrYB1q5FYENolC0NUuPpTRxEl2LipVTgcxqKqyn1QcTwe+E7oXn6g=="],
+
+    "@babylonjs/materials": ["@babylonjs/materials@8.54.1", "", { "peerDependencies": { "@babylonjs/core": "^8.6.0" } }, "sha512-1KvfLd8erh8d5TzGLJy/GqBAcPKvc2tw5E8m2ZIT4QR5UvrWzjdy38FEe2etIpzy17haIUqXjiTG0KcpIJ+wgw=="],
 
     "@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.21.5", "", { "os": "aix", "cpu": "ppc64" }, "sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ=="],
 

@@ -10,6 +10,8 @@
     "lint": "eslint src --ext ts,tsx"
   },
   "dependencies": {
+    "@babylonjs/core": "8.54.1",
+    "@babylonjs/materials": "8.54.1",
     "axios": "^1.6.0",
     "babylonjs": "8.53.0",
     "eventemitter3": "5.0.4",

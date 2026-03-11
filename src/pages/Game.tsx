@@ -102,6 +102,9 @@ export const GamePage = observer(() => {
     socketListeners.onRoomDestroyed((data) => {
       store.game.removeRoom(data.room_id);
     });
+    return () => {
+      store.game.setGamePlayer(null)
+    }
   }, [slug, navigate]);
 
   const joinRoom = (room_id: string, type: string, password?: string) => {
@@ -189,7 +192,7 @@ export const GamePage = observer(() => {
             </div>
           )}
         </h2>
-        <RoomList game_slug={slug!} />
+        {store.game.gamePlayer && <RoomList slug={slug!} game_id={store.game.gamePlayer.game_id!} />}
       </div>
     </div>
   );

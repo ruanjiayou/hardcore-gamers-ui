@@ -132,7 +132,7 @@
 }
 
 .player-list {
-  overflow-y: auto;
+  /* overflow-y: auto; */
 }
 
 .player-item {

@@ -6,7 +6,7 @@ import { socketEvents } from '../services/socket';
 import '../styles/components.css';
 import { notificationManager } from './Notifications';
 
-export const RoomList = observer(({ game_slug }: { game_slug: string }) => {
+export const RoomList = observer(({ game_id, slug }: { game_id: string, slug: string }) => {
   const navigate = useNavigate();
 
   const [passwordModal, setPasswordModal] = useState<{ show: boolean; room_id: string }>({
@@ -15,9 +15,9 @@ export const RoomList = observer(({ game_slug }: { game_slug: string }) => {
   });
   const [passwordInput, setPasswordInput] = useState('');
 
-  const getRooms = (game_slug: string) => {
+  const getRooms = (game_id: string) => {
     // 加载房间列表
-    socketEvents.getRooms(game_slug, (rooms) => {
+    socketEvents.getRooms(game_id, (rooms) => {
       store.game.setRooms(rooms);
     });
   }
@@ -41,7 +41,7 @@ export const RoomList = observer(({ game_slug }: { game_slug: string }) => {
         if (player) {
           store.game.setGamePlayer(player)
         }
-        navigate(`/game/${game_slug}/room/${room_id}`);
+        navigate(`/game/${slug}/room/${room_id}`);
       } else {
         notificationManager.show('加入失败', 'warning');
       }
@@ -50,13 +50,13 @@ export const RoomList = observer(({ game_slug }: { game_slug: string }) => {
   };
 
   useEffect(() => {
-    getRooms(game_slug)
+    getRooms(game_id)
   }, [])
 
   return (
     <div className="room-list">
       <div className="room-list-header">
-        <h3>房间列表  <span onClick={() => { getRooms(game_slug); }}>↻</span></h3>
+        <h3>房间列表  <span onClick={() => { getRooms(game_id); }}>↻</span></h3>
       </div>
 
       <div className="room-cards">
