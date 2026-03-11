@@ -59,10 +59,10 @@ export const RoomList = observer(({ game_id, slug }: { game_id: string, slug: st
         <h3>房间列表  <span onClick={() => { getRooms(game_id); }}>↻</span></h3>
       </div>
 
-      <div className="room-cards">
+      <div className="room-cells">
         {store.game.rooms.length === 0 && <span>暂无房间</span>}
         {store.game.rooms.map(room => (
-          <div key={room._id} className={`room-card ${room.status}`}>
+          <div key={room._id} className={`room-cell ${room.status}`} style={{ display: 'flex', flexDirection: 'column' }}>
             <h4>{room.name}</h4>
             <p>玩家: {room.members.length}/{room.numbers.max}</p>
             {room.isPrivate && <span className="lock">🔒</span>}

@@ -73,12 +73,6 @@
   gap: 12px;
 }
 
-.room-card:hover {
-  /* border-color: #667eea;
-  background: #f5f3ff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); */
-}
-
 .room-card.playing {
   opacity: 0.6;
   pointer-events: none;
@@ -120,6 +114,68 @@
 }
 
 .room-card button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.room-cells {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.room-cell {
+  border: 1px solid #6664;
+  padding: 0.5rem;
+  border-radius: 8px;
+  transition: all 0.3s;
+  display: flex;
+  flex-direction: row;
+  gap: 0.5rem;
+}
+
+.room-cell.playing {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.room-cell h4 {
+  margin: 0;
+  font-size: 16px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.room-cell .lock {
+  font-size: 14px;
+}
+
+.room-cell p {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.room-cell button {
+  padding: 0.5rem;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s;
+  font-size: 13px;
+}
+
+.room-cell button:hover:not(:disabled) {
+  background: #764ba2;
+}
+
+.room-cell button:disabled {
   background: #ccc;
   cursor: not-allowed;
   opacity: 0.6;

@@ -21,7 +21,7 @@ export async function initSocket(): Promise<{ success: boolean, error?: any }> {
   console.log('🔌 初始化 Socket.io 连接...');
 
   try {
-    socket = io('ws://' + window.location.host, {
+    socket = io(window.location.origin.replace('http', 'ws'), {
       auth: {
         token: store.auth.token,
       },
