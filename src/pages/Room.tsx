@@ -12,7 +12,7 @@ import BabylonCanvas from "../core/BabylonCanvas";
 import { gameManager } from "../core/GameManager";
 import { runInAction } from 'mobx';
 import { notificationManager } from '../components/Notifications'
-import { PlayerState, RoomStatus } from '../constant'
+import constant, { PlayerState, RoomStatus } from '../constant'
 
 export const RoomPage = observer(() => {
   const { slug, room_id } = useParams<{ slug: string, room_id: string; }>();
@@ -51,14 +51,14 @@ export const RoomPage = observer(() => {
     // 监听玩家加入
     socketListeners.onPlayerJoined((data) => {
       store.room.addPlayer(data);
-      store.room.addMessage({ player_id: data._id, player_name: "系统", message: `玩家 ${data.nick_name} 加入房间` })
+      store.room.addMessage({ player_id: data._id, player_name: "系统", message: `玩家 ${data.nickname} 加入房间` })
       init(room_id)
     });
 
     // 监听玩家离开
     socketListeners.onPlayerLeaved((data) => {
       store.room.removePlayer(data._id);
-      store.room.addMessage({ player_id: data._id, player_name: '系统', message: `玩家 ${data.nick_name} 离开房间` })
+      store.room.addMessage({ player_id: data._id, player_name: '系统', message: `玩家 ${data.nickname} 离开房间` })
       init(room_id)
     });
 
@@ -67,10 +67,10 @@ export const RoomPage = observer(() => {
       store.room.setPlayerNetwork(data.player_id, data.online)
     })
 
-    socketListeners.onGameOver((data: { _id: string, nick_name: string }) => {
-      notificationManager.show(`玩家 ${data.nick_name} 胜利`)
+    socketListeners.onGameOver((data: { _id: string, nickname: string }) => {
+      notificationManager.show(`玩家 ${data.nickname} 胜利`)
       store.room.setRoomStatus('waiting')
-      store.game.setGamePlayer({ ...store.game.gamePlayer, state: 'idle' })
+      store.game.setGamePlayer({ ...store.game.gamePlayer, state: constant.PLAYER.STATE.inroom })
       loadState({ game_id: store.room.roomInfo.game_id, match_id: '', })
     })
 
@@ -189,7 +189,7 @@ export const RoomPage = observer(() => {
             {store.room.roomInfo?.status === RoomStatus.waiting && <button onClick={addRobot}>添加机器人</button>}
             {store.room.roomInfo?.status === RoomStatus.waiting && store.game.gamePlayer?.state === PlayerState.inroom && <button onClick={() => handlePlayerReady(true)}>准备</button>}
             {store.room.roomInfo?.status === RoomStatus.waiting && store.game.gamePlayer?.state === PlayerState.prepared && <button onClick={() => handlePlayerReady(false)}>取消</button>}
-            {store.room.roomInfo?.status === RoomStatus.waiting && <button onClick={handleLeaveRoom} className="danger">离开房间</button>}
+            {store.room.roomInfo?.status === RoomStatus.waiting && <button onClick={handleLeaveRoom} className="danger">离开</button>}
             {store.room.roomInfo?.status === RoomStatus.playing && <Fragment>
               <button onClick={handleSeekDraw}>求和</button>
               <button onClick={handleSurrender} className="danger">认输</button>

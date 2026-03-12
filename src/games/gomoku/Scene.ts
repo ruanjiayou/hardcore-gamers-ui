@@ -11,10 +11,8 @@ import {
   HighlightLayer,
   Texture,
   DynamicTexture,
-  Material,
   PointerEventTypes,
   Mesh,
-  Animation,
   ArcRotateCamera,
   FxaaPostProcess,
   HemisphericLight,
@@ -31,7 +29,7 @@ export default class GomokuScene {
   board: GroundMesh | null = null;
   highlightLayer: HighlightLayer | null = null;
 
-  pieceMap = new Map<string, TransformNode>();
+  pieceMap = new Map<string, Mesh>();
 
   selected: string = '';
 
@@ -51,7 +49,6 @@ export default class GomokuScene {
       stencil: true
     });
     this.engine.setHardwareScalingLevel(1 / window.devicePixelRatio)
-
     this.scene = new Scene(this.engine);
     const camera = new ArcRotateCamera(
       "camera",
@@ -82,7 +79,7 @@ export default class GomokuScene {
 
     this.createBoard();
     this.setupPicking();
-    // this.createDebugHelper({})
+    this.createDebugHelper({})
 
     this.engine.runRenderLoop(() => this.scene.render());
     window.addEventListener("resize", () => {
@@ -199,12 +196,14 @@ export default class GomokuScene {
     grid.material = gridMat;
     grid.parent = root;
 
+    root.position._y = -0.1
+
     return root;
   }
 
   createBoard() {
-    const cols = 16;
-    const rows = 16;
+    const cols = 14;
+    const rows = 14;
     const cellSize = 1;
     const margin = 1;
 
@@ -273,6 +272,13 @@ export default class GomokuScene {
       ctx.lineTo(x, texSize / 2 + halfLineHeight * pxPerUnitY);
       ctx.stroke();
     }
+
+    ctx.beginPath();
+    ctx.arc(texSize / 2, texSize / 2, pxPerUnitX / 8, 0, Math.PI * 2)
+    ctx.fillStyle = "#000000";        // 红色填充
+    ctx.lineWidth = 0;
+    ctx.fill();
+    ctx.stroke();
 
     dt.update();
 
@@ -372,9 +378,7 @@ export default class GomokuScene {
   cancelPieceHighlight() {
     const piece = this.pieceMap.get(this.selected);
     if (piece) {
-      piece.getChildMeshes().forEach(mesh => {
-        this.highlightLayer?.removeMesh(mesh as Mesh);
-      })
+      this.highlightLayer?.removeMesh(piece)
     }
     this.selected = ''
   }
@@ -382,9 +386,7 @@ export default class GomokuScene {
     const piece = this.pieceMap.get(this.selected);
     const color = Color3.Yellow();
     if (piece && this.highlightLayer) {
-      piece.getChildMeshes().forEach(mesh => {
-        this.highlightLayer?.addMesh(mesh as Mesh, color)
-      })
+      this.highlightLayer.addMesh(piece, color)
     }
   }
 
