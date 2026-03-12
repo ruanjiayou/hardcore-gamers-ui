@@ -88,8 +88,8 @@ export const socketEvents = {
   getGames: (callback: (games: any[]) => void) => {
     getSocket()?.emit('lobby:get-games', callback);
   },
-  getLeaderboard: (callback: (ranks: any[]) => void) => {
-    getSocket()?.emit('lobby:get-leaderboard', { limit: 10 }, callback);
+  getLeaderboard: (data: { slug: string, limit: number }, callback: (ranks: any[]) => void) => {
+    getSocket()?.emit('lobby:get-leaderboard', data, callback);
   },
   getRooms: (game_id: string, callback: (rooms: any[]) => void) => {
     getSocket()?.emit('lobby:get-rooms', { game_id }, callback);
@@ -109,6 +109,14 @@ export const socketEvents = {
 
   getRoomDetail: (room_id: string, callback?: (data: { room: any, match_id: string }) => void) => {
     getSocket()?.emit('room:detail', { room_id }, callback);
+  },
+
+  addRobot: (data: { room_id: string }, callback?: (success: boolean) => void) => {
+    getSocket()?.emit('room:add-robot', data, callback);
+  },
+
+  remRobot: (data: { room_id: string, player_id: string }, callback?: (success: boolean) => void) => {
+    getSocket()?.emit('room:rem-robot', data, callback);
   },
 
   leaveRoom: (data: { room_id: string, player_id: string }, callback?: (success: boolean) => void) => {

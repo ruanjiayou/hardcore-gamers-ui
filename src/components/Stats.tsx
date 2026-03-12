@@ -33,16 +33,20 @@ export const Stats = observer(() => {
           <div className="stat-value">{store.game.stats.games.total}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">在线用户</div>
+          <div className="stat-label">用户总数</div>
           <div className="stat-value">{store.game.stats.users.total}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">游戏人数</div>
-          <div className="stat-value">{store.game.stats.players.total}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">活跃房间</div>
           <div className="stat-value">{store.game.stats.rooms.active}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">玩家总数数</div>
+          <div className="stat-value">{store.game.stats.players.total}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">在线玩家</div>
+          <div className="stat-value">{store.game.stats.players.atline}</div>
         </div>
       </div>
     </div>

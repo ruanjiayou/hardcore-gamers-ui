@@ -22,7 +22,7 @@ export const RoomList = observer(({ game_id, slug }: { game_id: string, slug: st
     });
   }
 
-  const handleJoinRoom = (room: any) => {
+  const handleJoinRoom = (room: any, type: string) => {
     if (!store.auth.isLoggedIn) {
       alert('请先登陆');
       return;
@@ -31,12 +31,12 @@ export const RoomList = observer(({ game_id, slug }: { game_id: string, slug: st
     if (room.isPrivate) {
       setPasswordModal({ show: true, room_id: room._id });
     } else {
-      gotoRoom(room._id);
+      gotoRoom(room._id, type);
     }
   };
 
-  const gotoRoom = (room_id: string, password?: string) => {
-    socketEvents.joinRoom({ room_id, type: 'player', password }, (success, player) => {
+  const gotoRoom = (room_id: string, type: string, password?: string) => {
+    socketEvents.joinRoom({ room_id, type, password }, (success, player) => {
       if (success) {
         if (player) {
           store.game.setGamePlayer(player)
@@ -72,14 +72,14 @@ export const RoomList = observer(({ game_id, slug }: { game_id: string, slug: st
                   if (room.isPrivate) {
                     setPasswordModal({ show: true, room_id: room._id });
                   } else {
-                    handleJoinRoom(room)
+                    handleJoinRoom(room, 'player')
                   }
                 }}
                 disabled={room.members.length >= room.numbers.max || room.status === 'playing'}
               >
                 {room.members.length >= room.numbers.max ? '房满' : '加入'}
               </button>
-              <button onClick={() => handleJoinRoom(room)}>观看</button>
+              <button disabled onClick={() => handleJoinRoom(room, 'viewer')}>观看</button>
             </div>
           </div>
         ))}

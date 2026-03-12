@@ -4,6 +4,7 @@ import { observer, useLocalObservable } from 'mobx-react-lite';
 import store from '../stores'
 import { socketEvents, socketListeners } from '../services/socket';
 import { RoomList } from '../components/RoomList';
+import { Leaderboard } from '../components/Leaderboard';
 import '../styles/index.css';
 import '../styles/game.css';
 import '../styles/room.css';
@@ -192,6 +193,7 @@ export const GamePage = observer(() => {
             </div>
           )}
         </h2>
+        <Leaderboard slug={slug as string} limit={5} />
         {store.game.gamePlayer && <RoomList slug={slug!} game_id={store.game.gamePlayer.game_id!} />}
       </div>
     </div>

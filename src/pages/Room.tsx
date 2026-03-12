@@ -12,6 +12,7 @@ import BabylonCanvas from "../core/BabylonCanvas";
 import { gameManager } from "../core/GameManager";
 import { runInAction } from 'mobx';
 import { notificationManager } from '../components/Notifications'
+import { PlayerState, RoomStatus } from '../constant'
 
 export const RoomPage = observer(() => {
   const { slug, room_id } = useParams<{ slug: string, room_id: string; }>();
@@ -113,6 +114,17 @@ export const RoomPage = observer(() => {
       gameManager.game?.logic.setState(state)
     })
   }
+  const addRobot = () => {
+    if (!room_id) return;
+    socketEvents.addRobot({ room_id }, (success) => {
+      if (success) {
+        notificationManager.show('添加机器人成功', 'success')
+      } else {
+        notificationManager.show('添加机器人失败', 'warning')
+      }
+    })
+  }
+
   const handleLeaveRoom = () => {
     if (!room_id) return;
     socketEvents.leaveRoom({ room_id, player_id: store.game.gamePlayer._id }, (success) => {
@@ -174,10 +186,11 @@ export const RoomPage = observer(() => {
         </div>
         <div className='game-info'>
           <div className="room-actions">
-            {store.room.roomInfo?.status !== 'playing' && store.game.gamePlayer?.state === 'idle' && <button onClick={() => handlePlayerReady(true)}>准备</button>}
-            {store.room.roomInfo?.status !== 'playing' && store.game.gamePlayer?.state === 'ready' && <button onClick={() => handlePlayerReady(false)}>取消</button>}
-            {store.room.roomInfo?.status === 'waiting' && <button onClick={handleLeaveRoom} className="danger">离开房间</button>}
-            {store.room.roomInfo?.status === 'playing' && <Fragment>
+            {store.room.roomInfo?.status === RoomStatus.waiting && <button onClick={addRobot}>添加机器人</button>}
+            {store.room.roomInfo?.status === RoomStatus.waiting && store.game.gamePlayer?.state === PlayerState.inroom && <button onClick={() => handlePlayerReady(true)}>准备</button>}
+            {store.room.roomInfo?.status === RoomStatus.waiting && store.game.gamePlayer?.state === PlayerState.prepared && <button onClick={() => handlePlayerReady(false)}>取消</button>}
+            {store.room.roomInfo?.status === RoomStatus.waiting && <button onClick={handleLeaveRoom} className="danger">离开房间</button>}
+            {store.room.roomInfo?.status === RoomStatus.playing && <Fragment>
               <button onClick={handleSeekDraw}>求和</button>
               <button onClick={handleSurrender} className="danger">认输</button>
             </Fragment>}

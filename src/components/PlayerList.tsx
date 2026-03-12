@@ -20,12 +20,12 @@ export const PlayerList = observer(() => {
       <div className="player-list" style={{ flex: '1 0 30%' }}>
         <h3>👥 玩家列表 <span onClick={() => { reload(); }}>↻</span></h3>
         {store.room.members.map(player => (
-          <div key={player.user_id} className="player-item">
+          <div key={player._id} className="player-item">
             <span className="avatar">👤</span>
-            <span className="name">{player.nick_name}</span>
-            {(store.auth.user?._id === player.user_id) ? (
+            <span className="name">{player.nickname}</span>
+            {(store.game.gamePlayer?._id === player._id) ? (
               <span className="badge">你</span>
-            ) : (player.type === 'viewer') ? '旁观' : ''}
+            ) : (player.type === 'robot') ? <span className="badge">人机</span> : ''}
           </div>
         ))}
       </div>

@@ -4,7 +4,7 @@ import store from '../stores'
 import '../styles/components.css';
 import { socketEvents } from '../services/socket';
 
-export const Leaderboard = observer(() => {
+export const Leaderboard = observer(({ slug, limit }: { slug: string; limit: number }) => {
   const local = useLocalObservable(() => ({
     loading: false,
     setLoading(is: boolean) {
@@ -13,7 +13,7 @@ export const Leaderboard = observer(() => {
   }))
   useEffect(() => {
     if (!local.loading) {
-      socketEvents.getLeaderboard(ranks => {
+      socketEvents.getLeaderboard({ slug, limit: 5 }, ranks => {
         store.game.setLeaderboard(ranks)
         local.setLoading(false)
       })
@@ -34,9 +34,17 @@ export const Leaderboard = observer(() => {
   };
 
   return <Observer>{() => (
-    <div className="panel leaderboard-panel">
-      <h2>🏆 排行榜 Top 10</h2>
+    <div className="leaderboard-panel">
+      <h2>🏆 排行榜Top</h2>
       <div className="leaderboard">
+        <div className='leaderboard-item'>
+          <div className='rank'>排名</div>
+          <div className='player-info'>
+            <span className='player-avatar'></span>
+            <span className='player-name'>昵称</span>
+          </div>
+          <div className='player-rating'>分数</div>
+        </div>
         {local.loading ? (
           <div className="loading">
             <div className="spinner"></div>
@@ -51,7 +59,7 @@ export const Leaderboard = observer(() => {
                 </div>
                 <div className="player-info">
                   <span className="player-avatar">{player.avatar}</span>
-                  <span className="player-name">{player.nick_name}</span>
+                  <span className="player-name">{player.nickname}{player.type === 'robot' ? '(人机)' : ''}</span>
                 </div>
                 <div className="player-rating">{player.score}</div>
               </div>

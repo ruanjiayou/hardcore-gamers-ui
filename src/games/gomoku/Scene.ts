@@ -57,7 +57,7 @@ export default class GomokuScene {
       "camera",
       Math.PI / 2,
       Math.PI / 6,
-      15,
+      25,
       new Vector3(0, 0, 0),
       this.scene
     );
@@ -203,8 +203,8 @@ export default class GomokuScene {
   }
 
   createBoard() {
-    const cols = 10;
-    const rows = 10;
+    const cols = 16;
+    const rows = 16;
     const cellSize = 1;
     const margin = 1;
 
@@ -349,7 +349,7 @@ export default class GomokuScene {
       }
       console.log(p, name);
       // this.addPieceHightlight()
-      if (name.startsWith('board') && Math.abs(p.x) <= 5 && Math.abs(p.y) <= 5) {
+      if (name.startsWith('board') && Math.abs(p.x) <= 7 && Math.abs(p.y) <= 7) {
         this.logic.move(p)
       }
     }, PointerEventTypes.POINTERDOWN);

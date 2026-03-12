@@ -4,7 +4,6 @@ import { observer } from 'mobx-react-lite';
 import store from '../stores'
 import { socketEvents } from '../services/socket';
 import { GameList } from '../components/GameList';
-import { Leaderboard } from '../components/Leaderboard';
 import { Stats } from '../components/Stats';
 import '../styles/lobby.css';
 
@@ -21,10 +20,7 @@ export const LobbyPage = observer(() => {
   return (
     <div className="lobby">
       <div className="lobby-content">
-        <div className='two-column'>
-          <GameList />
-          <Leaderboard />
-        </div>
+        <GameList />
         <Stats />
       </div>
     </div>
