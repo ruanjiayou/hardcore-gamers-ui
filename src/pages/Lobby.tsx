@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
 import store from '../stores'
-import { socketEvents } from '../services/socket';
+import { SendoutEvent, socketEvents } from '../services/socket';
 import { GameList } from '../components/GameList';
 import { Stats } from '../components/Stats';
 import '../styles/lobby.css';
@@ -12,7 +12,7 @@ export const LobbyPage = observer(() => {
 
   useEffect(() => {
     // 加载游戏列表
-    socketEvents.getGames((games) => {
+    socketEvents.excute(SendoutEvent.LobbyGames, (games: any) => {
       store.game.setGames(games);
     });
   }, [navigate]);

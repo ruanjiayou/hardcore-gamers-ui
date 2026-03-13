@@ -34,6 +34,10 @@ export default class GameStore {
     makeAutoObservable(this);
   }
 
+  get curren_player_id() {
+    return this.gamePlayer ? this.gamePlayer._id : '';
+  }
+  
   setGames(games: Game[]) {
     this.games = games;
   }

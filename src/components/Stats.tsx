@@ -2,12 +2,13 @@ import React, { useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
 import store from '../stores'
 import '../styles/components.css';
-import { socketEvents } from '../services/socket';
+import { SendoutEvent, getSocket, socketEvents } from '../services/socket';
 
 export const Stats = observer(() => {
+  const socket = getSocket();
   useEffect(() => {
-    if (!store.game.stats) {
-      socketEvents.getStats(stats => {
+    if (!store.game.stats && socket) {
+      socketEvents.excute(SendoutEvent.LobbyStats, (stats: any) => {
         store.game.setStats(stats);
       })
     }

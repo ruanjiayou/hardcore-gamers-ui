@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Observer, observer, useLocalObservable } from 'mobx-react-lite';
 import store from '../stores'
 import '../styles/components.css';
-import { socketEvents } from '../services/socket';
+import { SendoutEvent, socketEvents } from '../services/socket';
 
 export const Leaderboard = observer(({ slug, limit }: { slug: string; limit: number }) => {
   const local = useLocalObservable(() => ({
@@ -13,10 +13,10 @@ export const Leaderboard = observer(({ slug, limit }: { slug: string; limit: num
   }))
   useEffect(() => {
     if (!local.loading) {
-      socketEvents.getLeaderboard({ slug, limit: 5 }, ranks => {
+      socketEvents.excute(SendoutEvent.GameRanks, { slug, limit: 5 }, (ranks: any) => {
         store.game.setLeaderboard(ranks)
         local.setLoading(false)
-      })
+      });
     }
   }, [local.loading]);
 

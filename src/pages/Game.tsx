@@ -2,7 +2,7 @@ import React, { useEffect, useState, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { observer, useLocalObservable } from 'mobx-react-lite';
 import store from '../stores'
-import { socketEvents, socketListeners } from '../services/socket';
+import { getSocket, ReceiveEvent, SendoutEvent, socketEvents } from '../services/socket';
 import { RoomList } from '../components/RoomList';
 import { Leaderboard } from '../components/Leaderboard';
 import '../styles/index.css';
@@ -36,23 +36,19 @@ export const GamePage = observer(() => {
       alert('请先登陆');
       return;
     }
-
-    socketEvents.createRoom(
-      {
-        slug,
-        name: local.name,
-        isPrivate: local.isPrivate,
-        password: local.isPrivate ? local.password : undefined
-      },
-      (success, room_id, error) => {
-        if (success && room_id) {
-          navigate(`/game/${slug}/room/${room_id}`);
-          local.setV({ show: false });
-        } else {
-          alert(error || '创建房间失败');
-        }
+    socketEvents.excute(SendoutEvent.CreateRoom, {
+      slug,
+      name: local.name,
+      isPrivate: local.isPrivate,
+      password: local.isPrivate ? local.password : undefined
+    }, (success: boolean, room_id: string, error?: string) => {
+      if (success && room_id) {
+        navigate(`/game/${slug}/room/${room_id}`);
+        local.setV({ show: false });
+      } else {
+        alert(error || '创建房间失败');
       }
-    );
+    });
   };
 
   const handleJoinInviteRoom = () => {
@@ -60,27 +56,27 @@ export const GamePage = observer(() => {
       alert('请先登陆');
       return;
     }
-
-    socketEvents.joinInviteRoom(
-      {
-        slug,
-        name: local.name,
-        isPrivate: local.isPrivate,
-        password: local.isPrivate ? local.password : undefined
-      },
-      (success, room_id, error) => {
-        if (success && room_id) {
-          navigate(`/game/${slug}/room/${room_id}`);
-          local.setV({ show: false });
-        } else {
-          alert(error || '加入房间失败');
-        }
+    socketEvents.excute(SendoutEvent.JoinInviteRoom, {
+      slug,
+      name: local.name,
+      isPrivate: local.isPrivate,
+      password: local.isPrivate ? local.password : undefined
+    }, (success: boolean, room_id: string, error: string) => {
+      if (success && room_id) {
+        navigate(`/game/${slug}/room/${room_id}`);
+        local.setV({ show: false });
+      } else {
+        alert(error || '加入房间失败');
       }
-    );
+    });
   };
 
+  const onRoomCreated = () => {
+
+  }
+  const socket = getSocket();
   useEffect(() => {
-    if (!slug) return;
+    if (!slug || !socket) return;
 
     if (slug !== store.game.gamePlayer?.slug) {
       socketEvents.getGamePlayer(slug, (gamePlayer) => {
@@ -91,20 +87,10 @@ export const GamePage = observer(() => {
         }
       })
     }
-
-    // 监听房间创建
-    socketListeners.onRoomCreated((room) => {
-      if (room.slug === slug) {
-        store.game.addRoom(room);
-      }
-    });
-
-    // 监听房间销毁
-    socketListeners.onRoomDestroyed((data) => {
-      store.game.removeRoom(data.room_id);
-    });
+    socket.on(ReceiveEvent.RoomCreated, onRoomCreated)
     return () => {
       store.game.setGamePlayer(null)
+      socket.off(ReceiveEvent.RoomCreated, onRoomCreated)
     }
   }, [slug, navigate]);
 

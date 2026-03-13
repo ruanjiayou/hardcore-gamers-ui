@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { Fragment, useEffect } from 'react';
 import { Observer, observer } from 'mobx-react-lite';
-import { socketEvents } from '../services/socket';
+import { getSocket, socketEvents } from '../services/socket';
 import store from '../stores'
+import constant from '../constant';
 
 export const PlayerList = observer(() => {
   const reload = () => {
@@ -12,8 +13,39 @@ export const PlayerList = observer(() => {
       });
     }
   }
+  const kickOut = (room_id: string, player_id: string) => {
+    socketEvents.excute('room:kick-player', { room_id, player_id }, (success: boolean) => {
+      if (success) {
+        store.room.setCurrentRoom({ ...store.room.roomInfo, members: store.room.roomInfo.members.filter((m: any) => m._id !== player_id) })
+      }
+    })
+  }
+  const kicked = (data: { player_id: string }) => {
+    store.room.setCurrentRoom({ ...store.room.roomInfo, members: store.room.roomInfo.members.filter((m: any) => m._id !== data.player_id) })
+  }
+  const transfer = (room_id: string, player_id: string) => {
+    socketEvents.excute('room:transferor-owner', { room_id, player_id }, (success: boolean) => {
+      if (success) {
+        store.room.setCurrentRoom({ ...store.room.roomInfo, owner_id: player_id })
+      }
+    })
+  }
+  const transfered = (data: { player_id: string }) => {
+    store.room.setCurrentRoom({ ...store.room.roomInfo, owner_id: data.player_id })
+  }
   useEffect(() => {
     reload()
+    const socket = getSocket();
+    if (socket) {
+      socket.on('room:player-kicked', kicked);
+      socket.on('room:transferee-owner', transfered);
+    }
+    return () => {
+      if (socket) {
+        socket.off('room:player-kicked', kicked);
+        socket.off('room:transferee-owner', transfered);
+      }
+    }
   }, [])
   return (
     <Observer>{() => (
@@ -23,9 +55,15 @@ export const PlayerList = observer(() => {
           <div key={player._id} className="player-item">
             <span className="avatar">👤</span>
             <span className="name">{player.nickname}</span>
-            {(store.game.gamePlayer?._id === player._id) ? (
-              <span className="badge">你</span>
-            ) : (player.type === 'robot') ? <span className="badge">人机</span> : ''}
+            {store.game.curren_player_id === player._id
+              ? <Fragment>
+                <span className="badge">你</span>
+              </Fragment>
+              : <Fragment>
+                {store.game.curren_player_id === store.room.roomInfo?.owner_id && store.room.roomInfo?.status === constant.ROOM.STATUS.waiting && <span className="info" onClick={() => transfer(store.room.currentRoomId, player._id)}>转让</span>}
+                {store.game.curren_player_id === store.room.roomInfo?.owner_id && store.room.roomInfo?.status === constant.ROOM.STATUS.waiting && <span className='danger' onClick={() => kickOut(store.room.currentRoomId, player._id)}>踢出</span>}
+              </Fragment>}
+            {player.type === 'robot' ? <span className="badge">人机</span> : ''}
           </div>
         ))}
       </div>

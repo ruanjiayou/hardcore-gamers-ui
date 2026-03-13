@@ -53,7 +53,7 @@ export default class GomokuScene {
     const camera = new ArcRotateCamera(
       "camera",
       Math.PI / 2,
-      Math.PI / 6,
+      0,
       25,
       new Vector3(0, 0, 0),
       this.scene
@@ -61,6 +61,26 @@ export default class GomokuScene {
     camera.attachControl(canvas, true);
     const fxaa = new FxaaPostProcess("fxaa", 1.0, null, 1, this.engine);
     camera.attachPostProcess(fxaa);
+
+    // 禁用触摸旋转
+    if (camera.inputs.attached.touch) {
+      camera.inputs.attached.touch.detachControl();
+    }
+
+    // 禁用键盘
+    if (camera.inputs.attached.keyboard) {
+      camera.inputs.attached.keyboard.detachControl();
+    }
+
+    // 禁用滚轮缩放
+    if (camera.inputs.attached.mousewheel) {
+      camera.inputs.attached.mousewheel.detachControl();
+    }
+
+    // 禁用多点触控缩放
+    // if (camera.inputs.attached.pointers) {
+    //   camera.inputs.attached.pointers.detachControl();
+    // }
 
     const light = new HemisphericLight("light",
       new Vector3(1, 1, 1),
@@ -79,7 +99,7 @@ export default class GomokuScene {
 
     this.createBoard();
     this.setupPicking();
-    this.createDebugHelper({})
+    // this.createDebugHelper({})
 
     this.engine.runRenderLoop(() => this.scene.render());
     window.addEventListener("resize", () => {

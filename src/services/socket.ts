@@ -80,16 +80,54 @@ export function disconnectSocket() {
   }
 }
 
+export const ReceiveEvent = {
+  // 玩家事件
+  PlayerNetwork: 'room:player-network',
+  PlayerJoined: 'room:player-joined',
+  PlayerLeaved: 'room:player-leaved',
+  PlayerAction: 'room:player-action',
+  PlayerKicked: 'room:player-kicked',
+  // 游戏事件
+  GameStart: 'room:game-start',
+  GameOver: 'room:game-over',
+  OfferDraw: 'room:offer-draw',
+  DecideDraw: 'room:decide-draw',
+  // 房间事件
+  RoomCreated: 'room:created',
+  RoomReady: 'room:ready',
+  RoomDisband: 'room:disband',
+  RoomMessage: 'room:message',
+  
+} as const;
+export const SendoutEvent = {
+  KickPlayer: 'room:kick-player',
+  TransferorOwner: 'room:transferor-owner',
+  AddRobot: 'room:add-robot',
+  LeaveRoom: 'room:leave',
+  SendMessage: 'room:send-message',
+  StartGame: 'room:start-game',
+  GetMatchState: 'room:get-match-state',
+  PlayerSurrender: 'room:player-surrender',
+  OfferDraw: 'room:offer-draw',
+  DecideDraw: 'room:decide-draw',
+
+  LobbyStats: 'lobby:get-stats',
+  LobbyGames: 'lobby:get-games',
+  GameRanks: 'lobby:get-leaderboard',
+  GetRooms: 'lobby:get-rooms',
+
+  CreateRoom: 'lobby:create-room',
+  JoinRoom: 'lobby:join-room',
+  JoinInviteRoom: 'lobby:join-invite-room',
+} as const;
+// 定义一个通用的 ValueOf 工具类型
+type ValueOf<T> = T[keyof T];
+type TSendoutEvent = ValueOf<typeof SendoutEvent>
+
 // 事件监听器
 export const socketEvents = {
-  getStats: (callback: (stats: any) => void) => {
-    getSocket()?.emit('lobby:get-stats', callback);
-  },
-  getGames: (callback: (games: any[]) => void) => {
-    getSocket()?.emit('lobby:get-games', callback);
-  },
-  getLeaderboard: (data: { slug: string, limit: number }, callback: (ranks: any[]) => void) => {
-    getSocket()?.emit('lobby:get-leaderboard', data, callback);
+  excute: (...args: [TSendoutEvent, ...any[]]) => {
+    getSocket()?.emit(...args);
   },
   getRooms: (game_id: string, callback: (rooms: any[]) => void) => {
     getSocket()?.emit('lobby:get-rooms', { game_id }, callback);
@@ -97,94 +135,13 @@ export const socketEvents = {
   getGamePlayer: (name: string, callback: (roomPlayer: any) => void) => {
     getSocket()?.emit('lobby:get-game-player', name, callback);
   },
-  createRoom: (data: any, callback: (success: boolean, room_id?: string, error?: string) => void) => {
-    getSocket()?.emit('lobby:create-room', data, callback);
-  },
-  joinInviteRoom: (data: any, callback: (success: boolean, room_id?: string, error?: string) => void) => {
-    getSocket()?.emit('lobby:join-invite-room', data, callback);
-  },
   joinRoom: (data: { room_id: string, type?: string, password?: string }, callback?: (success: boolean, player?: any) => void) => {
     getSocket()?.emit('lobby:join-room', data, callback);
   },
-
   getRoomDetail: (room_id: string, callback?: (data: { room: any, match_id: string }) => void) => {
     getSocket()?.emit('room:detail', { room_id }, callback);
-  },
-
-  addRobot: (data: { room_id: string }, callback?: (success: boolean) => void) => {
-    getSocket()?.emit('room:add-robot', data, callback);
-  },
-
-  remRobot: (data: { room_id: string, player_id: string }, callback?: (success: boolean) => void) => {
-    getSocket()?.emit('room:rem-robot', data, callback);
-  },
-
-  leaveRoom: (data: { room_id: string, player_id: string }, callback?: (success: boolean) => void) => {
-    getSocket()?.emit('room:leave', data, callback);
-  },
-
-  sendMessage: (room_id: string, message: string, callback?: (success: boolean) => void) => {
-    getSocket()?.emit('room:send-message', { room_id, message }, callback);
-  },
-
-  startGame: (data: { room_id: string, player_id: string }, callback?: (match_id: string, error?: string) => void) => {
-    getSocket()?.emit('room:start-game', data, callback);
-  },
-  getMatchState: (data: { game_id: string, match_id?: string }, callback: (state: any) => void) => {
-    getSocket()?.emit('room:get-match-state', data, callback);
-  },
-  surrender: (data: { room_id: string, match_id?: string, player_id: string }, callback: (success: boolean) => void) => {
-    getSocket()?.emit('room:surrender', data, callback);
-  },
-  seekdraw: (room_id: string) => {
-    getSocket()?.emit('room:seek-draw', { room_id });
-  },
-  agreeDraw: (room_id: string, agree: boolean) => {
-    getSocket()?.emit('room:agree-draw', { room_id, agree });
   },
   playerReadyChange: (data: { room_id: string, player_id: string, ready: boolean }, callback: (success: boolean) => void) => {
     getSocket()?.emit('room:player-ready', data, callback);
   },
-};
-
-// 事件订阅
-export const socketListeners = {
-  onPlayerNetwork: (callback: (data: any) => void) => {
-    getSocket()?.on('room:player-network', callback);
-  },
-  onRoomCreated: (callback: (room: any) => void) => {
-    getSocket()?.on('room:created', callback);
-  },
-
-  onPlayerJoined: (callback: (data: any) => void) => {
-    getSocket()?.on('room:player-joined', callback);
-  },
-
-  onPlayerActioin: (callback: (data: any) => void) => {
-    getSocket()?.on('room:player-action', callback);
-  },
-  onGameOver: (callback: (data: any) => void) => {
-    getSocket()?.on('room:game-over', callback);
-  },
-  onPlayerLeaved: (callback: (data: any) => void) => {
-    getSocket()?.on('room:player-leaved', callback);
-  },
-
-  onRoomReady: (callback: (data: any) => void) => {
-    getSocket()?.on('room:room-ready', callback);
-  },
-
-  onMessage: (callback: (data: any) => void) => {
-    getSocket()?.on('room:message', callback);
-  },
-
-  onGameStarted: (callback: (data: { room_id: string, match_id: string, curr_turn: string, timestamp: number }) => void) => {
-    getSocket()?.on('room:game-started', callback);
-  },
-  onSeekDraw: (callback: (data: any) => void) => {
-    getSocket()?.on('room:seek-draw', callback);
-  },
-  onRoomDestroyed: (callback: (data: any) => void) => {
-    getSocket()?.on('room:destroyed', callback);
-  }
 };
