@@ -16,12 +16,16 @@ export const PlayerList = observer(() => {
   const kickOut = (room_id: string, player_id: string) => {
     socketEvents.excute('room:kick-player', { room_id, player_id }, (success: boolean) => {
       if (success) {
-        store.room.setCurrentRoom({ ...store.room.roomInfo, members: store.room.roomInfo.members.filter((m: any) => m._id !== player_id) })
+        // 
       }
     })
   }
   const kicked = (data: { player_id: string }) => {
-    store.room.setCurrentRoom({ ...store.room.roomInfo, members: store.room.roomInfo.members.filter((m: any) => m._id !== data.player_id) })
+    const member = store.room.roomInfo.members.find((m: any) => m._id === data.player_id);
+    if (member) {
+      store.room.addMessage({ player_id: member._id, player_name: "系统", message: `玩家 ${member.nickname} 被踢出房间` })
+      store.room.setCurrentRoom({ ...store.room.roomInfo, members: store.room.roomInfo.members.filter((m: any) => m._id !== data.player_id) })
+    }
   }
   const transfer = (room_id: string, player_id: string) => {
     socketEvents.excute('room:transferor-owner', { room_id, player_id }, (success: boolean) => {

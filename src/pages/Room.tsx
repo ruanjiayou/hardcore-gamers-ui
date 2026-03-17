@@ -56,7 +56,9 @@ export const RoomPage = observer(() => {
   const onPlayerJoined = (data: any) => {
     store.room.addPlayer(data);
     store.room.addMessage({ player_id: data._id, player_name: "系统", message: `玩家 ${data.nickname} 加入房间` })
-    init(room_id)
+    if (data._id !== store.game?.gamePlayer._id) {
+      init(room_id)
+    }
   }
   const onPlayerLeaved = (data: any) => {
     store.room.removePlayer(data._id);

@@ -77,13 +77,11 @@ export default class ChinaChessLogic extends EventEmitter {
   }
 
   move(fx: number, fy: number, tx: number, ty: number): boolean {
-    console.log('moveto?')
     const piece = this.getPiece(fx, fy);
     if (!piece) return false;
 
     if (this.player?._id !== this.curr_turn) return false;
     const valid = this.isLegalMove(piece, fx, fy, tx, ty);
-    console.log(valid, fx, fy, tx, ty)
     if (!valid) return false;
     this.socket.socket.emit('room:player-action', this.match_id, {
       player_id: this.curr_turn,

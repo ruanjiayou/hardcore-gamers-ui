@@ -346,7 +346,6 @@ export default class GomokuScene {
   }
 
   createPieces() {
-    console.log(this.logic.board)
     this.logic.board.forEach((color: 'white' | 'black', key: string) => {
       const [x, y] = key.split('|').map(v => parseInt(v, 10));
       if (color) {
@@ -373,7 +372,6 @@ export default class GomokuScene {
         y: Math.round(pointer.pickInfo.pickedPoint?._z || -1),
         color: this.logic.player.role,
       }
-      console.log(p, name);
       // this.addPieceHightlight()
       if (name.startsWith('board') && Math.abs(p.x) <= 7 && Math.abs(p.y) <= 7) {
         this.logic.move(p)
