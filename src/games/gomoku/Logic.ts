@@ -1,18 +1,13 @@
 import EventEmitter from "eventemitter3"
 import SocketTransport from "../../core/GameTransport";
 
-export type PieceColor = "white" | "black";
-
-export interface Piece {
-  type: string; // r n b a k c p
-  color: PieceColor;
-}
+export type PieceRole = "white" | "black";
 
 export default class GomokuLogic extends EventEmitter {
   socket: SocketTransport;
 
-  board = new Map<string, PieceColor>();
-  player: { _id: string; role: PieceColor };
+  board = new Map<string, PieceRole>();
+  player: { _id: string; role: PieceRole };
   curr_turn: string;
   match_id: string;
   isPendding = false;
@@ -23,11 +18,11 @@ export default class GomokuLogic extends EventEmitter {
     this.player = player;
     this.curr_turn = '';
     this.match_id = '';
-    this.socket.socket.on('room:player-action', (data: { next_turn: string, point: { x: number, y: number, color: PieceColor } }) => {
+    this.socket.socket.on('room:player-action', (data: { next_turn: string, to: { x: number, y: number, role: PieceRole } }) => {
       this.curr_turn = data.next_turn;
-      this.board.set(`${data.point.x}|${data.point.y}`, data.point.color)
+      this.board.set(`${data.to.x}|${data.to.y}`, data.to.role)
 
-      this.emit('move', data.point);
+      this.emit('move', data.to);
     })
   }
 
@@ -60,13 +55,13 @@ export default class GomokuLogic extends EventEmitter {
     return this.player?._id === this.curr_turn;
   }
 
-  move(point: { x: number, y: number, color: PieceColor }): boolean {
-    const piece = this.board.get(`${point.x}|${point.y}`);
+  move(to: { x: number, y: number, role: PieceRole }): boolean {
+    const piece = this.board.get(`${to.x}|${to.y}`);
     if (piece || this.player?._id !== this.curr_turn) return false;
 
     this.socket.socket.emit('room:player-action', this.match_id, {
       player_id: this.curr_turn,
-      point,
+      to: { x: to.x + 7, y: to.y + 7, role: to.role },
     }, (success: boolean) => {
       this.isPendding = false;
     })

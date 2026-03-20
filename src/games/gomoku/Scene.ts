@@ -39,8 +39,8 @@ export default class GomokuScene {
       this.clear()
       this.createPieces();
     });
-    this.logic.on('move', (data: { x: number, y: number, color: 'white' | 'black' }) => {
-      this.onMovePiece(data)
+    this.logic.on('move', (data: { x: number, y: number, role: 'white' | 'black' }) => {
+      this.onMovePiece({ x: data.x - 7, y: data.y - 7, role: data.role })
     })
 
     this.engine = new Engine(canvas, true, {
@@ -313,8 +313,8 @@ export default class GomokuScene {
     this.board = board;
   }
 
-  createPiece(x: number, y: number, color: "white" | "black") {
-    const id = `piece-${x}-${y}-${color}`;
+  createPiece(x: number, y: number, role: "white" | "black") {
+    const id = `piece-${x}-${y}-${role}`;
 
     // 创建扁球体（标准五子棋棋子）
     const piece = MeshBuilder.CreateSphere(
@@ -330,7 +330,7 @@ export default class GomokuScene {
     // 材质
     const material = new StandardMaterial(id + "-mat", this.scene);
 
-    if (color === "white") {
+    if (role === "white") {
       material.diffuseColor = new Color3(0.95, 0.95, 0.9);
       material.specularColor = new Color3(0.3, 0.3, 0.3);
     } else {
@@ -346,10 +346,10 @@ export default class GomokuScene {
   }
 
   createPieces() {
-    this.logic.board.forEach((color: 'white' | 'black', key: string) => {
+    this.logic.board.forEach((role: 'white' | 'black', key: string) => {
       const [x, y] = key.split('|').map(v => parseInt(v, 10));
-      if (color) {
-        const mesh = this.createPiece(x, y, color)
+      if (role) {
+        const mesh = this.createPiece(x - 7, y - 7, role)
         this.pieceMap.set(key, mesh);
       }
     });
@@ -370,7 +370,7 @@ export default class GomokuScene {
       const p = {
         x: Math.round(pointer.pickInfo.pickedPoint?._x || -1),
         y: Math.round(pointer.pickInfo.pickedPoint?._z || -1),
-        color: this.logic.player.role,
+        role: this.logic.player.role,
       }
       // this.addPieceHightlight()
       if (name.startsWith('board') && Math.abs(p.x) <= 7 && Math.abs(p.y) <= 7) {
@@ -408,8 +408,8 @@ export default class GomokuScene {
     }
   }
 
-  onMovePiece(point: { x: number, y: number, color: 'white' | 'black' }) {
-    const piece = this.createPiece(point.x, point.y, point.color)
+  onMovePiece(point: { x: number, y: number, role: 'white' | 'black' }) {
+    const piece = this.createPiece(point.x, point.y, point.role)
     this.cancelPieceHighlight()
     this.selected = `${point.x}|${point.y}`
     this.pieceMap.set(this.selected, piece)
