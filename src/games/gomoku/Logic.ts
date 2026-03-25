@@ -62,7 +62,7 @@ export default class GomokuLogic extends EventEmitter {
     this.socket.socket.emit('room:player-action', this.match_id, {
       player_id: this.curr_turn,
       to: { x: to.x + 7, y: to.y + 7, role: to.role },
-    }, (success: boolean) => {
+    }, (data: { success: boolean; message: string }) => {
       this.isPendding = false;
     })
     return true;

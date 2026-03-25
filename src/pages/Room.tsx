@@ -71,13 +71,13 @@ export const RoomPage = observer(() => {
   const onGameStart = (data: { room_id: string, match_id: string, curr_turn: string, timestamp: number }) => {
     store.room.setRoomStatus('playing')
     local.setV('match_id', data.match_id)
-    loadState({ match_id: data.match_id, game_id: store.room.roomInfo?.game_id });
+    loadState({ match_id: data.match_id, game_slug: slug });
   }
   const onGameOver = (data: { _id: string, nickname: string }) => {
     notificationManager.show(`玩家 ${data.nickname} 胜利`)
     store.room.setRoomStatus('waiting')
     store.game.setGamePlayer({ ...store.game.gamePlayer, state: constant.PLAYER.STATE.inroom })
-    loadState({ game_id: store.room.roomInfo.game_id, match_id: '', })
+    loadState({ game_slug: slug, match_id: '', })
   }
   const onRoomReady = () => {
     store.room.setRoomStatus('ready');
@@ -128,7 +128,7 @@ export const RoomPage = observer(() => {
       console.log('重新加入房间', success)
     });
   };
-  const loadState = (data: { match_id: string, game_id: string }) => {
+  const loadState = (data: { match_id: string, game_slug?: string }) => {
     console.log(data, '加载对局数据')
     socketEvents.excute(SendoutEvent.GetMatchState, data, (state: any) => {
       gameManager.game?.logic.setState(state)
@@ -202,7 +202,7 @@ export const RoomPage = observer(() => {
               if (socket) {
                 gameManager.load(slug as string, canvas, socket, toJS(store.game.gamePlayer)).then(() => {
                   console.log('game loaded')
-                  loadState({ game_id: store.room.roomInfo.game_id, match_id: local.match_id, })
+                  loadState({ game_slug: slug, match_id: local.match_id, })
                 });
               }
             }}
