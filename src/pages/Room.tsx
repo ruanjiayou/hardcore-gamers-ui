@@ -68,7 +68,7 @@ export const RoomPage = observer(() => {
   const onPlayerNetwork = (data: { player_id: string, online: boolean }) => {
     store.room.setPlayerNetwork(data.player_id, data.online)
   }
-  const onGameStart = (data: { room_id: string, match_id: string, curr_turn: string, timestamp: number }) => {
+  const onGameStart = (data: { room_id: string, match_id: string, timestamp: number }) => {
     store.room.setRoomStatus('playing')
     local.setV('match_id', data.match_id)
     loadState({ match_id: data.match_id, game_slug: slug });
@@ -211,10 +211,10 @@ export const RoomPage = observer(() => {
         <div className='game-info'>
           <div className="room-actions">
             {store.room.roomInfo?.status === RoomStatus.waiting && <button onClick={handleAddRobot}>添加机器人</button>}
-            {store.room.roomInfo?.status === RoomStatus.waiting && store.game.gamePlayer?.state === PlayerState.inroom && <button onClick={() => handlePlayerReady(true)}>准备</button>}
-            {store.room.roomInfo?.status === RoomStatus.waiting && store.game.gamePlayer?.state === PlayerState.prepared && <button onClick={() => handlePlayerReady(false)}>取消</button>}
+            {store.room.roomInfo?.status === RoomStatus.waiting && store.game.gamePlayer?.member_type === 'player' && store.game.gamePlayer?.state === PlayerState.inroom && <button onClick={() => handlePlayerReady(true)}>准备</button>}
+            {store.room.roomInfo?.status === RoomStatus.waiting && store.game.gamePlayer?.member_type === 'player' && store.game.gamePlayer?.state === PlayerState.prepared && <button onClick={() => handlePlayerReady(false)}>取消</button>}
             {store.room.roomInfo?.status === RoomStatus.waiting && <button onClick={handleLeaveRoom} className="danger">离开</button>}
-            {store.room.roomInfo?.status === RoomStatus.playing && <Fragment>
+            {store.room.roomInfo?.status === RoomStatus.playing && store.game.gamePlayer?.member_type === 'player' && <Fragment>
               <button onClick={handleRequestDraw}>求和</button>
               <button onClick={requestSurrender} className="danger">认输</button>
             </Fragment>}

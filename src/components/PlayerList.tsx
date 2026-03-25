@@ -68,6 +68,7 @@ export const PlayerList = observer(() => {
                 {store.game.curren_player_id === store.room.roomInfo?.owner_id && store.room.roomInfo?.status === constant.ROOM.STATUS.waiting && <span className='danger' onClick={() => kickOut(store.room.currentRoomId, player._id)}>踢出</span>}
               </Fragment>}
             {player.type === 'robot' ? <span className="badge">人机</span> : ''}
+            {player.member_type === 'viewer' ? <span className="badge">观战</span> : ''}
           </div>
         ))}
       </div>

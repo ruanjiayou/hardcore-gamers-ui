@@ -79,7 +79,7 @@ export const RoomList = observer(({ game_id, slug }: { game_id: string, slug: st
               >
                 {room.members.length >= room.numbers.max ? '房满' : '加入'}
               </button>
-              <button disabled onClick={() => handleJoinRoom(room, 'viewer')}>观看</button>
+              <button onClick={() => handleJoinRoom(room, 'viewer')}>观看</button>
             </div>
           </div>
         ))}
