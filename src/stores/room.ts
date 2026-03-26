@@ -1,12 +1,10 @@
 import { makeAutoObservable } from 'mobx';
 
 export default class RoomStore {
-  currentRoomId: string = '';
   matchState: any = null;
-  roomInfo: any = null;
-  roomPlayer: any = null;
-  members: any[] = [];
-  players: any[] = [];
+  roomInfo: { [key: string]: any } = {
+    members: [],
+  };
   messages: any[] = [];
 
   constructor() {
@@ -16,13 +14,13 @@ export default class RoomStore {
     return false;
   }
   setCurrentRoom(roomInfo: any) {
-    this.currentRoomId = roomInfo._id;
     this.roomInfo = roomInfo;
-    this.members = roomInfo.members || [];
-    this.players = this.members.filter(m => m.type === 'player');
   }
-  setCurrentPlayer(player: any) {
-    this.roomPlayer = player;
+  get members() {
+    return this.roomInfo.members || [];
+  }
+  get players() {
+    return this.roomInfo.members.filter((m: any) => m.member_type === 'player');
   }
   setMatchState(state: any) {
     this.matchState = state;
@@ -30,21 +28,21 @@ export default class RoomStore {
   setRoomStatus(status: 'ready' | 'waiting' | 'playing') {
     this.roomInfo = { ...this.roomInfo, status };
   }
-  setPlayerNetwork(user_id: string, online: boolean) {
-    this.players.forEach(p => {
-      if (p.user_id === user_id) {
-        p.online = online;
+  changePlayer(data: { player_id: string, field: string, value: any }) {
+    (this.roomInfo.members || []).forEach((p: any) => {
+      if (p._id === data.player_id) {
+        p[data.field] = data.value;
       }
     })
   }
   addPlayer(player: any) {
-    if (!this.players.find(p => p.user_id === player.user_id)) {
-      this.players.push(player);
+    if (!this.roomInfo.members.find((p: any) => p.user_id === player.user_id)) {
+      this.roomInfo.members.push(player);
     }
   }
 
   removePlayer(player_id: string) {
-    this.players = this.players.filter(p => p._id !== player_id);
+    this.roomInfo.members = this.roomInfo.members.filter((p: any) => p._id !== player_id);
   }
 
   addMessage(message: any) {
@@ -52,9 +50,7 @@ export default class RoomStore {
   }
 
   clear() {
-    this.roomInfo = null;
-    this.currentRoomId = ''
-    this.players = [];
+    this.roomInfo = { members: [] };
     this.messages = [];
   }
 }

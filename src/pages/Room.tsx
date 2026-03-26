@@ -1,6 +1,6 @@
 import React, { useEffect, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { observer, useLocalObservable, useObserver } from 'mobx-react-lite';
+import { observer, useLocalObservable } from 'mobx-react-lite';
 import { toJS } from 'mobx'
 import store from '../stores'
 import { ReceiveEvent, SendoutEvent, getSocket, socketEvents } from '../services/socket';
@@ -36,37 +36,38 @@ export const RoomPage = observer(() => {
       return;
     }
     local.setV('loading', true)
+    if (!store.game.player) {
+      socketEvents.getGamePlayer(slug!, (player) => {
+        store.game.setPlayer(player);
+      })
+    }
     socketEvents.getRoomDetail(room_id, (data) => {
       const { room } = data;
       store.room.setCurrentRoom(room)
       local.setV('match_id', data.match_id)
       console.log('加载玩家信息后加载游戏')
       local.setV('loading', false);
-      if (!store.game.gamePlayer) {
-        socketEvents.getGamePlayer(room.game_id, (player) => {
-          if (!store.game.gamePlayer && player.room_id) {
-            joinRoom(player.room_id, '')
-          }
-          store.game.setGamePlayer(player);
-        })
-      }
     });
   }
   const socket = getSocket();
   const onPlayerJoined = (data: any) => {
     store.room.addPlayer(data);
     store.room.addMessage({ player_id: data._id, player_name: "系统", message: `玩家 ${data.nickname} 加入房间` })
-    if (data._id !== store.game?.gamePlayer._id) {
+    if (data._id !== store.game.player_id) {
       init(room_id)
     }
+  }
+  const onPlayerReJoin = (data: any) => {
+    store.room.addMessage({ player_id: data._id, player_name: "系统", message: `玩家 ${data.nickname} 重新连接` })
   }
   const onPlayerLeaved = (data: any) => {
     store.room.removePlayer(data._id);
     store.room.addMessage({ player_id: data._id, player_name: '系统', message: `玩家 ${data.nickname} 离开房间` })
     init(room_id)
   }
-  const onPlayerNetwork = (data: { player_id: string, online: boolean }) => {
-    store.room.setPlayerNetwork(data.player_id, data.online)
+  const onPlayerChange = (data: { player_id: string, field: string, value: any }) => {
+    store.game.changePlayer(data);
+    store.room.changePlayer(data);
   }
   const onGameStart = (data: { room_id: string, match_id: string, timestamp: number }) => {
     store.room.setRoomStatus('playing')
@@ -76,7 +77,6 @@ export const RoomPage = observer(() => {
   const onGameOver = (data: { _id: string, nickname: string }) => {
     notificationManager.show(`玩家 ${data.nickname} 胜利`)
     store.room.setRoomStatus('waiting')
-    store.game.setGamePlayer({ ...store.game.gamePlayer, state: constant.PLAYER.STATE.inroom })
     loadState({ game_slug: slug, match_id: '', })
   }
   const onRoomReady = () => {
@@ -102,9 +102,11 @@ export const RoomPage = observer(() => {
       console.log('此时没有 socket')
       return;
     }
+    socket.on(ReceiveEvent.PlayerChange, onPlayerChange);
     socket.on(ReceiveEvent.PlayerJoined, onPlayerJoined);
     socket.on(ReceiveEvent.PlayerLeaved, onPlayerLeaved);
-    socket.on(ReceiveEvent.PlayerNetwork, onPlayerNetwork);
+    socket.on(ReceiveEvent.PlayerReJoin, onPlayerReJoin);
+
     socket.on(ReceiveEvent.GameStart, onGameStart);
     socket.on(ReceiveEvent.GameOver, onGameOver);
     socket.on(ReceiveEvent.RoomMessage, onRoomMessage);
@@ -112,9 +114,10 @@ export const RoomPage = observer(() => {
     socket.on(ReceiveEvent.OfferDraw, onReceiveDraw);
     return () => {
       gameManager.unload();
+      socket.off(ReceiveEvent.PlayerChange, onPlayerChange);
       socket.off(ReceiveEvent.PlayerJoined, onPlayerJoined);
       socket.off(ReceiveEvent.PlayerLeaved, onPlayerLeaved);
-      socket.off(ReceiveEvent.PlayerNetwork, onPlayerNetwork);
+      socket.off(ReceiveEvent.PlayerReJoin, onPlayerReJoin);
       socket.off(ReceiveEvent.GameStart, onGameStart);
       socket.off(ReceiveEvent.GameOver, onGameOver);
       socket.off(ReceiveEvent.RoomMessage, onRoomMessage);
@@ -123,11 +126,6 @@ export const RoomPage = observer(() => {
     };
   }, [room_id, navigate]);
 
-  const joinRoom = (room_id: string, type: string, password?: string) => {
-    socketEvents.joinRoom({ room_id, type, password }, (success, player) => {
-      console.log('重新加入房间', success)
-    });
-  };
   const loadState = (data: { match_id: string, game_slug?: string }) => {
     console.log(data, '加载对局数据')
     socketEvents.excute(SendoutEvent.GetMatchState, data, (state: any) => {
@@ -147,36 +145,27 @@ export const RoomPage = observer(() => {
 
   const handleLeaveRoom = () => {
     if (!room_id) return;
-    socketEvents.excute(SendoutEvent.LeaveRoom, { room_id, player_id: store.game.curren_player_id }, (success: boolean) => {
+    socketEvents.excute(SendoutEvent.LeaveRoom, { room_id, player_id: store.game.player_id }, (success: boolean) => {
       console.log('离开房间', success)
       store.room.clear();
-      store.game.setGamePlayer({ ...store.game.gamePlayer, room_id: '' })
+      store.game.setPlayer({ ...store.game.player, room_id: '' })
       navigate(-1);
     });
   };
 
-  const handleStartGame = () => {
-    if (!room_id) return;
-    socketEvents.excute(SendoutEvent.StartGame, { room_id, player_id: store.game.curren_player_id }, (success: boolean) => {
-      if (!success) {
-        notificationManager.show('启动失败', 'error')
-      }
-    });
-  };
-
   const handlePlayerReady = (ready: boolean) => {
-    socketEvents.playerReadyChange({ room_id: room_id as string, player_id: store.game.gamePlayer._id, ready }, (success) => {
+    socketEvents.playerReadyChange({ room_id: room_id as string, player_id: store.game.player_id, ready }, (success) => {
       if (success) {
-        store.game.setGamePlayer({ ...store.game.gamePlayer, state: ready ? 'ready' : 'waiting' })
+        store.game.setPlayer({ ...store.game.player, state: ready ? 'ready' : 'waiting' })
       }
     })
   }
   const requestSurrender = () => {
     if (!room_id) return;
     socketEvents.excute(SendoutEvent.PlayerSurrender, {
-      room_id: store.room.currentRoomId,
+      room_id: room_id,
       match_id: local.match_id,
-      player_id: store.game.curren_player_id,
+      player_id: store.game.player_id,
     }, (success: boolean) => {
       console.log(success, '认输')
     })
@@ -185,22 +174,17 @@ export const RoomPage = observer(() => {
     if (!room_id) return;
     socketEvents.excute(SendoutEvent.OfferDraw, room_id);
   }
-  const handleDraw = (agree: boolean) => {
-    if (!room_id) return;
-    socketEvents.excute(SendoutEvent.DecideDraw, { agree, room_id });
-
-  }
 
   return (
     <div className="room-page">
       <div className='room-container'>
         <div className='game-main'>
           <BabylonCanvas
-            ready={store.game.gamePlayer && store.room.roomInfo ? true : false}
+            ready={store.game.player && store.room.roomInfo ? true : false}
             onReady={(canvas: HTMLCanvasElement) => {
               const socket = getSocket()
               if (socket) {
-                gameManager.load(slug as string, canvas, socket, toJS(store.game.gamePlayer)).then(() => {
+                gameManager.load(slug!, canvas, socket, toJS(store.game.player)).then(() => {
                   console.log('game loaded')
                   loadState({ game_slug: slug, match_id: local.match_id, })
                 });
@@ -211,16 +195,16 @@ export const RoomPage = observer(() => {
         <div className='game-info'>
           <div className="room-actions">
             {store.room.roomInfo?.status === RoomStatus.waiting && <button onClick={handleAddRobot}>添加机器人</button>}
-            {store.room.roomInfo?.status === RoomStatus.waiting && store.game.gamePlayer?.member_type === 'player' && store.game.gamePlayer?.state === PlayerState.inroom && <button onClick={() => handlePlayerReady(true)}>准备</button>}
-            {store.room.roomInfo?.status === RoomStatus.waiting && store.game.gamePlayer?.member_type === 'player' && store.game.gamePlayer?.state === PlayerState.prepared && <button onClick={() => handlePlayerReady(false)}>取消</button>}
+            {store.room.roomInfo?.status === RoomStatus.waiting && store.game.player?.member_type === 'player' && store.game.player?.state === PlayerState.inroom && <button onClick={() => handlePlayerReady(true)}>准备</button>}
+            {store.room.roomInfo?.status === RoomStatus.waiting && store.game.player?.member_type === 'player' && store.game.player?.state === PlayerState.prepared && <button onClick={() => handlePlayerReady(false)}>取消</button>}
             {store.room.roomInfo?.status === RoomStatus.waiting && <button onClick={handleLeaveRoom} className="danger">离开</button>}
-            {store.room.roomInfo?.status === RoomStatus.playing && store.game.gamePlayer?.member_type === 'player' && <Fragment>
+            {store.room.roomInfo?.status === RoomStatus.playing && store.game.player?.member_type === 'player' && <Fragment>
               <button onClick={handleRequestDraw}>求和</button>
               <button onClick={requestSurrender} className="danger">认输</button>
             </Fragment>}
           </div>
           <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: '0.5rem' }}>
-            <PlayerList />
+            <PlayerList room_id={room_id!} />
             <Chat room_id={room_id!} />
           </div>
         </div>

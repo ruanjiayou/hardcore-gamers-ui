@@ -4,14 +4,11 @@ import { getSocket, socketEvents } from '../services/socket';
 import store from '../stores'
 import constant from '../constant';
 
-export const PlayerList = observer(() => {
+export const PlayerList = observer(({ room_id }: { room_id: string }) => {
   const reload = () => {
-    const room_id = store.room.currentRoomId as string
-    if (room_id) {
-      socketEvents.getRoomDetail(room_id, (data) => {
-        store.room.setCurrentRoom(data.room)
-      });
-    }
+    socketEvents.getRoomDetail(room_id, (data) => {
+      store.room.setCurrentRoom(data.room)
+    });
   }
   const kickOut = (room_id: string, player_id: string) => {
     socketEvents.excute('room:kick-player', { room_id, player_id }, (success: boolean) => {
@@ -55,17 +52,17 @@ export const PlayerList = observer(() => {
     <Observer>{() => (
       <div className="player-list" style={{ flex: '1 0 30%' }}>
         <h3>👥 玩家列表 <span onClick={() => { reload(); }}>↻</span></h3>
-        {store.room.members.map(player => (
+        {store.room.members.map((player: any) => (
           <div key={player._id} className="player-item">
             <span className="avatar">👤</span>
             <span className="name">{player.nickname}</span>
-            {store.game.curren_player_id === player._id
+            {store.game.player_id === player._id
               ? <Fragment>
                 <span className="badge">你</span>
               </Fragment>
               : <Fragment>
-                {store.game.curren_player_id === store.room.roomInfo?.owner_id && store.room.roomInfo?.status === constant.ROOM.STATUS.waiting && <span className="info" onClick={() => transfer(store.room.currentRoomId, player._id)}>转让</span>}
-                {store.game.curren_player_id === store.room.roomInfo?.owner_id && store.room.roomInfo?.status === constant.ROOM.STATUS.waiting && <span className='danger' onClick={() => kickOut(store.room.currentRoomId, player._id)}>踢出</span>}
+                {store.game.player_id === store.room.roomInfo?.owner_id && store.room.roomInfo?.status === constant.ROOM.STATUS.waiting && <span className="info" onClick={() => transfer(room_id, player._id)}>转让</span>}
+                {store.game.player_id === store.room.roomInfo?.owner_id && store.room.roomInfo?.status === constant.ROOM.STATUS.waiting && <span className='danger' onClick={() => kickOut(room_id, player._id)}>踢出</span>}
               </Fragment>}
             {player.type === 'robot' ? <span className="badge">人机</span> : ''}
             {player.member_type === 'viewer' ? <span className="badge">观战</span> : ''}

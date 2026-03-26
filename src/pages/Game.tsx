@@ -71,35 +71,37 @@ export const GamePage = observer(() => {
     });
   };
 
+  const onPlayerChange = (data: { player_id: string, field: string, value: any }) => {
+    store.game.changePlayer(data);
+    store.room.changePlayer(data);
+  }
+
   const onRoomCreated = () => {
 
   }
   const socket = getSocket();
   useEffect(() => {
     if (!slug || !socket) return;
-
-    if (slug !== store.game.gamePlayer?.slug) {
-      socketEvents.getGamePlayer(slug, (gamePlayer) => {
-        store.game.setGamePlayer(gamePlayer);
+    if (!store.game.player) {
+      socketEvents.getGamePlayer(slug, (player) => {
+        store.game.setPlayer(player);
         // 已在游戏房间中
-        if (gamePlayer.room_id) {
-          joinRoom(gamePlayer.room_id, '', '')
+        if (player.room_id) {
+          navigate(`/game/${slug}/room/${player.room_id}`);
         }
       })
     }
     socket.on(ReceiveEvent.RoomCreated, onRoomCreated)
+    socket.on(ReceiveEvent.PlayerChange, onPlayerChange)
     return () => {
-      store.game.setGamePlayer(null)
       socket.off(ReceiveEvent.RoomCreated, onRoomCreated)
+      socket.off(ReceiveEvent.PlayerChange, onPlayerChange)
     }
   }, [slug, navigate]);
 
-  const joinRoom = (room_id: string, type: string, password?: string) => {
+  const onJoinRoom = (room_id: string, type: string, password?: string) => {
     socketEvents.joinRoom({ room_id, type, password }, (success, player) => {
       if (success) {
-        if (player) {
-          store.game.setGamePlayer(player)
-        }
         navigate(`/game/${slug}/room/${room_id}`);
       } else {
         alert('加入房间失败');
@@ -173,14 +175,14 @@ export const GamePage = observer(() => {
                 />
                 <div className="modal-actions">
                   <button onClick={() => setPasswordModal({ show: false, room_id: '' })}>取消</button>
-                  <button onClick={() => joinRoom(passwordModal.room_id, 'player', passwordInput)}>加入</button>
+                  <button onClick={() => onJoinRoom(passwordModal.room_id, 'player', passwordInput)}>加入</button>
                 </div>
               </div>
             </div>
           )}
         </h2>
         <Leaderboard slug={slug as string} limit={5} />
-        {store.game.gamePlayer && <RoomList slug={slug!} game_id={store.game.gamePlayer.game_id!} />}
+        {store.game.player && <RoomList slug={slug!} game_id={store.game.player.game_id!} />}
       </div>
     </div>
   );

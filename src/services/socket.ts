@@ -82,22 +82,24 @@ export function disconnectSocket() {
 
 export const ReceiveEvent = {
   // 玩家事件
-  PlayerNetwork: 'room:player-network',
-  PlayerJoined: 'room:player-joined',
-  PlayerLeaved: 'room:player-leaved',
-  PlayerAction: 'room:player-action',
-  PlayerKicked: 'room:player-kicked',
+  PlayerChange: 'player:change',
   // 游戏事件
   GameStart: 'room:game-start',
   GameOver: 'room:game-over',
   OfferDraw: 'room:offer-draw',
   DecideDraw: 'room:decide-draw',
+  UserChange: 'user:change',
+  UserKicked: 'user:kicked',
   // 房间事件
   RoomCreated: 'room:created',
-  RoomReady: 'room:ready',
+  RoomReady: 'room:prepared',
   RoomDisband: 'room:disband',
   RoomMessage: 'room:message',
-  
+  PlayerJoined: 'room:player-joined',
+  PlayerReJoin: 'room:player-rejoin',
+  PlayerLeaved: 'room:player-leaved',
+  PlayerAction: 'room:player-action',
+  PlayerKicked: 'room:player-kicked',
 } as const;
 export const SendoutEvent = {
   KickPlayer: 'room:kick-player',
@@ -132,8 +134,8 @@ export const socketEvents = {
   getRooms: (game_id: string, callback: (rooms: any[]) => void) => {
     getSocket()?.emit('lobby:get-rooms', { game_id }, callback);
   },
-  getGamePlayer: (name: string, callback: (roomPlayer: any) => void) => {
-    getSocket()?.emit('lobby:get-game-player', name, callback);
+  getGamePlayer: (slug: string, callback: (player: any) => void) => {
+    getSocket()?.emit('lobby:get-game-player', slug, callback);
   },
   joinRoom: (data: { room_id: string, type?: string, password?: string }, callback?: (success: boolean, player?: any) => void) => {
     getSocket()?.emit('lobby:join-room', data, callback);
@@ -143,5 +145,8 @@ export const socketEvents = {
   },
   playerReadyChange: (data: { room_id: string, player_id: string, ready: boolean }, callback: (success: boolean) => void) => {
     getSocket()?.emit('room:player-ready', data, callback);
+  },
+  playerNetworkChange: () => {
+
   },
 };

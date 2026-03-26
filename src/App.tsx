@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
 import store from './stores'
-import { initSocket, disconnectSocket, getSocket } from './services/socket';
+import { initSocket, disconnectSocket, getSocket, ReceiveEvent } from './services/socket';
 import { Navbar } from './components/Navbar';
 import { LoginPage } from './pages/Login'
 import { LobbyPage } from './pages/Lobby';
@@ -37,6 +37,10 @@ function AuthGuard({ children, isReady, setIsReady }: { children: React.ReactNod
           // 3. 标记为就绪
           setIsReady(true);
           console.log('🎉 应用初始化完成');
+          getSocket()?.on(ReceiveEvent.UserKicked, () => {
+            store.auth.logout()
+            navigate('/login')
+          })
         } else {
           console.error('失败', error)
           navigate('/login')

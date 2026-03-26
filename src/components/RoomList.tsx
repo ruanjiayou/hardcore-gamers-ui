@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
 import store from '../stores'
-import { socketEvents } from '../services/socket';
+import { SendoutEvent, socketEvents } from '../services/socket';
 import '../styles/components.css';
 import { notificationManager } from './Notifications';
 
@@ -36,17 +36,16 @@ export const RoomList = observer(({ game_id, slug }: { game_id: string, slug: st
   };
 
   const gotoRoom = (room_id: string, type: string, password?: string) => {
-    socketEvents.joinRoom({ room_id, type, password }, (success, player) => {
+    socketEvents.excute(SendoutEvent.JoinRoom, { room_id, type, password }, (success: boolean, player: any) => {
       if (success) {
         if (player) {
-          store.game.setGamePlayer(player)
+          store.game.setPlayer(player)
         }
         navigate(`/game/${slug}/room/${room_id}`);
       } else {
         notificationManager.show('加入失败', 'warning');
       }
-    })
-
+    });
   };
 
   useEffect(() => {

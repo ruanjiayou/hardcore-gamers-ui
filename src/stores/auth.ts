@@ -1,9 +1,11 @@
 import { makeAutoObservable } from 'mobx';
+import { omit } from 'lodash';
 
 export interface User {
   _id: string;
   name: string;
   avatar?: string;
+  atline?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,6 +42,13 @@ export default class AuthStore {
     this.saveToStorage();
   }
 
+  changeUser(data: { user_id: string, field: string, value: any }) {
+    if (this.user && data.user_id === this.user._id) {
+      // @ts-ignore
+      this.user[data.field] = data.value;
+    }
+  }
+
   setLogin(token: string) {
     this.token = token;
     this.isLoggedIn = true;
@@ -68,7 +77,7 @@ export default class AuthStore {
     try {
       localStorage.setItem('gameSession', JSON.stringify({
         token: this.token,
-        user: this.user,
+        user: omit(this.user, ['atline']),
       }));
     } catch (error) {
       console.error('❌ 保存本地存储失败:', error);

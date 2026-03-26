@@ -28,28 +28,30 @@ export default class GameStore {
   rooms: Room[] = [];
   leaderboard: any[] = [];
   stats: any = null;
-  gamePlayer: any = null;
+  player: any = null;
 
   constructor() {
     makeAutoObservable(this);
   }
 
-  get curren_player_id() {
-    return this.gamePlayer ? this.gamePlayer._id : '';
+  get player_id() {
+    return this.player ? this.player._id : '';
   }
-  
+
   setGames(games: Game[]) {
     this.games = games;
   }
 
-  setGamePlayer(gamePlayer: any) {
-    this.gamePlayer = gamePlayer;
+  setPlayer(player: any) {
+    this.player = player;
+  }
+  changePlayer(data: { player_id: string, field: string, value: any }) {
+    if (data.player_id === this.player_id) {
+      this.player = { ...this.player, [data.field]: data.value }
+    }
   }
 
   setRooms(rooms: Room[]) {
-    rooms.forEach(room => {
-      room.players = room.members.filter(m => m.type === 'player');
-    })
     this.rooms = rooms;
   }
 
