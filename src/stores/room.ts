@@ -13,6 +13,9 @@ export default class RoomStore {
   get isOwner() {
     return false;
   }
+  get status() {
+    return this.roomInfo.status;
+  }
   setCurrentRoom(roomInfo: any) {
     this.roomInfo = roomInfo;
   }
@@ -25,7 +28,7 @@ export default class RoomStore {
   setMatchState(state: any) {
     this.matchState = state;
   }
-  setRoomStatus(status: 'ready' | 'waiting' | 'playing') {
+  setRoomStatus(status: 'ready' | 'waiting' | 'playing' | 'finished') {
     this.roomInfo = { ...this.roomInfo, status };
   }
   changePlayer(data: { player_id: string, field: string, value: any }) {

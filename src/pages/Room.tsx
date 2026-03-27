@@ -76,8 +76,8 @@ export const RoomPage = observer(() => {
   }
   const onGameOver = (data: { _id: string, nickname: string }) => {
     notificationManager.show(`玩家 ${data.nickname} 胜利`)
-    store.room.setRoomStatus('waiting')
-    loadState({ game_slug: slug, match_id: '', })
+    store.room.setRoomStatus('finished')
+    // loadState({ game_slug: slug, match_id: '', })
   }
   const onRoomReady = () => {
     store.room.setRoomStatus('ready');
@@ -152,7 +152,10 @@ export const RoomPage = observer(() => {
       navigate(-1);
     });
   };
-
+  const handleRestart = () => {
+    store.room.setRoomStatus('waiting')
+    loadState({ game_slug: slug, match_id: '', })
+  }
   const handlePlayerReady = (ready: boolean) => {
     socketEvents.playerReadyChange({ room_id: room_id as string, player_id: store.game.player_id, ready }, (success) => {
       if (success) {
@@ -194,11 +197,12 @@ export const RoomPage = observer(() => {
         </div>
         <div className='game-info'>
           <div className="room-actions">
-            {store.room.roomInfo?.status === RoomStatus.waiting && <button onClick={handleAddRobot}>添加机器人</button>}
-            {store.room.roomInfo?.status === RoomStatus.waiting && store.game.player?.member_type === 'player' && store.game.player?.state === PlayerState.inroom && <button onClick={() => handlePlayerReady(true)}>准备</button>}
-            {store.room.roomInfo?.status === RoomStatus.waiting && store.game.player?.member_type === 'player' && store.game.player?.state === PlayerState.prepared && <button onClick={() => handlePlayerReady(false)}>取消</button>}
-            {store.room.roomInfo?.status === RoomStatus.waiting && <button onClick={handleLeaveRoom} className="danger">离开</button>}
-            {store.room.roomInfo?.status === RoomStatus.playing && store.game.player?.member_type === 'player' && <Fragment>
+            {store.room.status === RoomStatus.waiting && <button onClick={handleAddRobot}>添加机器人</button>}
+            {store.room.status === RoomStatus.waiting && store.game.player?.member_type === 'player' && store.game.player?.state === PlayerState.inroom && <button onClick={() => handlePlayerReady(true)}>准备</button>}
+            {store.room.status === RoomStatus.waiting && store.game.player?.member_type === 'player' && store.game.player?.state === PlayerState.prepared && <button onClick={() => handlePlayerReady(false)}>取消</button>}
+            {[RoomStatus.finished].includes(store.room.status) && <button onClick={handleRestart} className="danger">重新开始</button>}
+            {[RoomStatus.waiting, RoomStatus.finished].includes(store.room.status) && <button onClick={handleLeaveRoom} className="danger">离开</button>}
+            {store.room.status === RoomStatus.playing && store.game.player?.member_type === 'player' && <Fragment>
               <button onClick={handleRequestDraw}>求和</button>
               <button onClick={requestSurrender} className="danger">认输</button>
             </Fragment>}

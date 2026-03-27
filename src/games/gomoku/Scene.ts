@@ -100,6 +100,7 @@ export default class GomokuScene {
     this.createBoard();
     this.setupPicking();
     // this.createDebugHelper({})
+    // this.createPiece(0, 0, 'white', 1)
 
     this.engine.runRenderLoop(() => this.scene.render());
     window.addEventListener("resize", () => {
@@ -313,8 +314,48 @@ export default class GomokuScene {
     this.board = board;
   }
 
-  createPiece(x: number, y: number, role: "white" | "black") {
+  createPiece(x: number, y: number, role: "white" | "black", step: number) {
     const id = `piece-${x}-${y}-${role}`;
+
+    // 1. 创建圆盘 (Disc)，diameter: 直径, tesselation: 细分数(越圆滑越耗性能，32足够)
+    const disc = MeshBuilder.CreateDisc(
+      id,
+      { tessellation: 32 },
+      this.scene
+    );
+    disc.scaling.x = 0.8
+    disc.scaling.y = 0.8
+    // 2. 关键：圆盘默认是立着的（面向 Z 轴），需要把它平躺在棋盘上（面向 Y 轴）
+    disc.rotation.x = -Math.PI / 2;
+    disc.rotation.y = Math.PI;
+    disc.position.set(x, 0.25, y); // 稍微抬高一点，防止和棋盘闪烁(Z-fighting)
+
+    // 3. 材质与文字（同方案二，但不需要 hasAlpha，因为圆盘铺满）
+    const texture = new DynamicTexture("dt-" + id, 256, this.scene);
+    // 文字居中配置
+    const textColor = "green";
+
+    // drawText 的自动居中(null, null)在圆盘上非常完美
+    texture.drawText(
+      step.toString(),
+      null,
+      null,
+      "bold 160px Arial",
+      textColor,
+      'transparent',
+      true
+    );
+    texture.hasAlpha = true
+    const md = new StandardMaterial(id + "-mat", this.scene);
+    md.backFaceCulling = false;
+    md.useAlphaFromDiffuseTexture = true
+    md.diffuseTexture = texture;
+    md.disableDepthWrite = true;
+    md.needAlphaBlending = () => true
+    md.alphaMode = Engine.ALPHA_COMBINE
+    md.specularColor = new Color3(0.1, 0.1, 0.1); // 降低反光，看清数字
+    md.twoSidedLighting = true // 
+    disc.material = md;
 
     // 创建扁球体（标准五子棋棋子）
     const piece = MeshBuilder.CreateSphere(
@@ -346,10 +387,11 @@ export default class GomokuScene {
   }
 
   createPieces() {
+    let i = 0;;
     this.logic.board.forEach((role: 'white' | 'black', key: string) => {
       const [x, y] = key.split('|').map(v => parseInt(v, 10));
       if (role) {
-        const mesh = this.createPiece(x - 7, y - 7, role)
+        const mesh = this.createPiece(x - 7, y - 7, role, ++i)
         this.pieceMap.set(key, mesh);
       }
     });
@@ -409,7 +451,7 @@ export default class GomokuScene {
   }
 
   onMovePiece(point: { x: number, y: number, role: 'white' | 'black' }) {
-    const piece = this.createPiece(point.x, point.y, point.role)
+    const piece = this.createPiece(point.x, point.y, point.role, this.pieceMap.size + 1)
     this.cancelPieceHighlight()
     this.selected = `${point.x}|${point.y}`
     this.pieceMap.set(this.selected, piece)

@@ -10,6 +10,7 @@ export enum RoomStatus {
   waiting = 'waiting',
   readied = 'readied',
   playing = 'playing',
+  finished = 'finished',
   deleted = 'deleted',
 }
 export enum PlayerState {
