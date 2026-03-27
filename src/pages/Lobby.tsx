@@ -18,9 +18,9 @@ export const LobbyPage = observer(() => {
     socketEvents.excute(SendoutEvent.LobbyGames, (games: any) => {
       store.game.setGames(games);
     });
-    socket.on(ReceiveEvent.UserChange, onUserChange);
+    socket?.on(ReceiveEvent.UserChange, onUserChange);
     return () => {
-      socket.off(ReceiveEvent.UserChange, onUserChange);
+      socket?.off(ReceiveEvent.UserChange, onUserChange);
     }
   }, [navigate]);
 
