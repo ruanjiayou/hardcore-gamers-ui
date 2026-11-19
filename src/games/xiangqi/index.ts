@@ -1,6 +1,6 @@
 import GameTransport from '../../core/GameTransport'
 import Logic from './Logic'
-import Scene from './Scene'
+import Scene from './Scene2D'
 export default class Xiangqi {
   logic: Logic;
   scene: Scene;

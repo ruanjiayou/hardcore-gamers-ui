@@ -86,30 +86,37 @@ export const ReceiveEvent = {
   // 游戏事件
   GameStart: 'room:game-start',
   GameOver: 'room:game-over',
+  Clock: 'room:clock',
+  TimeControlUpdated: 'room:timecontrol-updated',
   OfferDraw: 'room:offer-draw',
   DecideDraw: 'room:decide-draw',
   UserChange: 'user:change',
   UserKicked: 'user:kicked',
-  // 房间事件
+  // 房间事件（与服务端 emit 名称严格一致）
   RoomCreated: 'room:created',
-  RoomReady: 'room:prepared',
-  RoomDisband: 'room:disband',
+  RoomReady: 'room:room-ready',
+  RoomDisband: 'lobby:room-destroyed',
   RoomMessage: 'room:message',
   PlayerJoined: 'room:player-joined',
-  PlayerReJoin: 'room:player-rejoin',
+  PlayerReJoin: 'room:player-rejoined',
   PlayerLeaved: 'room:player-leaved',
   PlayerAction: 'room:player-action',
   PlayerKicked: 'room:player-kicked',
+  TransfereeOwner: 'room:transferee-owner',
+  SettingsUpdated: 'room:settings-updated',
 } as const;
 export const SendoutEvent = {
   KickPlayer: 'room:kick-player',
   TransferorOwner: 'room:transferor-owner',
   AddRobot: 'room:add-robot',
   LeaveRoom: 'room:leave',
+  Disband: 'room:disband',
+  UpdateSettings: 'room:update-settings',
   SendMessage: 'room:send-message',
   StartGame: 'room:start-game',
   GetMatchState: 'room:get-match-state',
   PlayerSurrender: 'room:player-surrender',
+  UpdateTimeControl: 'room:update-timecontrol',
   OfferDraw: 'room:offer-draw',
   DecideDraw: 'room:decide-draw',
 
@@ -121,6 +128,7 @@ export const SendoutEvent = {
   CreateRoom: 'lobby:create-room',
   JoinRoom: 'lobby:join-room',
   JoinInviteRoom: 'lobby:join-invite-room',
+  QuickStart: 'lobby:quick-start',
 } as const;
 // 定义一个通用的 ValueOf 工具类型
 type ValueOf<T> = T[keyof T];
@@ -139,6 +147,13 @@ export const socketEvents = {
   },
   joinRoom: (data: { room_id: string, type?: string, password?: string }, callback?: (success: boolean, player?: any) => void) => {
     getSocket()?.emit('lobby:join-room', data, callback);
+  },
+  /** 单人游戏快开：一键开一局（服务端建临时房并立即开局），无需房间列表 */
+  quickStart: (
+    slug: string,
+    callback?: (success: boolean, data?: { room_id: string, match_id: string }, message?: string) => void,
+  ) => {
+    getSocket()?.emit('lobby:quick-start', { slug }, callback);
   },
   getRoomDetail: (room_id: string, callback?: (data: { room: any, match_id: string }) => void) => {
     getSocket()?.emit('room:detail', { room_id }, callback);

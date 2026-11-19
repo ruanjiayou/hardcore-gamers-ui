@@ -4,7 +4,7 @@
   "description": "Game Lobby Frontend with React + MobX",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx"
@@ -13,7 +13,6 @@
     "@babylonjs/core": "8.54.1",
     "@babylonjs/materials": "8.54.1",
     "axios": "^1.6.0",
-    "babylonjs": "8.53.0",
     "eventemitter3": "5.0.4",
     "lodash": "4.17.23",
     "mobx": "^6.10.2",

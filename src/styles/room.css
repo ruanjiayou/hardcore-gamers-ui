@@ -274,3 +274,121 @@
     flex: 1;
   }
 }
+/* ===== 象棋读秒制：对局时钟面板 ===== */
+.clock-panel {
+  background: #1f2937;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 0.75rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.clock-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.clock-title .clock-step {
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+  color: #fbbf24;
+}
+
+.clock-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  margin-bottom: 0.3rem;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.85rem;
+}
+
+.clock-row.active {
+  background: rgba(102, 126, 234, 0.35);
+}
+
+.clock-row.danger .clock-time {
+  color: #f87171;
+  font-weight: 700;
+}
+
+.clock-role {
+  font-weight: 600;
+  min-width: 2.5rem;
+}
+
+.clock-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clock-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.clock-hint {
+  font-size: 0.7rem;
+  color: #9ca3af;
+  margin-top: 0.35rem;
+  text-align: center;
+}
+
+/* ===== 开局前：计时配置面板 ===== */
+.timecontrol-panel {
+  background: white;
+  border-radius: 12px;
+  padding: 0.75rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tc-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #333;
+}
+
+.tc-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: #444;
+}
+
+.tc-row input[type="number"] {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.tc-save {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: #667eea;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.tc-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

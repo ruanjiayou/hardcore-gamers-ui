@@ -8,6 +8,8 @@ export interface Game {
   desc: string;
   rooms: number;
   players: number;
+  /** 游戏主页形态：solo=单人直接开局（无需房间）；room=房间制（棋类/组队） */
+  mode?: 'solo' | 'room';
 }
 
 export interface Room {
@@ -21,10 +23,17 @@ export interface Room {
   isPrivate: boolean;
   status: string;
   createdAt: number;
+  /** 官方公共房（种子预建）：只能退出，不可解散 */
+  official?: boolean;
+  /** 是否允许观战（关闭时隐藏"观看"入口） */
+  allowSpectate?: boolean;
+  /** 单人快开临时房（不进列表） */
+  transient?: boolean;
 }
 
 export default class GameStore {
   games: Game[] = [];
+  gamesLoading: boolean = true;
   rooms: Room[] = [];
   leaderboard: any[] = [];
   stats: any = null;
@@ -40,6 +49,11 @@ export default class GameStore {
 
   setGames(games: Game[]) {
     this.games = games;
+    this.gamesLoading = false;
+  }
+
+  setGamesLoading(loading: boolean) {
+    this.gamesLoading = loading;
   }
 
   setPlayer(player: any) {

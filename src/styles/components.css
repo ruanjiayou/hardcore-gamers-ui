@@ -230,6 +230,16 @@
   }
 }
 
+/* 空状态 */
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #999;
+  font-size: 14px;
+}
+
 /* 响应式 */
 @media (max-width: 1400px) {
   .leaderboard-panel {
@@ -310,4 +320,28 @@
 
 .two-column>button {
   flex: 1;
+}
+/* ===== 房间徽标 ===== */
+.badge-official {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #667eea;
+  color: #fff;
+  font-size: 11px;
+  font-weight: normal;
+  vertical-align: middle;
+}
+
+.badge-nospectate {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #c0392b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: normal;
+  vertical-align: middle;
 }

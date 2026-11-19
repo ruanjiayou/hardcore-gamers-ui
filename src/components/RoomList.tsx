@@ -43,7 +43,8 @@ export const RoomList = observer(({ game_id, slug }: { game_id: string, slug: st
         }
         navigate(`/game/${slug}/room/${room_id}`);
       } else {
-        notificationManager.show('加入失败', 'warning');
+        // 失败时第二个参数是服务端原因（房间已满/禁止观战/密码错误等）
+        notificationManager.show(typeof player === 'string' && player ? player : '加入失败', 'warning');
       }
     });
   };
@@ -52,6 +53,13 @@ export const RoomList = observer(({ game_id, slug }: { game_id: string, slug: st
     getRooms(game_id)
   }, [])
 
+  // 官方公共房排前（腾讯棋牌式固定桌），其余按创建时间
+  const rooms = [...store.game.rooms].sort((a, b) => {
+    const ao = a.official ? 0 : 1;
+    const bo = b.official ? 0 : 1;
+    return ao - bo;
+  });
+
   return (
     <div className="room-list">
       <div className="room-list-header">
@@ -59,10 +67,14 @@ export const RoomList = observer(({ game_id, slug }: { game_id: string, slug: st
       </div>
 
       <div className="room-cells">
-        {store.game.rooms.length === 0 && <span>暂无房间</span>}
-        {store.game.rooms.map(room => (
+        {rooms.length === 0 && <span>暂无房间</span>}
+        {rooms.map(room => (
           <div key={room._id} className={`room-cell ${room.status}`} style={{ display: 'flex', flexDirection: 'column' }}>
-            <h4>{room.name}</h4>
+            <h4>
+              {room.name}
+              {room.official && <span className="badge-official">官方</span>}
+              {room.allowSpectate === false && <span className="badge-nospectate">禁观</span>}
+            </h4>
             <p>玩家: {room.members.length}/{room.numbers.max}</p>
             {room.isPrivate && <span className="lock">🔒</span>}
             <div className='two-column'>
@@ -74,11 +86,14 @@ export const RoomList = observer(({ game_id, slug }: { game_id: string, slug: st
                     handleJoinRoom(room, 'player')
                   }
                 }}
-                disabled={room.members.length >= room.numbers.max || room.status === 'playing'}
+                disabled={room.members.length >= room.numbers.max || room.status !== 'waiting'}
               >
-                {room.members.length >= room.numbers.max ? '房满' : '加入'}
+                {room.status !== 'waiting' ? '游戏中' : (room.members.length >= room.numbers.max ? '房满' : '加入')}
               </button>
-              <button onClick={() => handleJoinRoom(room, 'viewer')}>观看</button>
+              {/* 关闭观战的房间隐藏"观看"入口 */}
+              {room.allowSpectate !== false && (
+                <button onClick={() => handleJoinRoom(room, 'viewer')}>观看</button>
+              )}
             </div>
           </div>
         ))}
@@ -97,7 +112,7 @@ export const RoomList = observer(({ game_id, slug }: { game_id: string, slug: st
             />
             <div className="modal-actions">
               <button onClick={() => setPasswordModal({ show: false, room_id: '' })}>取消</button>
-              <button onClick={() => gotoRoom(passwordModal.room_id, passwordInput)}>加入</button>
+              <button onClick={() => gotoRoom(passwordModal.room_id, 'player', passwordInput)}>加入</button>
             </div>
           </div>
         </div>

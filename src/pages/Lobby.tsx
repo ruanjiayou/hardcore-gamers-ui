@@ -15,11 +15,15 @@ export const LobbyPage = observer(() => {
   const socket = getSocket()!;
   useEffect(() => {
     // 加载游戏列表
+    store.game.setGamesLoading(true);
     socketEvents.excute(SendoutEvent.LobbyGames, (games: any) => {
       store.game.setGames(games);
     });
+    // 兜底：服务端未回调时也要结束 loading，避免永久转圈
+    const timeout = window.setTimeout(() => store.game.setGamesLoading(false), 8000);
     socket?.on(ReceiveEvent.UserChange, onUserChange);
     return () => {
+      window.clearTimeout(timeout);
       socket?.off(ReceiveEvent.UserChange, onUserChange);
     }
   }, [navigate]);

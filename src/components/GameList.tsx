@@ -11,13 +11,25 @@ export const GameList = observer(() => {
     navigate(`/game/${slug}`);
   };
 
-  if (store.game.games.length === 0) {
+  // 只有"正在请求"才显示 spinner；请求完成但为空应显示空状态，而非无限转圈
+  if (store.game.gamesLoading) {
     return (
       <div className="panel game-list-panel">
         <h2>🎯 游戏列表</h2>
         <div className="loading">
           <div className="spinner"></div>
           <p>加载中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (store.game.games.length === 0) {
+    return (
+      <div className="panel game-list-panel">
+        <h2>🎯 游戏列表</h2>
+        <div className="empty-state">
+          <p>暂无游戏，请联系管理员添加</p>
         </div>
       </div>
     );

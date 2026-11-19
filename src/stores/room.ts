@@ -6,6 +6,18 @@ export default class RoomStore {
     members: [],
   };
   messages: any[] = [];
+  // 服务端时钟快照（象棋读秒制）。serverNow 用于校正客户端与服务器时间偏差。
+  clock: {
+    match_id: string;
+    enabled: boolean;
+    stepLimitMs: number;
+    budgetMs: number;
+    remaining: Record<string, number>;
+    turnStartedAt: Record<string, number>;
+    curr_turn: string;
+    serverNow: number;
+    clientOffsetMs: number; // 收到快照时 Date.now() - serverNow
+  } | null = null;
 
   constructor() {
     makeAutoObservable(this);
@@ -52,8 +64,26 @@ export default class RoomStore {
     this.messages.push(message);
   }
 
+  setClock(data: {
+    match_id: string; enabled: boolean; stepLimitMs: number; budgetMs: number;
+    remaining: Record<string, number>; turnStartedAt: Record<string, number>;
+    curr_turn: string; serverNow: number;
+  }) {
+    this.clock = { ...data, clientOffsetMs: Date.now() - (data.serverNow || Date.now()) };
+  }
+
+  clearClock() {
+    this.clock = null;
+  }
+
+  /** 当前服务器时间（用本地时间 + 已测偏移校正） */
+  serverNow() {
+    return Date.now() - (this.clock?.clientOffsetMs || 0);
+  }
+
   clear() {
     this.roomInfo = { members: [] };
     this.messages = [];
+    this.clock = null;
   }
 }

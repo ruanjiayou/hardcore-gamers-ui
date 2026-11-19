@@ -292,3 +292,39 @@
     padding: 20px;
   }
 }
+/* ===== 单人游戏主页 ===== */
+.solo-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 0 24px;
+}
+
+.solo-start-btn {
+  font-size: 22px;
+  padding: 16px 64px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.solo-start-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px rgba(102, 126, 234, 0.45);
+}
+
+.solo-start-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.solo-hint {
+  color: #888;
+  font-size: 13px;
+}
