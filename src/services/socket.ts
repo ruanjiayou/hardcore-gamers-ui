@@ -127,12 +127,26 @@ export const SendoutEvent = {
 
   CreateRoom: 'lobby:create-room',
   JoinRoom: 'lobby:join-room',
+  MatchRoom: 'lobby:match',
   JoinInviteRoom: 'lobby:join-invite-room',
   QuickStart: 'lobby:quick-start',
 } as const;
 // 定义一个通用的 ValueOf 工具类型
 type ValueOf<T> = T[keyof T];
 type TSendoutEvent = ValueOf<typeof SendoutEvent>
+
+/**
+ * 点击「关闭 / 返回 / 离开」时同步贪吃蛇分数：只发一个信号，分数由服务端按实时局面结算。
+ * 与瞄准/加速上报是完全独立的通道，网络慢也不会因为这条消息丢了就少记分
+ * （服务端在 room:leave 和 disconnect 时还会各兜一次）。
+ */
+export function syncRoomScore(room_id?: string, player_id?: string) {
+  const player: any = store.game.player;
+  const rid = room_id || player?.room_id;
+  const pid = player_id || player?._id;
+  if (!socket || !rid || !pid) return;
+  socket.emit('room:sync-score', { room_id: rid, player_id: pid });
+}
 
 // 事件监听器
 export const socketEvents = {
@@ -148,12 +162,22 @@ export const socketEvents = {
   joinRoom: (data: { room_id: string, type?: string, password?: string }, callback?: (success: boolean, player?: any) => void) => {
     getSocket()?.emit('lobby:join-room', data, callback);
   },
+  /** 匹配：服务端直接找一张还有空位的桌子（没有就替玩家开一张），前端不再展示房间列表 */
+  match: (
+    slug: string,
+    variant?: string,
+    callback?: (success: boolean, player?: any, message?: string) => void,
+  ) => {
+    getSocket()?.emit('lobby:match', { slug, variant }, callback);
+  },
   /** 单人游戏快开：一键开一局（服务端建临时房并立即开局），无需房间列表 */
   quickStart: (
     slug: string,
+    /** 玩法变体（贪吃蛇：endless）；纯单人游戏可省略 */
+    variant?: string,
     callback?: (success: boolean, data?: { room_id: string, match_id: string }, message?: string) => void,
   ) => {
-    getSocket()?.emit('lobby:quick-start', { slug }, callback);
+    getSocket()?.emit('lobby:quick-start', { slug, variant }, callback);
   },
   getRoomDetail: (room_id: string, callback?: (data: { room: any, match_id: string }) => void) => {
     getSocket()?.emit('room:detail', { room_id }, callback);

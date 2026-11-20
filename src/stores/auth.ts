@@ -12,7 +12,7 @@ export interface User {
 
 export default class AuthStore {
   user: User | null = null;
-  isLoggedIn = false;
+  /** 游客模式标记：未登录时也可能是游客（大厅可浏览、游戏需登录） */
   isGuest = false;
   token: string = '';
 
@@ -21,13 +21,20 @@ export default class AuthStore {
     this.loadFromStorage();
   }
 
+  /** 是否已登录：以 token + user 为准（刷新后 isLoggedIn 不能丢） */
+  get isLoggedIn() {
+    return !!this.token && !!this.user?._id;
+  }
+
   private loadFromStorage() {
     try {
       const session = localStorage.getItem('gameSession');
       if (session) {
-        const { token = '', user } = JSON.parse(session);
-        this.token = token;
-        this.user = user;
+        const { token = '', user = null } = JSON.parse(session);
+        this.token = token || '';
+        this.user = user || null;
+        // token 为空/用户信息缺失一律按游客处理（旧版本可能只存了 user）
+        this.isGuest = !this.isLoggedIn;
         console.log('📦 从本地存储加载会话');
       }
     } catch (error) {
@@ -38,7 +45,7 @@ export default class AuthStore {
 
   setUser(user: User) {
     this.user = user;
-    this.isLoggedIn = true;
+    this.isGuest = false;
     this.saveToStorage();
   }
 
@@ -51,26 +58,17 @@ export default class AuthStore {
 
   setLogin(token: string) {
     this.token = token;
-    this.isLoggedIn = true;
     this.isGuest = false;
     this.saveToStorage();
     console.log('✅ 用户登陆成功:');
   }
 
-  setGuest(user_id: string) {
-    this.isLoggedIn = true;
-    this.isGuest = true;
-    this.saveToStorage();
-    console.log('✅ 游客模式:', user_id);
-  }
-
   logout() {
     this.user = null;
     this.token = '';
-    this.isLoggedIn = false;
-    this.isGuest = false;
+    this.isGuest = true;
     this.clearStorage();
-    console.log('🚪 用户已登出');
+    console.log('🚪 用户已登出，转为游客');
   }
 
   private saveToStorage() {

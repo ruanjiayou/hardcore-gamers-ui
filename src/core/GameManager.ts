@@ -12,7 +12,13 @@ import GameTransport from './GameTransport'
  *
  * 新增游戏只需在 src/games/ 下建同名目录并导出默认类，无需改动本文件。
  */
-type GameCtor = new (canvas: HTMLCanvasElement, socket: GameTransport, player: any) => IGameModule;
+type GameCtor = new (canvas: HTMLCanvasElement, socket: GameTransport, player: any, meta?: GameMeta) => IGameModule;
+
+/** 进入对局时附带的房间元信息（如玩法变体 variant，贪吃蛇无尽/多人共用同一 slug） */
+export interface GameMeta {
+  variant?: string;
+  room?: any;
+}
 
 interface IGameModule {
   logic: any;
@@ -55,7 +61,7 @@ class GameManager {
     return cached;
   }
 
-  async load(game_slug: string, canvas: HTMLCanvasElement, socket: Socket, player: any): Promise<IGameModule | undefined> {
+  async load(game_slug: string, canvas: HTMLCanvasElement, socket: Socket, player: any, meta?: GameMeta): Promise<IGameModule | undefined> {
     const token = ++this.loadToken;
     try {
       const Game = await this.getCtor(game_slug);
@@ -65,7 +71,7 @@ class GameManager {
       // 若上一个游戏尚未释放，先清理，避免事件监听/渲染循环叠加
       if (this.game) this.unload();
 
-      const game = new Game(canvas, new GameTransport(socket), player);
+      const game = new Game(canvas, new GameTransport(socket), player, meta);
       await game.scene.init(canvas);
       // init 期间又发生了切换，销毁本次实例，保留最后一次结果
       if (token !== this.loadToken) {

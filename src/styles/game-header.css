@@ -1,0 +1,209 @@
+/* ===== 游戏页/房间页顶栏 =====
+   进游戏后不再显示大厅的 logo 与导航，只保留：返回 + 游戏名 + 右上角用户区。 */
+.game-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 58px;
+  padding: 0 14px;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: calc(env(safe-area-inset-left, 0px) + 14px);
+  padding-right: calc(env(safe-area-inset-right, 0px) + 14px);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 120;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.18);
+}
+
+.game-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.game-back {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  /* 覆盖全局 button 的 padding：否则 34px 圆钮的内容盒被压得只剩 2px 宽，图标会偏 */
+  padding: 0;
+  line-height: 1;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.16s ease, transform 0.16s ease;
+}
+
+.game-back:hover {
+  background: rgba(255, 255, 255, 0.26);
+  transform: translateX(-1px);
+}
+
+/* 纯 CSS 箭头，避免不同字体下 ← 的渲染差异 */
+.game-back-arrow {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(45deg) translate(1px, -1px);
+}
+
+/* 游戏主页左上的游戏 logo（emoji 底板），标题在它右边 */
+.game-header-logo {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  line-height: 1;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.game-header-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.game-header-name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.game-header-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.game-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* 顶栏里的用户区收窄一点，给游戏名留空间 */
+.game-header .navbar-user {
+  gap: 8px;
+}
+
+.game-header .user-button {
+  padding: 6px 10px;
+}
+
+.game-header .user-name {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media screen and (max-width: 480px) {
+  .game-header {
+    height: 52px;
+    padding-left: calc(env(safe-area-inset-left, 0px) + 10px);
+    padding-right: calc(env(safe-area-inset-right, 0px) + 10px);
+  }
+
+  .game-header-name {
+    font-size: 16px;
+  }
+
+  .game-header-logo {
+    width: 28px;
+    height: 28px;
+    font-size: 17px;
+    border-radius: 9px;
+  }
+
+  .game-header-sub {
+    display: none;
+  }
+
+  /* 大厅在窄屏会隐藏昵称；游戏顶栏空间够，保留昵称更清楚 */
+  .game-header .user-name {
+    display: inline;
+    max-width: 64px;
+  }
+
+  .game-header .connection-status {
+    display: none;
+  }
+}
+
+/* 游戏主页的关闭按钮：回大厅（大厅导航栏在游戏内已隐藏，这里是唯一出口） */
+.game-close {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  /* 全局 button 默认 padding: 10px 16px，会把 34px 圆钮的内容盒压成 2px 宽，
+     flex 居中基准随之偏移 —— 这就是右上角 ✕ 看起来没居中的原因 */
+  padding: 0;
+  line-height: 1;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.game-close:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* 纯 CSS 的 ✕，避免字体差异 */
+.game-close-x {
+  position: relative;
+  /* 固定尺寸，别被 flex 收缩，否则两条线会以错误的中点旋转 */
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+}
+
+.game-close-x::before,
+.game-close-x::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 12px;
+  height: 2px;
+  margin-top: -1px;
+  background: #fff;
+  border-radius: 1px;
+}
+
+.game-close-x::before {
+  transform: rotate(45deg);
+}
+
+.game-close-x::after {
+  transform: rotate(-45deg);
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
 import store from './stores'
@@ -8,79 +8,35 @@ import { LoginPage } from './pages/Login'
 import { LobbyPage } from './pages/Lobby';
 import { GamePage } from './pages/Game';
 import { RoomPage } from './pages/Room';
-import { Notifications } from './components/Notifications';
+import { Notifications, notificationManager } from './components/Notifications';
+import { LoginRequiredModal } from './components/LoginRequired';
 import './styles/index.css';
 import Loading from './components/Loading';
 
-function AuthGuard({ children, isReady, setIsReady }: { children: React.ReactNode, isReady: boolean, setIsReady: Function }) {
+/**
+ * 应用外壳：负责建立 socket 连接。
+ * 未登录不再强制跳登录页——游客以匿名连接浏览大厅（游戏列表/统计/排行榜只读），
+ * 真正进入游戏时由页面/弹窗提示登录。
+ */
+const AppBootstrap = observer(({ children, isReady, setIsReady }: { children: React.ReactNode, isReady: boolean, setIsReady: Function }) => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  useEffect(() => {
-    const initializeApp = async () => {
-      // 如果没有 userId，说明未登陆，显示登陆页
-      if (!store.auth.user?._id) {
-        setIsReady(true);
-        navigate('/login');
-        return;
-      }
-      try {
-        setIsLoading(true);
-        console.log('🔄 初始化应用...');
-        console.log('📍 user_id:', store.auth.user?._id);
-        // 1. 初始化 Socket 连接
-        console.log('🔌 正在连接 WebSocket...');
-        const { success, error } = await initSocket();
-        if (success) {
-          // 2. 加载用户信息
-          console.log('📊 正在加载用户信息...');
-          await loadUserInfo();
-          // 3. 标记为就绪
-          setIsReady(true);
-          console.log('🎉 应用初始化完成');
-          getSocket()?.on(ReceiveEvent.UserKicked, () => {
-            store.auth.logout()
-            navigate('/login')
-          })
-        } else {
-          console.error('失败', error)
-          navigate('/login')
-        }
-      } catch (error) {
-        console.error('❌ 应用初始化失败:', error);
-        // 初始化失败时，仍然标记为就绪，显示登陆页
-        setIsReady(true);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    if (!isReady) {
-      initializeApp();
-    }
-    return () => {
-      disconnectSocket();
-    };
-  }, []);
+  // 用 ref 记录建立连接时的身份，登录/退出后据此重连
+  const tokenRef = useRef(store.auth.token);
 
-  // 加载用户信息
+  // 加载用户信息（仅登录用户）
   const loadUserInfo = async () => {
     return new Promise((resolve, reject) => {
       const socket = getSocket();
-
       if (!socket) {
         reject(new Error('Socket 未初始化'));
         return;
       }
-
-      const timeout = setTimeout(() => {
-        reject(new Error('获取用户信息超时'));
-      }, 5000);
-
+      const timeout = setTimeout(() => reject(new Error('获取用户信息超时')), 5000);
       socket.emit('lobby:get-user-info', (userInfo: any) => {
         clearTimeout(timeout);
-
         if (userInfo) {
           store.auth.setUser(userInfo);
-          console.log('👤 用户信息:', userInfo.name);
           resolve(null);
         } else {
           reject(new Error('用户信息为空'));
@@ -88,29 +44,86 @@ function AuthGuard({ children, isReady, setIsReady }: { children: React.ReactNod
       });
     });
   };
+
+  const bootstrap = async () => {
+    setIsLoading(true);
+    try {
+      // 身份可能已变化（游客→登录、退出登录）：断开旧连接再用当前 token 重连
+      disconnectSocket();
+      let { success, error } = await initSocket();
+      if (!success) {
+        const msg = String((error as any)?.message || error || '');
+        // token 失效（过期/票据错误）：降级成游客重连，别让用户卡在连不上的状态
+        if (/过期|票据|验证失败/.test(msg) && store.auth.token) {
+          store.auth.logout();
+          tokenRef.current = '';
+          notificationManager.show('登录已过期，请重新登录', 'warning');
+          ({ success, error } = await initSocket());
+        }
+      }
+      if (!success) throw error || new Error('连接失败');
+      if (store.auth.token) {
+        try {
+          await loadUserInfo();
+        } catch (e) {
+          console.error('加载用户信息失败（继续以游客浏览）:', e);
+        }
+      }
+      getSocket()?.off(ReceiveEvent.UserKicked);
+      getSocket()?.on(ReceiveEvent.UserKicked, () => {
+        store.auth.logout();
+        navigate('/lobby');
+      });
+    } catch (error) {
+      console.error('❌ 应用初始化失败:', error);
+    } finally {
+      setIsReady(true);
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    bootstrap();
+    return () => {
+      disconnectSocket();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 登录/退出登录后 token 变化 → 换身份重连
+  useEffect(() => {
+    if (!isReady) return;
+    if (tokenRef.current === store.auth.token) return;
+    tokenRef.current = store.auth.token;
+    bootstrap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.auth.token, isReady]);
+
   return <Loading isLoading={isLoading}>{children}</Loading>;
-}
+});
+
 export const App = observer(() => {
   const [isReady, setIsReady] = useState(false);
   return (
     <BrowserRouter basename={process.env.PUBLIC_URL}>
       <div className="app">
         <Notifications />
+        <LoginRequiredModal />
 
-        {/* 只有登陆的用户才显示导航栏 */}
-        {store.auth.isLoggedIn && <Navbar />}
+        {/* 导航栏常驻：未登录时右上角显示"未登录 + 登录" */}
+        <Navbar />
 
         {/* 路由 */}
         <Routes>
-          <Route path="/" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
+          <Route path="/" element={<AppBootstrap isReady={isReady} setIsReady={setIsReady}>
             <LobbyPage />
-          </AuthGuard>} />
-          <Route path="/game/:slug" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
+          </AppBootstrap>} />
+          <Route path="/game/:slug" element={<AppBootstrap isReady={isReady} setIsReady={setIsReady}>
             <GamePage />
-          </AuthGuard>} />
-          <Route path="/game/:slug/room/:room_id" element={<AuthGuard isReady={isReady} setIsReady={setIsReady}>
+          </AppBootstrap>} />
+          <Route path="/game/:slug/room/:room_id" element={<AppBootstrap isReady={isReady} setIsReady={setIsReady}>
             <RoomPage />
-          </AuthGuard>} />
+          </AppBootstrap>} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

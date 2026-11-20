@@ -1,8 +1,21 @@
 .room-page {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 0.5rem;
+  padding: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* 顶栏下方的对局区（顶栏自己贴边，内容区留白） */
+.room-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  padding: 0.5rem;
+}
+
+.room-stage .room-container {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .room-header {
@@ -42,6 +55,10 @@
 @media screen and (max-width: 767px) {
 
   /* 不支持悬停的设备（手机、平板） */
+  .room-stage {
+    flex: 1 0 auto;
+  }
+
   .room-container {
     display: flex;
     flex-direction: column;
@@ -391,4 +408,137 @@
 .tc-save:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* ===== 全屏沉浸模式（贪吃蛇对局中）===== */
+/* 对局期间锁住外层页面：没有滚动、没有回弹、没有下拉刷新 */
+body.immersive-mode {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+body.immersive-mode .navbar {
+  display: none;
+}
+
+.room-page.immersive {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: #14141f;
+}
+
+.room-page.immersive .room-stage {
+  padding: 0;
+}
+
+.room-page.immersive .room-container {
+  height: 100%;
+  width: 100%;
+  gap: 0;
+}
+
+.room-page.immersive .game-main {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+}
+
+.room-page.immersive .game-main canvas {
+  display: block;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 右上角悬浮操作区：容器不拦手势，只有按钮/抽屉可点 */
+.immersion-hud {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  right: calc(env(safe-area-inset-right, 0px) + 12px);
+  z-index: 520;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.immersion-hud > * {
+  pointer-events: auto;
+}
+
+.hud-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-btn {
+  min-width: 42px;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 21px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(24, 24, 36, 0.82);
+  color: #e8e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 14px;
+  font-weight: 700;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.hud-btn:hover {
+  background: rgba(40, 40, 60, 0.9);
+}
+
+.hud-btn.danger {
+  background: rgba(239, 68, 68, 0.85);
+  border-color: rgba(239, 68, 68, 0.55);
+}
+
+.hud-btn.danger:hover {
+  background: rgba(220, 38, 38, 0.95);
+}
+
+.hud-drawer {
+  width: min(320px, calc(100vw - 24px));
+  height: min(56dvh, 460px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 14px;
+  background: rgba(16, 16, 26, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.hud-drawer .player-list,
+.hud-drawer .chat {
+  box-shadow: none;
+  padding: 0.5rem;
+}
+
+.hud-drawer .chat {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 全屏对局里棋盘需要整块可视区域：手机竖屏时上下都不留白 */
+@media screen and (max-width: 767px) {
+  .room-page.immersive .game-main {
+    min-height: 0;
+  }
 }

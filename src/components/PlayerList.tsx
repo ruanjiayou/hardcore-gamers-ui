@@ -55,7 +55,7 @@ export const PlayerList = observer(({ room_id }: { room_id: string }) => {
         {store.room.members.map((player: any) => (
           <div key={player._id} className="player-item">
             <span className="avatar">👤</span>
-            <span className="name">{player.nickname}</span>
+            <span className="name">{player.nickname || '玩家'}</span>
             {store.game.player_id === player._id
               ? <Fragment>
                 <span className="badge">你</span>

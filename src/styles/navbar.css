@@ -188,3 +188,39 @@
     font-size: 20px;
   }
 }
+/* ===== 游客（未登录）状态 ===== */
+.guest-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.guest-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+}
+
+.login-entry {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 17px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: #fff;
+  color: #5b46a8;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.login-entry:hover {
+  background: rgba(255, 255, 255, 0.9);
+  transform: translateY(-1px);
+}

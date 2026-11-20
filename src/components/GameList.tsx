@@ -8,6 +8,11 @@ export const GameList = observer(() => {
   const navigate = useNavigate();
 
   const handleGameClick = (slug: string) => {
+    // 游客可以逛大厅，但进游戏要登录（弹提示而不是直接跳登录页）
+    if (!store.auth.isLoggedIn) {
+      store.ui.openLoginPrompt('登录后才能进入游戏');
+      return;
+    }
     navigate(`/game/${slug}`);
   };
 

@@ -10,6 +10,19 @@ export interface Game {
   players: number;
   /** 游戏主页形态：solo=单人直接开局（无需房间）；room=房间制（棋类/组队） */
   mode?: 'solo' | 'room';
+  /** 人数限制：games 未加载 mode 时按 max<=1 回退判断单人模式 */
+  numbers?: { min: number, max: number };
+  /** 玩法变体（贪吃蛇：无尽/多人），主页据此提供玩法切换 */
+  variants?: {
+    key: string;
+    label: string;
+    mode: 'solo' | 'room';
+    board?: string;
+    desc?: string;
+    numbers?: { min: number, max: number };
+  }[];
+  /** 排行榜分榜（缺省只有一张总榜） */
+  boards?: { key: string, label: string }[];
 }
 
 export interface Room {

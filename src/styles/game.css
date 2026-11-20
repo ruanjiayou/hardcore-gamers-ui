@@ -1,19 +1,71 @@
+/* 游戏页：顶栏 + 可滚动内容区（大厅的导航栏已不再叠加） */
+/* 滚动交给外层容器（.app > div），顶栏用 sticky 吸顶 */
 .game-page {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 0.5rem;
+  padding: 0;
+  min-height: 100%;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+.game-body {
+  flex: 1 1 auto;
+  padding: 12px;
+  display: flex;
   justify-content: center;
+  align-items: flex-start;
 }
 
 .game-container {
-  height: 100%;
   background: white;
   border-radius: 12px;
-  padding: 0.5rem;
+  padding: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
   max-width: 1200px;
   width: 100%;
+}
+
+/* 房间玩法的工具栏（匹配 / 创建房间） */
+.game-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #f0f0f5;
+}
+
+.game-toolbar button {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 17px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.game-toolbar button.ghost {
+  background: #f2f2f8;
+  color: #5b5b6b;
+}
+
+.game-toolbar button.ghost:hover {
+  background: #e8e8f2;
+}
+
+.game-toolbar button.primary {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+}
+
+.game-toolbar button.primary:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
 }
 
 .game-container h2 {
@@ -327,4 +379,50 @@
 .solo-hint {
   color: #888;
   font-size: 13px;
+}
+
+/* ===== 玩法变体切换（无尽/多人） ===== */
+.variant-tabs {
+  display: flex;
+  gap: 12px;
+  margin: 4px 0 16px;
+}
+
+.variant-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px 16px;
+  /* 未选中也要有清晰边框：深色底上 0.12 的白边几乎看不见，用户分不清哪个是当前玩法 */
+  border: 1px solid rgba(146, 158, 220, 0.5);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #d7d7e6;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.variant-card:hover {
+  border-color: #667eea;
+}
+
+.variant-card.active {
+  border-color: rgba(151, 168, 255, 0.95);
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.28), rgba(118, 75, 162, 0.28));
+  box-shadow: 0 4px 14px rgba(102, 126, 234, 0.28), inset 0 0 0 1px rgba(151, 168, 255, 0.35);
+}
+
+.variant-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.variant-desc {
+  font-size: 12px;
+  color: #9b9bb5;
+  line-height: 1.4;
 }

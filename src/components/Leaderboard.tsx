@@ -1,24 +1,34 @@
-import React, { useEffect } from 'react';
-import { Observer, observer, useLocalObservable } from 'mobx-react-lite';
-import store from '../stores'
+import React, { useEffect, useState } from 'react';
+import { Observer, observer } from 'mobx-react-lite';
+import store from '../stores';
 import '../styles/components.css';
 import { SendoutEvent, socketEvents } from '../services/socket';
 
-export const Leaderboard = observer(({ slug, limit }: { slug: string; limit: number }) => {
-  const local = useLocalObservable(() => ({
-    loading: false,
-    setLoading(is: boolean) {
-      local.loading = is;
-    }
-  }))
+interface Props {
+  slug: string;
+  limit: number;
+  /** 分榜（贪吃蛇：无尽榜 / 多人榜）；缺省只有一张总榜 */
+  boards?: { key: string; label: string }[];
+}
+
+export const Leaderboard = observer(({ slug, limit, boards }: Props) => {
+  const [board, setBoard] = useState<string | undefined>(boards?.[0]?.key);
+  const [loading, setLoading] = useState(false);
+
   useEffect(() => {
-    if (!local.loading) {
-      socketEvents.excute(SendoutEvent.GameRanks, { slug, limit: 5 }, (ranks: any) => {
-        store.game.setLeaderboard(ranks)
-        local.setLoading(false)
-      });
-    }
-  }, [local.loading]);
+    // 切换游戏 / games 加载完成后，确保选中的分榜属于当前游戏
+    setBoard(prev => (prev && boards?.some(b => b.key === prev) ? prev : boards?.[0]?.key));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, boards?.length]);
+
+  useEffect(() => {
+    setLoading(true);
+    socketEvents.excute(SendoutEvent.GameRanks, { slug, limit, board }, (ranks: any) => {
+      store.game.setLeaderboard(Array.isArray(ranks) ? ranks : []);
+      setLoading(false);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, board, limit]);
 
   const getRankMedal = (rank: number) => {
     switch (rank) {
@@ -36,6 +46,19 @@ export const Leaderboard = observer(({ slug, limit }: { slug: string; limit: num
   return <Observer>{() => (
     <div className="leaderboard-panel">
       <h2>🏆 排行榜Top</h2>
+      {boards && boards.length > 1 && (
+        <div className="board-tabs">
+          {boards.map(b => (
+            <button
+              key={b.key}
+              className={`board-tab ${board === b.key ? 'active' : ''}`}
+              onClick={() => setBoard(b.key)}
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="leaderboard">
         <div className='leaderboard-item'>
           <div className='rank'>排名</div>
@@ -45,7 +68,7 @@ export const Leaderboard = observer(({ slug, limit }: { slug: string; limit: num
           </div>
           <div className='player-rating'>分数</div>
         </div>
-        {local.loading ? (
+        {loading ? (
           <div className="loading">
             <div className="spinner"></div>
           </div>
@@ -59,7 +82,7 @@ export const Leaderboard = observer(({ slug, limit }: { slug: string; limit: num
                 </div>
                 <div className="player-info">
                   <span className="player-avatar">{player.avatar}</span>
-                  <span className="player-name">{player.nickname}{player.type === 'robot' ? '(人机)' : ''}</span>
+                  <span className="player-name">{player.nickname || '玩家'}{player.type === 'robot' ? '(人机)' : ''}</span>
                 </div>
                 <div className="player-rating">{player.score}</div>
               </div>

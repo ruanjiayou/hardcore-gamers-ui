@@ -345,3 +345,119 @@
   font-weight: normal;
   vertical-align: middle;
 }
+
+/* ===== 排行榜分榜 tab ===== */
+.board-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.board-tab {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: transparent;
+  color: #b9b9cf;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.board-tab:hover {
+  border-color: #667eea;
+  color: #fff;
+}
+
+.board-tab.active {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ===== 未登录提示（游客浏览大厅，进入游戏时拦截）===== */
+.login-gate-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(12, 12, 20, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.login-gate-page {
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-gate-card {
+  width: min(360px, 100%);
+  padding: 26px 22px 20px;
+  border-radius: 16px;
+  background: #fff;
+  color: #333;
+  text-align: center;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+.login-gate-icon {
+  font-size: 34px;
+  line-height: 1;
+  margin-bottom: 10px;
+}
+
+.login-gate-card h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  color: #2d2d3a;
+}
+
+.login-gate-card p {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #6b6b7b;
+}
+
+.login-gate-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.login-gate-actions button {
+  flex: 1;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.login-gate-actions .ghost {
+  background: #f1f1f6;
+  color: #5b5b6b;
+}
+
+.login-gate-actions .ghost:hover {
+  background: #e7e7ef;
+}
+
+.login-gate-actions .primary {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+}
+
+.login-gate-actions .primary:hover {
+  filter: brightness(1.06);
+}

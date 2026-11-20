@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { observer, useLocalObservable } from 'mobx-react-lite';
 import { toJS } from 'mobx'
 import store from '../stores'
-import { ReceiveEvent, SendoutEvent, getSocket, socketEvents } from '../services/socket';
+import { ReceiveEvent, SendoutEvent, getSocket, socketEvents, syncRoomScore } from '../services/socket';
 import { PlayerList } from '../components/PlayerList';
 import { Chat } from '../components/Chat';
 import '../styles/index.css';
@@ -12,6 +12,8 @@ import GameCanvas from "../core/GameCanvas";
 import { gameManager } from "../core/GameManager";
 import { runInAction } from 'mobx';
 import { notificationManager } from '../components/Notifications'
+import { GameHeader } from '../components/GameHeader';
+import { LoginRequiredPanel } from '../components/LoginRequired'
 import { RoomStatus } from '../constant'
 
 export const RoomPage = observer(() => {
@@ -21,19 +23,25 @@ export const RoomPage = observer(() => {
     showAgreeDraw: false,
     loading: false,
     match_id: '',
+    // 全屏对局中右上角抽屉（玩家列表/聊天）是否展开
+    showPanel: false,
     // 计时配置（开局前双方可改，仅象棋）
     tcEnabled: false,
     tcStepSec: 30,
     tcTotalMin: 10,
     tcSaving: false,
     tick: 0, // 每秒自增，驱动倒计时重渲染
-    setV(key: 'showAgreeDraw' | 'match_id' | 'loading' | 'tcEnabled' | 'tcStepSec' | 'tcTotalMin' | 'tcSaving' | 'tick', v: any) {
+    setV(key: 'showAgreeDraw' | 'showPanel' | 'match_id' | 'loading' | 'tcEnabled' | 'tcStepSec' | 'tcTotalMin' | 'tcSaving' | 'tick', v: any) {
       // @ts-ignore - 动态字段赋值
       local[key] = v;
     }
   }));
   const init = (room_id?: string) => {
     if (!room_id || local.loading) {
+      return;
+    }
+    // 游客不拉房间详情（也就不会创建玩家），页面只显示登录提示
+    if (!store.auth.isLoggedIn) {
       return;
     }
     local.setV('loading', true)
@@ -43,9 +51,29 @@ export const RoomPage = observer(() => {
       store.game.setPlayer(player);
     })
     socketEvents.getRoomDetail(room_id, (data) => {
-      const { room } = data;
+      const room = data?.room;
+      local.setV('loading', false);
+      // 房间已解散/不存在：服务端返回 room: null，继续渲染会让 roomInfo 相关读取出错
+      if (!room) {
+        store.room.clear();
+        // 本地也清掉 room_id：否则回到游戏主页后又会被"已在房中"逻辑跳回这个死房间
+        if (store.game.player) {
+          store.game.setPlayer({ ...toJS(store.game.player), room_id: '', state: 'online' });
+        }
+        notificationManager.show('房间不存在或已解散', 'warning');
+        navigate(`/game/${slug}`, { replace: true });
+        return;
+      }
       store.room.setCurrentRoom(room)
+      // 服务端自愈（幽灵对局重置 / 无尽房补开局）后会给出新的对局 id：
+      // 画布已经加载的话立刻补拉一次局面，否则会一直停在"连接中"
+      const changed = !!data.match_id && data.match_id !== local.match_id;
       local.setV('match_id', data.match_id)
+      if (changed) {
+        socketEvents.excute(SendoutEvent.GetMatchState, { match_id: data.match_id, game_slug: slug }, (state: any) => {
+          gameManager.game?.logic.setState(state);
+        });
+      }
       // 读取房间计时配置（开局前双方可改）
       const tc = room?.settings?.timeControl;
       if (tc) {
@@ -135,14 +163,26 @@ export const RoomPage = observer(() => {
     notificationManager.show('房间已解散', 'warning');
     store.room.clear();
     store.game.setPlayer({ ...store.game.player, room_id: '' });
-    navigate(-1);
+    // 固定回游戏主页：用 history 回退可能回到已解散的房间地址
+    navigate(`/game/${slug}`, { replace: true });
   }
   useEffect(() => {
     if (!room_id) {
       navigate('/lobby');
       return;
     }
+    // 未登录：不订阅房间事件，只渲染登录提示
+    if (!store.auth.isLoggedIn) {
+      return;
+    }
     init(room_id)
+    // 直接刷新进房间时 store 里可能没有游戏列表，补拉一次：
+    // 否则拿不到 variants/mode，单人对局会被当成房间对战（按钮显示"认输"、变体判断也错）
+    if (!store.game.games.length) {
+      socketEvents.excute(SendoutEvent.LobbyGames, (games: any) => {
+        store.game.setGames(games);
+      });
+    }
     // 每秒驱动倒计时重渲染
     const ticker = setInterval(() => local.setV('tick', Date.now()), 1000);
     if (!socket) {
@@ -166,6 +206,8 @@ export const RoomPage = observer(() => {
     socket.on(ReceiveEvent.RoomDisband, onRoomDisband);
     return () => {
       clearInterval(ticker);
+      // 组件卸载（返回主页 / 浏览器后退 / 刷新）时也同步一次分数；服务端 disconnect 另有兜底
+      syncRoomScore(room_id);
       gameManager.unload();
       store.room.clearClock();
       socket.off(ReceiveEvent.PlayerChange, onPlayerChange);
@@ -183,6 +225,14 @@ export const RoomPage = observer(() => {
       socket.off(ReceiveEvent.RoomDisband, onRoomDisband);
     };
   }, [room_id, navigate]);
+
+  // 兜底：进房后迟迟拿不到"进行中的对局"（match_id 仍为空）就重拉一次房间详情。
+  // 服务端已经会自愈幽灵房，这里只防事件错过 / 网络抖动导致的空画面（表现为一直"连接中"）。
+  useEffect(() => {
+    if (!room_id || !store.auth.isLoggedIn || local.match_id) return;
+    const timer = setTimeout(() => init(room_id), 2000);
+    return () => clearTimeout(timer);
+  }, [room_id, local.match_id]);
 
   const loadState = (data: { match_id: string, game_slug?: string }) => {
     console.log(data, '加载对局数据')
@@ -212,6 +262,7 @@ export const RoomPage = observer(() => {
   }
   const handleLeaveRoom = () => {
     if (!room_id) return;
+    syncRoomScore(room_id);
     socketEvents.excute(SendoutEvent.LeaveRoom, { room_id, player_id: store.game.player_id }, (success: boolean, message?: string) => {
       if (!success) {
         notificationManager.show(message || '无法离开房间', 'warning');
@@ -221,7 +272,8 @@ export const RoomPage = observer(() => {
       store.game.setPlayer({ ...store.game.player, room_id: '' })
       // 服务端区分"房间已解散"（自建房房主/临时房）与"已离开房间"
       notificationManager.show(message || '已离开房间', 'success');
-      navigate(-1);
+      // 固定回游戏主页：用 history 回退可能回到已解散的房间地址
+    navigate(`/game/${slug}`, { replace: true });
     });
   };
   /** 解散房间：仅自建非官方房的房主可用（服务端强校验） */
@@ -235,7 +287,8 @@ export const RoomPage = observer(() => {
       store.room.clear();
       store.game.setPlayer({ ...store.game.player, room_id: '' });
       notificationManager.show('房间已解散', 'success');
-      navigate(-1);
+      // 固定回游戏主页：用 history 回退可能回到已解散的房间地址
+    navigate(`/game/${slug}`, { replace: true });
     });
   };
   /** 观战开关：房主在开局前切换（服务端仅等待态允许） */
@@ -251,6 +304,17 @@ export const RoomPage = observer(() => {
     });
   };
   const handleRestart = () => {
+    if (isSoloGame) {
+      // 单人游戏：重新开始 = 另开一局（旧临时房在快开时会被服务端销毁）
+      socketEvents.quickStart(slug!, roomVariant, (success, data: any, message?: string) => {
+        if (success && data?.room_id) {
+          navigate(`/game/${slug}/room/${data.room_id}`, { replace: true });
+        } else {
+          notificationManager.show(message || '重新开始失败', 'warning');
+        }
+      });
+      return;
+    }
     store.room.setRoomStatus('waiting')
     loadState({ game_slug: slug, match_id: '', })
   }
@@ -308,32 +372,109 @@ export const RoomPage = observer(() => {
     return clock.stepLimitMs - (store.room.serverNow() - startedAt);
   };
   const isXiangqi = slug === 'xiangqi';
-  // 单人游戏（无对手）：一人即可开局，不提供机器人/求和/认输。
-  // 以游戏 mode 为准（games 未加载时按 slug 回退）；后续 tetris / snake / jump 均为 solo 模式自动适配。
   const gameInfo = store.game.games.find(g => g.slug === slug);
-  const isSoloGame = (gameInfo?.mode ?? (slug === '2048' ? 'solo' : 'room')) === 'solo';
+  // 玩法变体：贪吃蛇同一 slug 下有无尽/多人两种房间，房间设置里记录 variant。
+  // 旧房间/异常数据没有 variant 时兜底：混合玩法游戏的非临时房一律按房间变体处理。
+  const roomVariant = (store.room.roomInfo?.settings?.variant as string | undefined)
+    || (gameInfo?.variants?.length
+      ? (store.room.roomInfo?.transient
+        ? gameInfo.variants.find(v => v.mode === 'solo')?.key
+        : gameInfo.variants.find(v => v.mode === 'room')?.key)
+      : undefined);
+  // 单人玩法（无对手）：一人即可开局，不提供机器人/求和/认输。
+  // 优先看房间 variant（混合玩法游戏），否则按游戏 mode / 人数兜底。
+  const variantInfo = gameInfo?.variants?.find(v => v.key === roomVariant);
+  const isSoloGame = variantInfo
+    ? variantInfo.mode === 'solo'
+    : (gameInfo?.mode ?? ((gameInfo?.numbers?.max ?? 2) <= 1 ? 'solo' : 'room')) === 'solo';
+  // 实时对局（多人贪吃蛇）：没有求和机制，认输 = 自我淘汰
+  const isRealtimeGame = slug === 'snake' && roomVariant === 'multi';
+  // 无尽挑战竞技房：进房自动开局，死了自动重生，随时可以退出（不算逃跑）
+  const isEndlessArena = slug === 'snake' && roomVariant === 'endless';
+  // 官方无尽桌没有"开始游戏"：进房即开局
+  const autoStarted = isEndlessArena && !!store.room.roomInfo?.official;
   const clock = store.room.clock;
   // 解散按钮仅自建非官方房的房主显示；官方房/他人房间/临时房只能"退出"
   const isOwner = store.room.roomInfo?.owner_id === store.game.player_id;
   const canDisband = isOwner && !store.room.roomInfo?.official && !store.room.roomInfo?.transient;
+  // 贪吃蛇对局中切全屏沉浸：棋盘铺满视口，房间操作收进右上角悬浮按钮
+  const immersive = slug === 'snake' && store.room.status === RoomStatus.playing;
+
+  useEffect(() => {
+    if (!immersive) return;
+    // 锁住外层页面滚动（并隐藏导航栏），避免全屏时还能拖动页面
+    document.body.classList.add('immersive-mode');
+    return () => document.body.classList.remove('immersive-mode');
+  }, [immersive]);
+
+  // 未登录：直接打开房间地址也只显示登录提示
+  if (!store.auth.isLoggedIn) {
+    return <LoginRequiredPanel title="需要登录" desc="登录后才能进入房间对局" />;
+  }
 
   return (
-    <div className="room-page">
+    <div className={`room-page${immersive ? ' immersive' : ''}`}>
+      {/* 非沉浸对局：与游戏主页同一套顶栏，返回回该游戏主页 */}
+      {!immersive && (
+        <GameHeader
+          title={gameInfo?.title || slug || '对局'}
+          subtitle={store.room.roomInfo?.name || variantInfo?.label || ''}
+          onBack={() => {
+            // 玩家仍在房间里，游戏主页的"继续对局"逻辑会立刻把他弹回来；
+            // 用一次性标记告诉游戏主页：这次是主动返回，不要自动回房
+            sessionStorage.setItem('lobby:skipRoomResume', '1');
+            syncRoomScore(room_id);
+            navigate(`/game/${slug}`);
+          }}
+        />
+      )}
+      <div className='room-stage'>
       <div className='room-container'>
         <div className='game-main'>
           <GameCanvas
-            ready={store.game.player && store.room.roomInfo ? true : false}
+            // 必须等到「本房间」详情回来再加载游戏：roomInfo 初始是空壳，
+            // 提前加载会拿不到 settings.variant（贪吃蛇会先按多人初始化再切换）
+            ready={!!(store.game.player && store.room.roomInfo?._id === room_id)}
             onReady={(canvas: HTMLCanvasElement) => {
               const socket = getSocket()
               if (socket) {
-                gameManager.load(slug!, canvas, socket, toJS(store.game.player)).then(() => {
+                gameManager.load(slug!, canvas, socket, toJS(store.game.player), {
+                  variant: roomVariant,
+                  room: toJS(store.room.roomInfo),
+                }).then(() => {
                   console.log('game loaded')
+                  // 死亡弹框的「退出」：交给房间页走正常离房流程（无尽房直接退出，不结算）
+                  const logic: any = gameManager.game?.logic
+                  logic?.on?.('exit', () => handleLeaveRoom())
                   loadState({ game_slug: slug, match_id: local.match_id, })
                 });
               }
             }}
           />
         </div>
+        {immersive ? (
+          /* 全屏对局：设置/退出悬浮在右上角，不占棋盘空间 */
+          <div className="immersion-hud">
+            <div className="hud-buttons">
+              <button
+                className="hud-btn"
+                title="玩家与聊天"
+                onClick={() => local.setV('showPanel', !local.showPanel)}
+              >☰</button>
+              {isSoloGame || isEndlessArena
+                ? <button className="hud-btn danger" onClick={handleLeaveRoom}>退出</button>
+                : (store.game.player?.member_type === 'player'
+                  ? <button className="hud-btn danger" onClick={requestSurrender}>认输</button>
+                  : null)}
+            </div>
+            {local.showPanel && (
+              <div className="hud-drawer">
+                <PlayerList room_id={room_id!} />
+                <Chat room_id={room_id!} />
+              </div>
+            )}
+          </div>
+        ) : (
         <div className='game-info'>
           {/* 对局中：读秒制时钟（每步限时 + 个人总额度） */}
           {store.room.status === RoomStatus.playing && clock?.enabled && (
@@ -398,13 +539,14 @@ export const RoomPage = observer(() => {
 
           <div className="room-actions">
             {/* 单人游戏无需机器人；多人对战房主可为房间补 AI 对手 */}
-            {!isSoloGame && store.room.status === RoomStatus.waiting && isOwner && <button onClick={handleAddRobot}>添加机器人</button>}
+            {!isSoloGame && !isEndlessArena && store.room.status === RoomStatus.waiting && isOwner && <button onClick={handleAddRobot}>添加机器人</button>}
             {/*
               所有玩家（不含观战）进房即自动 prepared，无需手动准备/取消按钮。
               开局完全由房主点"开始游戏"控制（服务端已移除"全员准备自动开局"）。
               单人游戏一人即可开局，多人对战至少 2 人。
             */}
             {store.room.status === RoomStatus.waiting
+              && !autoStarted
               && isOwner
               && store.room.players.length >= (isSoloGame ? 1 : 2)
               && <button onClick={handleStartGame}>开始游戏</button>}
@@ -418,11 +560,11 @@ export const RoomPage = observer(() => {
                 ? <button onClick={handleDisband} className="danger">解散房间</button>
                 : <button onClick={handleLeaveRoom} className="danger">退出</button>
             )}
-            {isSoloGame && store.room.status === RoomStatus.playing && (
+            {(isSoloGame || isEndlessArena) && store.room.status === RoomStatus.playing && (
               <button onClick={handleLeaveRoom} className="danger">退出</button>
             )}
-            {store.room.status === RoomStatus.playing && store.game.player?.member_type === 'player' && !isSoloGame && <Fragment>
-              <button onClick={handleRequestDraw}>求和</button>
+            {store.room.status === RoomStatus.playing && !isEndlessArena && store.game.player?.member_type === 'player' && !isSoloGame && <Fragment>
+              {!isRealtimeGame && <button onClick={handleRequestDraw}>求和</button>}
               <button onClick={requestSurrender} className="danger">认输</button>
             </Fragment>}
           </div>
@@ -431,6 +573,8 @@ export const RoomPage = observer(() => {
             <Chat room_id={room_id!} />
           </div>
         </div>
+        )}
+      </div>
       </div>
     </div>
   );

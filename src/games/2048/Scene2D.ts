@@ -42,6 +42,8 @@ export default class Scene2D2048 {
   dpr = 1;
   view: View = { scale: 1, offsetX: 0, offsetY: 0 };
   anim: { tiles: AnimTile[]; start: number; duration: number; spawn: MoveEvent['spawn']; raf: number } | null = null;
+  /** 新块的出生动画：滑动结束后再淡入，避免新数字"凭空"出现在棋盘中间 */
+  spawnAnim: { r: number; c: number; value: number; start: number; duration: number; raf: number } | null = null;
   gameover = false;
   toast = '';
 
@@ -150,21 +152,29 @@ export default class Scene2D2048 {
     this.logic.move(dir);
   }
 
+  private clearSpawnAnim() {
+    if (this.spawnAnim) cancelAnimationFrame(this.spawnAnim.raf);
+    this.spawnAnim = null;
+  }
+
   private handleState(_d: any) {
     this.gameover = false;
     this.anim = null;
+    this.clearSpawnAnim();
     this.render();
   }
 
   private handleReset(d: any) {
     this.gameover = false;
     this.anim = null;
+    this.clearSpawnAnim();
     this.render();
   }
 
   private handleMove(d: MoveEvent) {
     // 把 TileMove 转成动画期间的临时块：每个 from 块滑向 to。
     // 合并块在终点叠放两个（动画结束后由 render 用 logic.board 显示合并值）。
+    this.clearSpawnAnim();
     const tiles: AnimTile[] = d.moves.map((m: TileMove) => ({
       value: m.value,
       r: m.from[0],
@@ -172,11 +182,12 @@ export default class Scene2D2048 {
     }));
     // 目标块信息存在 anim 里，用一个隐藏字段记录 end 坐标
     (tiles as any)._ends = d.moves.map((m: TileMove) => m.to);
+    const spawn = d.spawn;
     this.anim = {
       tiles,
       start: performance.now(),
       duration: 150,
-      spawn: d.spawn,
+      spawn,
       raf: 0,
     };
     const tick = () => {
@@ -184,6 +195,7 @@ export default class Scene2D2048 {
       const t = (performance.now() - this.anim.start) / this.anim.duration;
       if (t >= 1) {
         this.anim = null;
+        this.startSpawnAnim(spawn);
         this.render();
         return;
       }
@@ -191,6 +203,27 @@ export default class Scene2D2048 {
       this.anim.raf = requestAnimationFrame(tick);
     };
     this.anim.raf = requestAnimationFrame(tick);
+  }
+
+  /** 滑动落地后，让新块从格子里缩放淡入，而不是在动画结束那一帧突然冒出来 */
+  private startSpawnAnim(spawn: MoveEvent['spawn']) {
+    if (!spawn) return;
+    this.clearSpawnAnim();
+    this.spawnAnim = {
+      r: spawn.r, c: spawn.c, value: spawn.value,
+      start: performance.now(), duration: 140, raf: 0,
+    };
+    const tick = () => {
+      if (!this.spawnAnim) return;
+      if (performance.now() - this.spawnAnim.start >= this.spawnAnim.duration) {
+        this.spawnAnim = null;
+        this.render();
+        return;
+      }
+      this.render();
+      this.spawnAnim.raf = requestAnimationFrame(tick);
+    };
+    this.spawnAnim.raf = requestAnimationFrame(tick);
   }
 
   private handleGameOver(_d: any) {
@@ -250,13 +283,28 @@ export default class Scene2D2048 {
         this.drawTile(ctx, x, y, tile.value);
       });
     } else {
-      // 静态：直接画逻辑棋盘
+      // 静态：直接画逻辑棋盘；刚生成的新块单独做缩放淡入
+      const spawnProgress = this.spawnAnim
+        ? Math.min(1, (performance.now() - this.spawnAnim.start) / this.spawnAnim.duration)
+        : 1;
       for (let r = 0; r < SIZE; r++) {
         for (let c = 0; c < SIZE; c++) {
           const v = this.logic.board[r]?.[c] || 0;
           if (v === 0) continue;
           const { x, y } = this.cellXY(r, c);
-          this.drawTile(ctx, x, y, v);
+          if (this.spawnAnim && this.spawnAnim.r === r && this.spawnAnim.c === c) {
+            const ease = 1 - Math.pow(1 - spawnProgress, 3);
+            const k = 0.55 + 0.45 * ease;
+            ctx.save();
+            ctx.globalAlpha = Math.max(0.05, ease);
+            ctx.translate(x + CELL / 2, y + CELL / 2);
+            ctx.scale(k, k);
+            ctx.translate(-(x + CELL / 2), -(y + CELL / 2));
+            this.drawTile(ctx, x, y, v);
+            ctx.restore();
+          } else {
+            this.drawTile(ctx, x, y, v);
+          }
         }
       }
     }
@@ -338,6 +386,7 @@ export default class Scene2D2048 {
     this.logic.off('move', this.onMove);
     this.logic.off('gameover', this.onGameOver);
     if (this.anim) cancelAnimationFrame(this.anim.raf);
+    this.clearSpawnAnim();
     this.inited = false;
   }
 }
