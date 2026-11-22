@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { login } from '../services/api';
 import store from '../stores'
 import { notificationManager } from '../components/Notifications';
 import '../styles/login.css';
@@ -22,7 +22,7 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await axios.post('/api/oauth/login', {
+      const response = await login({
         name: username,
         pass: password
       });

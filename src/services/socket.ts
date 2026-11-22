@@ -7,6 +7,7 @@ export async function initSocket(): Promise<{ success: boolean, error?: any }> {
   const success = true;
   // 如果已经连接，直接返回
   if (socket && socket.connected) {
+    store.ui.setSocketConnected(true);
     console.log('🔄 Socket 已连接，直接返回');
     return { success };
   }
@@ -17,6 +18,7 @@ export async function initSocket(): Promise<{ success: boolean, error?: any }> {
     socket.disconnect();
     socket = null;
   }
+  store.ui.setSocketConnected(false);
 
   console.log('🔌 初始化 Socket.io 连接...');
 
@@ -33,8 +35,15 @@ export async function initSocket(): Promise<{ success: boolean, error?: any }> {
       upgrade: true,
       rejectUnauthorized: false
     });
+    socket.on('connect', () => {
+      store.ui.setSocketConnected(true);
+    })
     socket.on('disconnect', reason => {
+      store.ui.setSocketConnected(false);
       console.log('断开原因', reason)
+    })
+    socket.on('connect_error', () => {
+      store.ui.setSocketConnected(false);
     })
     return await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -65,6 +74,7 @@ export async function initSocket(): Promise<{ success: boolean, error?: any }> {
   } catch (error: any) {
     console.error('❌ Socket 初始化异常:', error);
     socket = null;
+    store.ui.setSocketConnected(false);
     return { success: false, error };
   }
 }
@@ -76,8 +86,17 @@ export function disconnectSocket() {
   if (socket) {
     socket.disconnect();
     socket = null;
-    console.log('🔌 Socket 已断开');
   }
+  store.ui.setSocketConnected(false);
+  console.log('🔌 Socket 已断开');
+}
+
+// 浏览器网络状态变化时同步头像状态（socket 尚未回调时的即时反馈）
+if (typeof window !== 'undefined') {
+  window.addEventListener('offline', () => store.ui.setSocketConnected(false));
+  window.addEventListener('online', () => {
+    if (socket?.connected) store.ui.setSocketConnected(true);
+  });
 }
 
 export const ReceiveEvent = {

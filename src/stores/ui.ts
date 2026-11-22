@@ -7,9 +7,15 @@ import { makeAutoObservable } from 'mobx';
 export default class UiStore {
   loginPromptOpen = false;
   loginPromptText = '登录后才能开始游戏';
+  /** WebSocket 连接状态：驱动顶栏头像的绿色辉光 / 断线裂开效果 */
+  socketConnected = false;
 
   constructor() {
     makeAutoObservable(this);
+  }
+
+  setSocketConnected(connected: boolean) {
+    this.socketConnected = connected;
   }
 
   openLoginPrompt(text?: string) {

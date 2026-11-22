@@ -111,15 +111,13 @@
   gap: 8px;
 }
 
-.game-header .user-button {
-  padding: 6px 10px;
+.game-header .status-avatar {
+  width: 32px;
+  height: 32px;
 }
 
-.game-header .user-name {
-  max-width: 96px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.game-header .avatar-face {
+  font-size: 17px;
 }
 
 @media screen and (max-width: 480px) {
@@ -144,66 +142,8 @@
     display: none;
   }
 
-  /* 大厅在窄屏会隐藏昵称；游戏顶栏空间够，保留昵称更清楚 */
-  .game-header .user-name {
-    display: inline;
-    max-width: 64px;
+  .game-header .status-avatar {
+    width: 30px;
+    height: 30px;
   }
-
-  .game-header .connection-status {
-    display: none;
-  }
-}
-
-/* 游戏主页的关闭按钮：回大厅（大厅导航栏在游戏内已隐藏，这里是唯一出口） */
-.game-close {
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  /* 全局 button 默认 padding: 10px 16px，会把 34px 圆钮的内容盒压成 2px 宽，
-     flex 居中基准随之偏移 —— 这就是右上角 ✕ 看起来没居中的原因 */
-  padding: 0;
-  line-height: 1;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  background: rgba(255, 255, 255, 0.14);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.16s ease;
-}
-
-.game-close:hover {
-  background: rgba(255, 255, 255, 0.28);
-}
-
-/* 纯 CSS 的 ✕，避免字体差异 */
-.game-close-x {
-  position: relative;
-  /* 固定尺寸，别被 flex 收缩，否则两条线会以错误的中点旋转 */
-  flex: 0 0 12px;
-  width: 12px;
-  height: 12px;
-}
-
-.game-close-x::before,
-.game-close-x::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 12px;
-  height: 2px;
-  margin-top: -1px;
-  background: #fff;
-  border-radius: 1px;
-}
-
-.game-close-x::before {
-  transform: rotate(45deg);
-}
-
-.game-close-x::after {
-  transform: rotate(-45deg);
 }

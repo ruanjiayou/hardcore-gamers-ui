@@ -2,7 +2,7 @@ import GameTransport from '../../core/GameTransport'
 import Logic from './Logic'
 import Scene from './Scene2D'
 
-export default class InternationalChess {
+export default class Chess {
   logic: Logic;
   scene: Scene;
 

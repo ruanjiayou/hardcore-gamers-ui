@@ -26,7 +26,7 @@ export const Stats = observer(() => {
   }
 
   return (
-    <div className="stats-panel">
+    <div className="panel stats-panel">
       <h2>📊 服务统计</h2>
       <div className="stats-grid">
         <div className="stat-card">

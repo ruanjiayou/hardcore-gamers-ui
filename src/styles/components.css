@@ -20,10 +20,6 @@
 }
 
 /* 游戏列表 */
-.game-list-panel {
-  grid-column: 1 / 2;
-}
-
 .games-grid {
   display: grid;
   gap: 1rem;
@@ -87,11 +83,6 @@
 }
 
 /* 排行榜 */
-.leaderboard-panel {
-  grid-column: 3 / 4;
-  grid-row: 1 / 3;
-}
-
 .leaderboard {
   display: flex;
   flex-direction: column;
@@ -241,33 +232,7 @@
 }
 
 /* 响应式 */
-@media (max-width: 1400px) {
-  .leaderboard-panel {
-    grid-column: 1 / -1;
-    grid-row: 3 / 4;
-  }
-
-  .stats-panel {
-    grid-column: 1 / -1;
-    grid-row: 4 / 5;
-  }
-}
-
 @media (max-width: 1024px) {
-  .game-list-panel {
-    grid-column: 1 / -1;
-  }
-
-  .leaderboard-panel {
-    grid-column: 1 / -1;
-    grid-row: auto;
-  }
-
-  .stats-panel {
-    grid-column: 1 / -1;
-    grid-row: auto;
-  }
-
   .stats-grid {
     grid-template-columns: repeat(4, 1fr);
   }

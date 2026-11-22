@@ -28,11 +28,6 @@ export const Navbar = observer(() => {
           🎮 游戏大厅
         </div>
 
-        {/* 导航菜单 */}
-        <div className="navbar-menu">
-          <a className="nav-link" onClick={handleLogoClick}>大厅</a>
-        </div>
-
         {/* 用户菜单 */}
         <UserMenu />
       </div>

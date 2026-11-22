@@ -153,7 +153,7 @@ export const GamePage = observer(() => {
         subtitle={isSolo ? '单人挑战' : (variantInfo?.label || '房间对战')}
         close
         onBack={() => {
-          // 点 ✕ 回大厅时把当前分同步进排行榜（对局仍在房间里，不影响继续玩）
+          // 点返回回大厅时把当前分同步进排行榜（对局仍在房间里，不影响继续玩）
           syncRoomScore();
           navigate('/lobby');
         }}
