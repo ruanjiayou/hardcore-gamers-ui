@@ -6,10 +6,62 @@ import Logic2048, { TileMove, MoveEvent, Dir } from "./Logic";
 const CELL = 108;
 const GAP = 12;
 const MARGIN = 28;
-const HEADER = 96;               // 顶部标题+分数区高度
 const SIZE = 4;
-const BOARD_W = MARGIN * 2 + SIZE * CELL + (SIZE - 1) * GAP;
-const BOARD_H = HEADER + MARGIN + SIZE * CELL + (SIZE - 1) * GAP + MARGIN;
+const SCORE_W = 104;
+const SCORE_H = 52;
+const GRID = SIZE * CELL + (SIZE - 1) * GAP;
+
+export interface Board2048Layout {
+  /** 逻辑画布尺寸（按等比缩放铺进真实 canvas） */
+  baseW: number;
+  baseH: number;
+  /** 棋盘网格左上角与尺寸（逻辑像素） */
+  gridX: number;
+  gridY: number;
+  gridW: number;
+  gridH: number;
+  /** 分数 / 最高分两个框的位置（逻辑像素） */
+  scores: { x: number; y: number }[];
+  /** 宽屏：棋盘在左、分数框在右；窄屏：分数在上、棋盘在下 */
+  wide: boolean;
+}
+
+/**
+ * 2048 画布内部布局（纯函数，便于 resize / 单测）：
+ * PC 横屏时棋盘与分数左右排列，尽量利用宽度；手机竖屏时分数在上、棋盘在下。
+ */
+export function layout2048(cssW: number, cssH: number): Board2048Layout {
+  const wide = cssW >= 600 && cssW > cssH * 1.05;
+  if (wide) {
+    return {
+      baseW: MARGIN * 2 + GRID + GAP + SCORE_W,
+      baseH: MARGIN * 2 + GRID,
+      gridX: MARGIN,
+      gridY: MARGIN,
+      gridW: GRID,
+      gridH: GRID,
+      scores: [
+        { x: MARGIN + GRID + GAP, y: MARGIN },
+        { x: MARGIN + GRID + GAP, y: MARGIN + SCORE_H + GAP },
+      ],
+      wide: true,
+    };
+  }
+  const firstScoreX = (MARGIN * 2 + GRID - SCORE_W * 2 - GAP) / 2;
+  return {
+    baseW: MARGIN * 2 + GRID,
+    baseH: MARGIN * 2 + SCORE_H + GAP + GRID,
+    gridX: MARGIN,
+    gridY: MARGIN + SCORE_H + GAP,
+    gridW: GRID,
+    gridH: GRID,
+    scores: [
+      { x: firstScoreX, y: MARGIN },
+      { x: firstScoreX + SCORE_W + GAP, y: MARGIN },
+    ],
+    wide: false,
+  };
+}
 
 const COLORS: Record<number, { bg: string; fg: string }> = {
   0: { bg: '#cdc1b4', fg: '#776e65' },
@@ -41,6 +93,7 @@ export default class Scene2D2048 {
   inited = false;
   dpr = 1;
   view: View = { scale: 1, offsetX: 0, offsetY: 0 };
+  layout: Board2048Layout = layout2048(800, 600);
   anim: { tiles: AnimTile[]; start: number; duration: number; spawn: MoveEvent['spawn']; raf: number } | null = null;
   /** 新块的出生动画：滑动结束后再淡入，避免新数字"凭空"出现在棋盘中间 */
   spawnAnim: { r: number; c: number; value: number; start: number; duration: number; raf: number } | null = null;
@@ -57,6 +110,7 @@ export default class Scene2D2048 {
   private onTouchStart = (e: TouchEvent) => this.handleTouchStart(e);
   private onTouchMove = (e: TouchEvent) => { if (e.cancelable) e.preventDefault(); };
   private onTouchEnd = (e: TouchEvent) => this.handleTouchEnd(e);
+  private ro: ResizeObserver | null = null;
 
   constructor(canvas: HTMLCanvasElement, logic: Logic2048) {
     this.logic = logic;
@@ -74,6 +128,11 @@ export default class Scene2D2048 {
     if (this.inited) return;
     this.inited = true;
     window.addEventListener('resize', this.onResize);
+    // 地址栏收起 / 分屏 / 容器变化都走同一套 resize，window.onresize 之外再兜一层
+    if (typeof ResizeObserver !== 'undefined') {
+      this.ro = new ResizeObserver(() => this.resize());
+      this.ro.observe(this.canvas);
+    }
     window.addEventListener('keydown', this.onKey);
     this.canvas.addEventListener('touchstart', this.onTouchStart, { passive: true });
     this.canvas.addEventListener('touchmove', this.onTouchMove, { passive: false });
@@ -82,27 +141,28 @@ export default class Scene2D2048 {
     this.render();
   }
 
-  /** 逻辑格 -> 棋盘逻辑像素（格子左上角） */
+  /** 逻辑格 -> 棋盘逻辑像素（格子左上角；布局随横竖屏切换，不写死标题高度） */
   private cellXY(r: number, c: number): { x: number; y: number } {
     return {
-      x: MARGIN + c * (CELL + GAP),
-      y: HEADER + MARGIN + r * (CELL + GAP),
+      x: this.layout.gridX + c * (CELL + GAP),
+      y: this.layout.gridY + r * (CELL + GAP),
     };
   }
 
   private resize() {
     if (!this.inited) return;
     const rect = this.canvas.getBoundingClientRect();
-    const cssW = rect.width || BOARD_W;
-    const cssH = rect.height || BOARD_H;
+    const cssW = rect.width || 640;
+    const cssH = rect.height || 580;
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.canvas.width = Math.round(cssW * this.dpr);
     this.canvas.height = Math.round(cssH * this.dpr);
-    const scale = Math.min(cssW / BOARD_W, cssH / BOARD_H);
+    this.layout = layout2048(cssW, cssH);
+    const scale = Math.min(cssW / this.layout.baseW, cssH / this.layout.baseH);
     this.view = {
       scale,
-      offsetX: (cssW - BOARD_W * scale) / 2,
-      offsetY: (cssH - BOARD_H * scale) / 2,
+      offsetX: (cssW - this.layout.baseW * scale) / 2,
+      offsetY: (cssH - this.layout.baseH * scale) / 2,
     };
     this.render();
   }
@@ -236,6 +296,7 @@ export default class Scene2D2048 {
   private render() {
     if (!this.inited) return;
     const ctx = this.ctx;
+    const L = this.layout;
     const { scale, offsetX, offsetY } = this.view;
     ctx.save();
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -243,21 +304,14 @@ export default class Scene2D2048 {
     ctx.translate(offsetX, offsetY);
     ctx.scale(scale, scale);
 
-    // 背景
+    // 背景（分数区与棋盘同属一张画布，内部布局随横竖屏切换）
     ctx.fillStyle = '#bbada0';
-    this.roundRect(ctx, 0, 0, BOARD_W, BOARD_H, 12);
+    this.roundRect(ctx, 0, 0, L.baseW, L.baseH, 12);
     ctx.fill();
 
-    // 标题 + 分数
-    ctx.fillStyle = '#776e65';
-    ctx.font = 'bold 44px system-ui, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText('2048', MARGIN, 18);
-    ctx.font = '14px system-ui, sans-serif';
-    ctx.fillStyle = '#eee4da';
-    this.scoreBox(ctx, MARGIN + 150, 14, '分数', String(this.logic.score));
-    this.scoreBox(ctx, MARGIN + 268, 14, '最高', String(this.logic.best));
+    // 不再画 2048 标题：游戏名由顶部导航显示，这里只留分数与最高分
+    this.scoreBox(ctx, L.scores[0].x, L.scores[0].y, '分数', String(this.logic.score));
+    this.scoreBox(ctx, L.scores[1].x, L.scores[1].y, '最高', String(this.logic.best));
 
     // 空格底
     for (let r = 0; r < SIZE; r++) {
@@ -309,36 +363,38 @@ export default class Scene2D2048 {
       }
     }
 
-    // 结束蒙层
+    // 结束蒙层：只盖住棋盘，分数框始终可见
     if (this.gameover) {
       ctx.fillStyle = 'rgba(238,228,218,0.85)';
-      this.roundRect(ctx, MARGIN, HEADER + MARGIN, BOARD_W - MARGIN * 2, SIZE * CELL + (SIZE - 1) * GAP, 8);
+      this.roundRect(ctx, L.gridX, L.gridY, L.gridW, L.gridH, 8);
       ctx.fill();
       ctx.fillStyle = '#776e65';
       ctx.font = 'bold 40px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('游戏结束', BOARD_W / 2, HEADER + MARGIN + (SIZE * CELL + (SIZE - 1) * GAP) / 2 - 20);
+      ctx.fillText('游戏结束', L.gridX + L.gridW / 2, L.gridY + L.gridH / 2 - 20);
       ctx.font = '20px system-ui, sans-serif';
-      ctx.fillText(`本局 ${this.logic.score} 分`, BOARD_W / 2, HEADER + MARGIN + (SIZE * CELL + (SIZE - 1) * GAP) / 2 + 26);
+      ctx.fillText(`本局 ${this.logic.score} 分`, L.gridX + L.gridW / 2, L.gridY + L.gridH / 2 + 26);
     }
 
     if (this.toast) {
+      const cx = L.gridX + L.gridW / 2;
+      const cy = L.gridY + L.gridH / 2;
       ctx.fillStyle = 'rgba(119,110,101,0.9)';
-      this.roundRect(ctx, BOARD_W / 2 - 90, HEADER - 6, 180, 34, 8);
+      this.roundRect(ctx, cx - 90, cy - 17, 180, 34, 8);
       ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.font = '16px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(this.toast, BOARD_W / 2, HEADER + 11);
+      ctx.fillText(this.toast, cx, cy);
     }
 
     ctx.restore();
   }
 
   private scoreBox(ctx: CanvasRenderingContext2D, x: number, y: number, label: string, value: string) {
-    ctx.fillStyle = '#bbada0';
+    ctx.fillStyle = '#a39482';
     this.roundRect(ctx, x, y, 104, 52, 6);
     ctx.fill();
     ctx.fillStyle = '#eee4da';
@@ -377,6 +433,8 @@ export default class Scene2D2048 {
 
   dispose() {
     window.removeEventListener('resize', this.onResize);
+    this.ro?.disconnect();
+    this.ro = null;
     window.removeEventListener('keydown', this.onKey);
     this.canvas.removeEventListener('touchstart', this.onTouchStart);
     this.canvas.removeEventListener('touchmove', this.onTouchMove);

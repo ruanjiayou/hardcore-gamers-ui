@@ -12,6 +12,7 @@
 
 .game-body {
   flex: 1 1 auto;
+  min-height: 0;
   padding: 12px;
   display: flex;
   justify-content: center;
@@ -25,6 +26,20 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
   max-width: 1200px;
   width: 100%;
+  /* 最小占满顶栏以下高度（单人开始按钮用 margin-top:auto 贴底）；
+     但内容更高时允许增高，房间列表才不会溢出白底 */
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  height: fit-content;
+}
+
+/* 房间列表等主要内容禁止被 flex 压缩，超长时撑开白色容器并交给外层滚动 */
+.game-container .room-list,
+.game-container .game-toolbar,
+.game-container .variant-tabs,
+.game-container .leaderboard-panel {
+  flex-shrink: 0;
 }
 
 /* 房间玩法的工具栏（匹配 / 创建房间） */
@@ -186,6 +201,13 @@
   display: flex;
   flex-direction: row;
   gap: 0.5rem;
+  /* 长房间名只省略、不撑破 grid 单元格和白色容器 */
+  min-width: 0;
+}
+
+.room-cell > div {
+  min-width: 0;
+  flex: 1;
 }
 
 .room-cell.playing {
@@ -200,6 +222,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .room-cell .lock {
@@ -344,13 +369,51 @@
     padding: 20px;
   }
 }
+/* ===== 排行榜固定在主页上方 ===== */
+.leaderboard-panel {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid #eeeef5;
+  border-radius: 10px;
+  background: #fafaff;
+}
+
+.leaderboard-panel h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+/* 榜单只吃自己需要的高度，不把下方的房间列表/开始按钮挤出屏幕 */
+.leaderboard-panel .leaderboard {
+  max-height: 190px;
+}
+
+/* 贪吃蛇主页：卡片在上、榜单居中；两张卡片较高，禁止榜单被 flex 压缩到折叠 */
+.game-container.snake-home .variant-tabs,
+.game-container.snake-home .leaderboard-panel {
+  flex: 0 0 auto;
+}
+
+.game-container.snake-home .leaderboard-panel {
+  margin-top: 4px;
+}
+
+.game-container.snake-home .leaderboard-panel .leaderboard {
+  max-height: 150px;
+}
+
 /* ===== 单人游戏主页 ===== */
 .solo-start {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 40px 0 24px;
+  margin-top: auto;
+  padding: 16px 0 calc(24px + env(safe-area-inset-bottom, 0px));
 }
 
 .solo-start-btn {

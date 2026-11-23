@@ -8,7 +8,8 @@ import '../styles/navbar.css';
 /**
  * 右上角用户区：登录后是一个无边框的头像按钮，点击展开菜单（昵称在第一排）；
  * 未登录显示同一个头像 + 登录入口。
- * 连接状态不再用独立的小绿点：在线时头像带绿色辉光，断线时头像叠一层裂开效果。
+ * 连接状态不再用独立的小绿点：在线时头像带绿色辉光，断线时头像整体转黑白、
+ * 沿中线竖着裂成两半（只有一条裂缝，不是多块碎片）。
  * 大厅导航栏与游戏页/房间页标题栏共用，所有页面观感一致。
  */
 export const UserMenu = observer(() => {
@@ -38,26 +39,21 @@ export const UserMenu = observer(() => {
     navigate('/lobby');
   };
 
+  const hasAvatar = !!avatarUrl && !avatarBroken;
   const statusAvatar = (
     <span className={`status-avatar ${connected ? 'is-connected' : 'is-offline'}`} title={connected ? '已连接' : '连接已断开'}>
-      {avatarUrl && !avatarBroken ? (
+      {hasAvatar && connected && (
         <img className="avatar-image" src={avatarUrl} alt="" onError={() => setAvatarBroken(true)} />
-      ) : (
-        <span className="avatar-face" aria-hidden>👤</span>
       )}
-      {!connected ? (
+      {hasAvatar && !connected && (
+        // 断线：同一张图切成左右两半、中间留一条竖缝，只裂一次；整体 grayscale 走 CSS filter
         <>
-          <span className="avatar-shard" aria-hidden />
-          <svg className="avatar-crack" viewBox="0 0 40 40" preserveAspectRatio="none" aria-hidden>
-            <path className="crack-body" d="M21 -2 L17 8 L25 14 L19 23 L27 30 L22 42" />
-            <path className="crack-body" d="M17 8 L6 12 L11 20 L2 25" />
-            <path className="crack-body" d="M25 14 L35 9 L33 19 L40 24" />
-            <path className="crack-body" d="M19 23 L9 29 L13 37" />
-            <path className="crack-body" d="M27 30 L36 33 L32 41" />
-            <path className="crack-glint" d="M21 -2 L17 8 L25 14 L19 23 L27 30 L22 42" />
-          </svg>
+          <img className="avatar-image avatar-half avatar-half-left" src={avatarUrl} alt="" onError={() => setAvatarBroken(true)} />
+          <img className="avatar-image avatar-half avatar-half-right" src={avatarUrl} alt="" onError={() => setAvatarBroken(true)} />
         </>
-      ) : null}
+      )}
+      {!hasAvatar && <span className="avatar-face" aria-hidden>👤</span>}
+      {!connected && <span className="avatar-crack-line" aria-hidden />}
     </span>
   );
 
@@ -87,7 +83,7 @@ export const UserMenu = observer(() => {
               <div className="dropdown-item">
                 <span>📊 游戏统计</span>
               </div>
-              <div className="dropdown-divider"></div>
+              {/* 语音包/背景音乐已收进游戏右上角的设置弹框，用户菜单不再重复入口 */}
               <div
                 className="dropdown-item danger"
                 onClick={handleLogout}

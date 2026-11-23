@@ -20,6 +20,8 @@ export const GamePage = observer(() => {
     allowSpectate: true,
     starting: false,
     matching: false,
+    // 官方房间列表（只展示官方桌，私有房不显示）
+    rooms: [] as any[],
     setV(o: object) {
       for (let k in o) {
         // @ts-ignore
@@ -110,8 +112,17 @@ export const GamePage = observer(() => {
 
   }
   const socket = getSocket();
+  /** 刷新官方房间列表：只展示官方桌，私有房/临时房不对外显示 */
+  const loadOfficialRooms = () => {
+    if (!game?._id || !socket) return;
+    socketEvents.getRooms(game._id, (rooms: any[]) => {
+      local.setV({ rooms: (rooms || []).filter(r => r.official === true) });
+    });
+  };
   useEffect(() => {
     if (!slug || !socket) return;
+    // 进入游戏主页就切到该游戏的专属音效配置（早于匹配/开局，房间页会幂等再设一次）
+    store.audio.setGame(slug);
     // 直接打开/刷新游戏主页时 store 里还没有游戏列表，需要自己拉一次，
     // 否则拿不到 mode/variants，单人会误显示成房间对战
     if (!store.game.games.length) {
@@ -131,11 +142,17 @@ export const GamePage = observer(() => {
         }
       })
     }
+    // 房间玩法才拉官方房列表；单人游戏没有房间
+    if (!isSolo) loadOfficialRooms();
     socket.on(ReceiveEvent.RoomCreated, onRoomCreated)
     socket.on(ReceiveEvent.PlayerChange, onPlayerChange)
+    socket.on(ReceiveEvent.PlayerJoined, loadOfficialRooms)
+    socket.on(ReceiveEvent.PlayerLeaved, loadOfficialRooms)
     return () => {
       socket.off(ReceiveEvent.RoomCreated, onRoomCreated)
       socket.off(ReceiveEvent.PlayerChange, onPlayerChange)
+      socket.off(ReceiveEvent.PlayerJoined, loadOfficialRooms)
+      socket.off(ReceiveEvent.PlayerLeaved, loadOfficialRooms)
     }
   }, [slug, navigate]);
 
@@ -144,14 +161,31 @@ export const GamePage = observer(() => {
     return <LoginRequiredPanel title="需要登录" desc="登录后才能进入游戏、创建房间或上榜" />;
   }
 
+  const leaderboard = <Leaderboard slug={slug as string} limit={5} boards={game?.boards} />;
+  const variantTabs = variants.length > 1 && (
+    <div className="variant-tabs">
+      {variants.map(v => (
+        <button
+          key={v.key}
+          className={`variant-card ${activeVariant === v.key ? 'active' : ''}`}
+          onClick={() => setActiveVariant(v.key)}
+        >
+          <span className="variant-label">{v.label}</span>
+          <span className="variant-desc">{v.desc || (v.mode === 'solo' ? '单人挑战' : '房间对战')}</span>
+        </button>
+      ))}
+    </div>
+  );
+  // 贪吃蛇的两张玩法卡片很高，会把顶部的榜单挤到折叠；唯独这里把榜单放到卡片中间
+  const isSnakeHome = slug === 'snake';
+
   return (
     <div className="game-page">
-      {/* 游戏页自己的顶栏：大厅 logo/导航不再出现，只有返回 + 游戏名 + 用户区 */}
+      {/* 游戏主页顶栏：游戏名称靠左、无 logo，右侧设置 + 头像 */}
       <GameHeader
         title={game?.title || slug || '游戏'}
-        icon={game?.icon}
         subtitle={isSolo ? '单人挑战' : (variantInfo?.label || '房间对战')}
-        close
+        mode="game"
         onBack={() => {
           // 点返回回大厅时把当前分同步进排行榜（对局仍在房间里，不影响继续玩）
           syncRoomScore();
@@ -159,7 +193,13 @@ export const GamePage = observer(() => {
         }}
       />
       <div className="game-body">
-        <div className="game-container">
+        <div className={`game-container${isSnakeHome ? ' snake-home' : ''}`}>
+          {/* 贪吃蛇：玩法卡片在上、排行榜居中、匹配/房间列表在下；其他游戏仍是榜单最上方 */}
+          {isSnakeHome && variantTabs}
+          {!isSnakeHome && leaderboard}
+          {!isSnakeHome && variantTabs}
+          {isSnakeHome && leaderboard}
+
           {/* 房间玩法：匹配/创建收进一条工具栏，不再挤在标题行 */}
           {!isSolo && (
             <div className="game-toolbar">
@@ -173,23 +213,43 @@ export const GamePage = observer(() => {
             </div>
           )}
 
-          {/* 玩法切换（同一游戏多种玩法，如贪吃蛇的无尽/多人） */}
-          {variants.length > 1 && (
-            <div className="variant-tabs">
-              {variants.map(v => (
-                <button
-                  key={v.key}
-                  className={`variant-card ${activeVariant === v.key ? 'active' : ''}`}
-                  onClick={() => setActiveVariant(v.key)}
-                >
-                  <span className="variant-label">{v.label}</span>
-                  <span className="variant-desc">{v.desc || (v.mode === 'solo' ? '单人挑战' : '房间对战')}</span>
-                </button>
-              ))}
+          {/* 官方房间列表：只有该游戏预建了官方桌时才显示，私有房不展示 */}
+          {!isSolo && local.rooms.length > 0 && (
+            <div className="room-list">
+              <div className="room-list-header">
+                <h3>🏛️ 官方房间</h3>
+              </div>
+              <div className="room-cells">
+                {local.rooms.map((room: any) => {
+                  const playing = room.status === 'playing';
+                  const full = (room.members?.length || 0) >= (room.numbers?.max || 2);
+                  return (
+                    <div key={room._id} className={`room-cell${playing || full ? ' playing' : ''}`}>
+                      <div>
+                        <h4>{room.name}</h4>
+                        <p>{room.members?.length || 0}/{room.numbers?.max || 2} 人{playing ? ' · 对局中' : ''}</p>
+                      </div>
+                      <button
+                        disabled={playing || full}
+                        onClick={() => {
+                          if (!store.auth.isLoggedIn) {
+                            store.ui.openLoginPrompt('登录后才能加入房间');
+                            return;
+                          }
+                          socketEvents.joinRoom({ room_id: room._id }, (success) => {
+                            if (success) navigate(`/game/${slug}/room/${room._id}`);
+                            else alert('加入房间失败，请重试');
+                          });
+                        }}
+                      >加入</button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
-          {/* 单人玩法：一键开一局，不走房间 */}
+          {/* 单人玩法：排行榜之上，开始按钮用 margin-top:auto 固定在靠近底部的位置 */}
           {isSolo && (
             <div className="solo-start">
               <button className="solo-start-btn" disabled={local.starting} onClick={handleQuickStart}>
@@ -226,7 +286,6 @@ export const GamePage = observer(() => {
               </div>
             </div>
           )}
-          <Leaderboard slug={slug as string} limit={5} boards={game?.boards} />
         </div>
       </div>
     </div>

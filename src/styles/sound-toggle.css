@@ -1,0 +1,66 @@
+/* 音效开关：游戏顶栏（浅底）与贪吃蛇全屏 HUD（深底）共用 */
+.sound-toggle {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  /* 覆盖全局 button 的 padding，否则 emoji 内容盒被挤压、图标偏移 */
+  padding: 0;
+  line-height: 1;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  cursor: pointer;
+  transition: background 0.16s ease, transform 0.16s ease;
+}
+
+.sound-toggle:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.sound-toggle.is-muted {
+  background: rgba(0, 0, 0, 0.24);
+}
+
+/* 全屏对局 HUD：套用深色胶囊样式（选择器权重高于 room.css 的 .hud-btn） */
+.sound-toggle.hud-btn {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  padding: 0;
+  border-radius: 21px;
+  font-size: 17px;
+  color: #e8e8f0;
+  background: rgba(24, 24, 36, 0.82);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.sound-toggle.hud-btn:hover {
+  background: rgba(40, 40, 60, 0.9);
+}
+
+.sound-toggle.hud-btn.is-muted {
+  background: rgba(90, 90, 110, 0.78);
+}
+
+@media screen and (max-width: 480px) {
+  .sound-toggle {
+    width: 30px;
+    height: 30px;
+    font-size: 15px;
+  }
+
+  .sound-toggle.hud-btn {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    border-radius: 19px;
+  }
+}

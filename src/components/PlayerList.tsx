@@ -1,10 +1,25 @@
-import React, { Fragment, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { Observer, observer } from 'mobx-react-lite';
 import { getSocket, socketEvents } from '../services/socket';
 import store from '../stores'
 import constant from '../constant';
 
-export const PlayerList = observer(({ room_id }: { room_id: string }) => {
+/**
+ * 玩家列表：
+ * - 玩家标记（你 / 机 / 观）紧跟在昵称后面，样式统一用 badge
+ * - 观战者优先显示「观」，不再叠加「你」「机」
+ * - 转让入口已移除：房主离开由服务端自动转让给非人机玩家
+ * - showAddRobot 时标题右侧显示「添加人机」按钮（房主等待态、非单人对局）
+ */
+export const PlayerList = observer(({
+  room_id,
+  showAddRobot = false,
+  onAddRobot,
+}: {
+  room_id: string;
+  showAddRobot?: boolean;
+  onAddRobot?: () => void;
+}) => {
   const reload = () => {
     socketEvents.getRoomDetail(room_id, (data) => {
       store.room.setCurrentRoom(data.room)
@@ -12,9 +27,7 @@ export const PlayerList = observer(({ room_id }: { room_id: string }) => {
   }
   const kickOut = (room_id: string, player_id: string) => {
     socketEvents.excute('room:kick-player', { room_id, player_id }, (success: boolean) => {
-      if (success) {
-        // 
-      }
+      if (success) reload();
     })
   }
   const kicked = (data: { player_id: string }) => {
@@ -24,50 +37,49 @@ export const PlayerList = observer(({ room_id }: { room_id: string }) => {
       store.room.setCurrentRoom({ ...store.room.roomInfo, members: store.room.roomInfo.members.filter((m: any) => m._id !== data.player_id) })
     }
   }
-  const transfer = (room_id: string, player_id: string) => {
-    socketEvents.excute('room:transferor-owner', { room_id, player_id }, (success: boolean) => {
-      if (success) {
-        store.room.setCurrentRoom({ ...store.room.roomInfo, owner_id: player_id })
-      }
-    })
-  }
-  const transfered = (data: { player_id: string }) => {
-    store.room.setCurrentRoom({ ...store.room.roomInfo, owner_id: data.player_id })
-  }
   useEffect(() => {
     reload()
     const socket = getSocket();
     if (socket) {
       socket.on('room:player-kicked', kicked);
-      socket.on('room:transferee-owner', transfered);
     }
     return () => {
       if (socket) {
         socket.off('room:player-kicked', kicked);
-        socket.off('room:transferee-owner', transfered);
       }
     }
   }, [])
+
+  const ownerId = store.room.roomInfo?.owner_id;
+  const isOwner = store.game.player_id === ownerId;
+  const canKick = isOwner && store.room.roomInfo?.status === constant.ROOM.STATUS.waiting;
+
   return (
     <Observer>{() => (
       <div className="player-list" style={{ flex: '1 0 30%' }}>
-        <h3>👥 玩家列表 <span onClick={() => { reload(); }}>↻</span></h3>
-        {store.room.members.map((player: any) => (
-          <div key={player._id} className="player-item">
-            <span className="avatar">👤</span>
-            <span className="name">{player.nickname || '玩家'}</span>
-            {store.game.player_id === player._id
-              ? <Fragment>
-                <span className="badge">你</span>
-              </Fragment>
-              : <Fragment>
-                {store.game.player_id === store.room.roomInfo?.owner_id && store.room.roomInfo?.status === constant.ROOM.STATUS.waiting && <span className="info" onClick={() => transfer(room_id, player._id)}>转让</span>}
-                {store.game.player_id === store.room.roomInfo?.owner_id && store.room.roomInfo?.status === constant.ROOM.STATUS.waiting && <span className='danger' onClick={() => kickOut(room_id, player._id)}>踢出</span>}
-              </Fragment>}
-            {player.type === 'robot' ? <span className="badge">人机</span> : ''}
-            {player.member_type === 'viewer' ? <span className="badge">观战</span> : ''}
-          </div>
-        ))}
+        <h3>
+          <span>👥 玩家列表 <span onClick={() => { reload(); }}>↻</span></span>
+          {showAddRobot && (
+            <button className="player-add-robot" onClick={onAddRobot} title="添加人机">＋ 人机</button>
+          )}
+        </h3>
+        {store.room.members.map((player: any) => {
+          const isViewer = player.member_type === 'viewer';
+          const isRobot = player.type === 'robot';
+          const isMe = store.game.player_id === player._id;
+          // 观战优先：观战者一律显示「观」，不再叠加你/机
+          const tag = isViewer ? '观' : isRobot ? '机' : isMe ? '你' : '';
+          return (
+            <div key={player._id} className="player-item">
+              <span className="avatar">👤</span>
+              <span className="name">
+                {player.nickname || '玩家'}
+                {tag && <span className="badge">{tag}</span>}
+              </span>
+              {canKick && !isMe && <span className='danger' onClick={() => kickOut(room_id, player._id)}>踢出</span>}
+            </div>
+          );
+        })}
       </div>
     )}
     </Observer>

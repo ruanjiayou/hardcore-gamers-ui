@@ -13,14 +13,19 @@ import { gameManager } from "../core/GameManager";
 import { runInAction } from 'mobx';
 import { notificationManager } from '../components/Notifications'
 import { GameHeader } from '../components/GameHeader';
+import { GameSettings } from '../components/GameSettings';
 import { LoginRequiredPanel } from '../components/LoginRequired'
 import { RoomStatus } from '../constant'
+
+// 落子音节流：同一帧多个动作只播一次，避免批量快照把音效叠成噪音
+let lastMoveSfxAt = 0;
 
 export const RoomPage = observer(() => {
   const { slug, room_id } = useParams<{ slug: string, room_id: string; }>();
   const navigate = useNavigate();
   const local = useLocalObservable(() => ({
     showAgreeDraw: false,
+    showLeaveDialog: false,
     loading: false,
     match_id: '',
     // 全屏对局中右上角抽屉（玩家列表/聊天）是否展开
@@ -31,7 +36,11 @@ export const RoomPage = observer(() => {
     tcTotalMin: 10,
     tcSaving: false,
     tick: 0, // 每秒自增，驱动倒计时重渲染
-    setV(key: 'showAgreeDraw' | 'showPanel' | 'match_id' | 'loading' | 'tcEnabled' | 'tcStepSec' | 'tcTotalMin' | 'tcSaving' | 'tick', v: any) {
+    // 2048 终局标记：服务端 gameover 会把房间拨回 waiting，靠它区分"结束"和"等待开局"
+    soloOver: false,
+    // 单机游戏分数快照（从 gameManager.game.logic 读，随 tick 刷新到右侧面板）
+    soloStats: { score: 0, best: 0, lines: 0, level: 0 },
+    setV(key: 'showAgreeDraw' | 'showLeaveDialog' | 'showPanel' | 'match_id' | 'loading' | 'tcEnabled' | 'tcStepSec' | 'tcTotalMin' | 'tcSaving' | 'tick' | 'soloOver' | 'soloStats', v: any) {
       // @ts-ignore - 动态字段赋值
       local[key] = v;
     }
@@ -104,13 +113,28 @@ export const RoomPage = observer(() => {
   const onPlayerChange = (data: { player_id: string, field: string, value: any }) => {
     store.game.changePlayer(data);
     store.room.changePlayer(data);
+    if (data.field === 'score' && Number(data.value) > 0) store.audio.play('collect');
+  }
+  const onPlayerAction = () => {
+    const now = performance.now();
+    if (now - lastMoveSfxAt < 90) return;
+    lastMoveSfxAt = now;
+    store.audio.play('move');
   }
   const onGameStart = (data: { room_id: string, match_id: string, timestamp: number }) => {
+    store.audio.play('click');
+    store.audio.startBgm();
     store.room.setRoomStatus('playing')
+    local.setV('soloOver', false)
     local.setV('match_id', data.match_id)
     loadState({ match_id: data.match_id, game_slug: slug });
   }
   const onGameOver = (data: { _id: string, nickname: string, reason?: string, draw?: boolean, solo?: boolean, score?: number }) => {
+    // 单人只看得分，双人按是否本人获胜区分胜负音
+    const mine = data?.nickname && (
+      data.nickname === store.auth.user?.name || data.nickname === (store.game.player as any)?.nickname
+    );
+    store.audio.play(data?.solo ? 'collect' : data?.draw ? 'click' : mine ? 'win' : 'lose');
     if (data?.solo && typeof data.score === 'number') {
       // 单人游戏（2048 等）：展示本局得分，而非胜负
       notificationManager.show(`本局得分：${data.score}`, 'success')
@@ -176,6 +200,10 @@ export const RoomPage = observer(() => {
       return;
     }
     init(room_id)
+    // 进入对局页加载语音包配置并切到该游戏的专属音效，再起 BGM（自动播放被拦时等首次手势恢复）
+    if (slug) store.audio.setGame(slug);
+    if (!store.audio.packs.length) void store.audio.load();
+    store.audio.startBgm();
     // 直接刷新进房间时 store 里可能没有游戏列表，补拉一次：
     // 否则拿不到 variants/mode，单人对局会被当成房间对战（按钮显示"认输"、变体判断也错）
     if (!store.game.games.length) {
@@ -183,13 +211,25 @@ export const RoomPage = observer(() => {
         store.game.setGames(games);
       });
     }
-    // 每秒驱动倒计时重渲染
-    const ticker = setInterval(() => local.setV('tick', Date.now()), 1000);
+    // 每秒驱动倒计时重渲染 + 单机分数快照刷新
+    const ticker = setInterval(() => {
+      local.setV('tick', Date.now());
+      const logic: any = (gameManager.game as any)?.logic;
+      if (logic && typeof logic.score === 'number') {
+        local.setV('soloStats', {
+          score: logic.score || 0,
+          best: logic.best || 0,
+          lines: logic.lines || 0,
+          level: logic.level || 0,
+        });
+      }
+    }, 1000);
     if (!socket) {
       console.log('此时没有 socket')
       return () => clearInterval(ticker);
     }
     socket.on(ReceiveEvent.PlayerChange, onPlayerChange);
+    socket.on(ReceiveEvent.PlayerAction, onPlayerAction);
     socket.on(ReceiveEvent.PlayerJoined, onPlayerJoined);
     socket.on(ReceiveEvent.PlayerLeaved, onPlayerLeaved);
     socket.on(ReceiveEvent.PlayerReJoin, onPlayerReJoin);
@@ -208,9 +248,11 @@ export const RoomPage = observer(() => {
       clearInterval(ticker);
       // 组件卸载（返回主页 / 浏览器后退 / 刷新）时也同步一次分数；服务端 disconnect 另有兜底
       syncRoomScore(room_id);
+      store.audio.stopBgm();
       gameManager.unload();
       store.room.clearClock();
       socket.off(ReceiveEvent.PlayerChange, onPlayerChange);
+      socket.off(ReceiveEvent.PlayerAction, onPlayerAction);
       socket.off(ReceiveEvent.PlayerJoined, onPlayerJoined);
       socket.off(ReceiveEvent.PlayerLeaved, onPlayerLeaved);
       socket.off(ReceiveEvent.PlayerReJoin, onPlayerReJoin);
@@ -304,6 +346,7 @@ export const RoomPage = observer(() => {
     });
   };
   const handleRestart = () => {
+    local.setV('soloOver', false)
     if (isSoloGame) {
       // 单人游戏：重新开始 = 另开一局（旧临时房在快开时会被服务端销毁）
       socketEvents.quickStart(slug!, roomVariant, (success, data: any, message?: string) => {
@@ -397,6 +440,25 @@ export const RoomPage = observer(() => {
   // 解散按钮仅自建非官方房的房主显示；官方房/他人房间/临时房只能"退出"
   const isOwner = store.room.roomInfo?.owner_id === store.game.player_id;
   const canDisband = isOwner && !store.room.roomInfo?.official && !store.room.roomInfo?.transient;
+  // 添加人机：仅多人对战、等待态、房主可见
+  const canAddRobot = !isSoloGame && !isEndlessArena && store.room.status === RoomStatus.waiting && isOwner;
+  // 设置弹框的房间配置：观战（等待态房主）+ 计时（象棋等待态）
+  const settingsRoom = {
+    room_id: room_id!,
+    isOwner,
+    official: !!store.room.roomInfo?.official,
+    waiting: store.room.status === RoomStatus.waiting,
+    allowSpectate: store.room.roomInfo?.allowSpectate !== false,
+    isXiangqi,
+    timeControl: { enabled: local.tcEnabled, stepLimitSec: local.tcStepSec, totalBudgetMin: local.tcTotalMin },
+    onToggleSpectate: handleToggleSpectate,
+    onSaveTimeControl: (tc: { enabled: boolean, stepLimitSec: number, totalBudgetMin: number }) => {
+      local.setV('tcEnabled', tc.enabled);
+      local.setV('tcStepSec', tc.stepLimitSec);
+      local.setV('tcTotalMin', tc.totalBudgetMin);
+      handleSaveTimeControl();
+    },
+  };
   // 贪吃蛇对局中切全屏沉浸：棋盘铺满视口，房间操作收进右上角悬浮按钮
   const immersive = slug === 'snake' && store.room.status === RoomStatus.playing;
 
@@ -413,19 +475,15 @@ export const RoomPage = observer(() => {
   }
 
   return (
-    <div className={`room-page${immersive ? ' immersive' : ''}`}>
+    <div className={`room-page${immersive ? ' immersive' : ''}${slug === '2048' ? ' game-2048' : ''}`}>
       {/* 非沉浸对局：与游戏主页同一套顶栏，返回回该游戏主页 */}
       {!immersive && (
         <GameHeader
           title={gameInfo?.title || slug || '对局'}
           subtitle={store.room.roomInfo?.name || variantInfo?.label || ''}
-          onBack={() => {
-            // 玩家仍在房间里，游戏主页的"继续对局"逻辑会立刻把他弹回来；
-            // 用一次性标记告诉游戏主页：这次是主动返回，不要自动回房
-            sessionStorage.setItem('lobby:skipRoomResume', '1');
-            syncRoomScore(room_id);
-            navigate(`/game/${slug}`);
-          }}
+          mode="room"
+          settingsRoom={settingsRoom}
+          onBack={() => local.setV('showLeaveDialog', true)}
         />
       )}
       <div className='room-stage'>
@@ -446,30 +504,64 @@ export const RoomPage = observer(() => {
                   // 死亡弹框的「退出」：交给房间页走正常离房流程（无尽房直接退出，不结算）
                   const logic: any = gameManager.game?.logic
                   logic?.on?.('exit', () => handleLeaveRoom())
+                  // 2048：本地 gameover 时立即切到「重新开始 / 退出游戏」，不等服务端把房间拨回 waiting
+                  if (slug === '2048') {
+                    logic?.on?.('gameover', () => local.setV('soloOver', true))
+                    logic?.on?.('reset', () => local.setV('soloOver', false))
+                  }
                   loadState({ game_slug: slug, match_id: local.match_id, })
                 });
               }
             }}
           />
+          {/* 棋盘中央的动作：2048 终局给「重新开始 / 退出游戏」，其余游戏仍是开始/重开 */}
+          {!immersive && (
+            <div className="board-center-actions">
+              {slug === '2048' ? (
+                local.soloOver && (
+                  <div className="board-center-buttons">
+                    <button className="board-center-btn" onClick={handleRestart}>↻ 重新开始</button>
+                    <button className="board-center-btn secondary" onClick={handleLeaveRoom}>退出游戏</button>
+                  </div>
+                )
+              ) : (
+                <>
+                  {store.room.status === RoomStatus.waiting && !autoStarted && isOwner
+                    && store.room.players.length >= (isSoloGame ? 1 : 2) && (
+                    <button className="board-center-btn" onClick={handleStartGame}>▶ 开始游戏</button>
+                  )}
+                  {store.room.status === RoomStatus.finished && (
+                    <button className="board-center-btn" onClick={handleRestart}>↻ 重新开始</button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
         {immersive ? (
-          /* 全屏对局：设置/退出悬浮在右上角，不占棋盘空间 */
+          /* 全屏对局：左上关闭、右上设置，顶部中间不放游戏名，也不占棋盘空间 */
           <div className="immersion-hud">
-            <div className="hud-buttons">
+            <div className="hud-corner hud-top-left">
               <button
-                className="hud-btn"
+                className="hud-btn hud-close"
+                title="关闭 / 退出"
+                aria-label="关闭"
+                onClick={() => local.setV('showLeaveDialog', true)}
+              >×</button>
+              <button
+                className="hud-btn hud-panel-toggle"
                 title="玩家与聊天"
+                aria-label="玩家与聊天"
                 onClick={() => local.setV('showPanel', !local.showPanel)}
               >☰</button>
-              {isSoloGame || isEndlessArena
-                ? <button className="hud-btn danger" onClick={handleLeaveRoom}>退出</button>
-                : (store.game.player?.member_type === 'player'
-                  ? <button className="hud-btn danger" onClick={requestSurrender}>认输</button>
-                  : null)}
+            </div>
+            <div className="hud-corner hud-top-right">
+              {/* 全屏对局没有顶栏，右上角只放设置；小地图画在它下方 */}
+              <GameSettings className="hud-btn" room={settingsRoom} />
             </div>
             {local.showPanel && (
               <div className="hud-drawer">
-                <PlayerList room_id={room_id!} />
+                <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} />
                 <Chat room_id={room_id!} />
               </div>
             )}
@@ -496,86 +588,71 @@ export const RoomPage = observer(() => {
             </div>
           )}
 
-          {/* 开局前：双方均可配置计时（仅象棋） */}
-          {isXiangqi && store.room.status === RoomStatus.waiting && (
-            <div className="timecontrol-panel">
-              <div className="tc-title">⏱️ 计时设置（开局前双方可改）</div>
-              <label className="tc-row">
-                <input type="checkbox" checked={local.tcEnabled}
-                  onChange={(e) => local.setV('tcEnabled', e.target.checked)} />
-                启用计时
-              </label>
-              {local.tcEnabled && (
-                <Fragment>
-                  <label className="tc-row">每步限时（秒）
-                    <input type="number" min={5} max={300} value={local.tcStepSec}
-                      onChange={(e) => local.setV('tcStepSec', e.target.value as any)} />
-                  </label>
-                  <label className="tc-row">每人总额度（分钟）
-                    <input type="number" min={1} max={120} value={local.tcTotalMin}
-                      onChange={(e) => local.setV('tcTotalMin', e.target.value as any)} />
-                  </label>
-                </Fragment>
-              )}
-              <button className="tc-save" disabled={local.tcSaving} onClick={handleSaveTimeControl}>
-                {local.tcSaving ? '保存中…' : '保存计时设置'}
-              </button>
-            </div>
-          )}
-
-          {/* 开局前：房主可切换观战开关（官方房同样由房主管理） */}
-          {store.room.status === RoomStatus.waiting && isOwner && (
-            <div className="timecontrol-panel">
-              <div className="tc-title">⚙️ 房间设置</div>
-              <label className="tc-row">
-                <input type="checkbox"
-                  checked={store.room.roomInfo?.allowSpectate !== false}
-                  onChange={(e) => handleToggleSpectate(e.target.checked)} />
-                允许观战
-              </label>
-              {store.room.roomInfo?.official && <div className="clock-hint">官方房间：只能退出，不可解散</div>}
-            </div>
-          )}
+          {/* 观战/计时配置已收进右上角设置弹框（GameSettings） */}
 
           <div className="room-actions">
-            {/* 单人游戏无需机器人；多人对战房主可为房间补 AI 对手 */}
-            {!isSoloGame && !isEndlessArena && store.room.status === RoomStatus.waiting && isOwner && <button onClick={handleAddRobot}>添加机器人</button>}
+            {/* 添加人机已移到玩家列表标题右侧 */}
             {/*
               所有玩家（不含观战）进房即自动 prepared，无需手动准备/取消按钮。
               开局完全由房主点"开始游戏"控制（服务端已移除"全员准备自动开局"）。
               单人游戏一人即可开局，多人对战至少 2 人。
             */}
-            {store.room.status === RoomStatus.waiting
-              && !autoStarted
-              && isOwner
-              && store.room.players.length >= (isSoloGame ? 1 : 2)
-              && <button onClick={handleStartGame}>开始游戏</button>}
-            {[RoomStatus.finished].includes(store.room.status) && <button onClick={handleRestart} className="danger">重新开始</button>}
+            {/* 开始游戏 / 重新开始已移到棋盘中央覆盖层 */}
             {/*
               等待/结束态：自建非官方房的房主显示"解散房间"，其余（官方房/他人房间/临时房）显示"退出"。
               对局进行中不允许离开（只能认输/求和），单人游戏除外——离开即销毁临时房。
             */}
-            {[RoomStatus.waiting, RoomStatus.finished].includes(store.room.status) && (
-              canDisband
-                ? <button onClick={handleDisband} className="danger">解散房间</button>
-                : <button onClick={handleLeaveRoom} className="danger">退出</button>
-            )}
-            {(isSoloGame || isEndlessArena) && store.room.status === RoomStatus.playing && (
-              <button onClick={handleLeaveRoom} className="danger">退出</button>
-            )}
+            {/* 退出/解散统一由左上角返回按钮的确认弹框处理，不再单独放按钮 */}
             {store.room.status === RoomStatus.playing && !isEndlessArena && store.game.player?.member_type === 'player' && !isSoloGame && <Fragment>
               {!isRealtimeGame && <button onClick={handleRequestDraw}>求和</button>}
               <button onClick={requestSurrender} className="danger">认输</button>
             </Fragment>}
           </div>
-          <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: '0.5rem' }}>
-            <PlayerList room_id={room_id!} />
-            <Chat room_id={room_id!} />
-          </div>
+          {isSoloGame ? (
+            /* 2048 的分数与最高分已在 Canvas 顶部显示，页面不再重复放「本局数据」面板；俄罗斯方块仍保留 */
+            slug === '2048' ? null : (
+              <div className="solo-stats-panel">
+                <div className="tc-title">📊 本局数据</div>
+                <div className="solo-stat"><span>分数</span><strong>{local.soloStats.score}</strong></div>
+                <div className="solo-stat"><span>最高</span><strong>{local.soloStats.best}</strong></div>
+                {slug === 'tetris' && (
+                  <>
+                    <div className="solo-stat"><span>消行</span><strong>{local.soloStats.lines}</strong></div>
+                    <div className="solo-stat"><span>等级</span><strong>{local.soloStats.level}</strong></div>
+                  </>
+                )}
+              </div>
+            )
+          ) : (
+            <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: '0.5rem' }}>
+              <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} />
+              <Chat room_id={room_id!} />
+            </div>
+          )}
         </div>
         )}
       </div>
       </div>
+
+      {/* 左上角返回 / 退出：确认弹框。房主自建房可解散，其余只能退出；游戏中仅单人/无尽可退出 */}
+      {local.showLeaveDialog && (
+        <div className="leave-overlay" onMouseDown={() => local.setV('showLeaveDialog', false)}>
+          <div className="leave-dialog" onMouseDown={e => e.stopPropagation()} role="dialog" aria-label="离开房间">
+            <h3>离开房间</h3>
+            <p className="leave-hint">确定要离开当前房间吗？</p>
+            <div className="leave-actions">
+              <button onClick={() => local.setV('showLeaveDialog', false)}>取消</button>
+              {canDisband && [RoomStatus.waiting, RoomStatus.finished].includes(store.room.status) && (
+                <button className="danger" onClick={() => { local.setV('showLeaveDialog', false); handleDisband(); }}>解散房间</button>
+              )}
+              <button
+                className={canDisband ? '' : 'danger'}
+                onClick={() => { local.setV('showLeaveDialog', false); handleLeaveRoom(); }}
+              >退出房间</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

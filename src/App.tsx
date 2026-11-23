@@ -62,6 +62,8 @@ const AppBootstrap = observer(({ children, isReady, setIsReady }: { children: Re
         }
       }
       if (!success) throw error || new Error('连接失败');
+      // 语音包配置走 HTTP，与 socket 无关；失败时 store 自动回退默认包
+      void store.audio.load();
       if (store.auth.token) {
         try {
           await loadUserInfo();

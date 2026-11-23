@@ -1,49 +1,58 @@
 import React from 'react';
 import { observer } from 'mobx-react-lite';
 import { UserMenu } from './UserMenu';
+import { GameSettings, type SettingsRoom } from './GameSettings';
 import '../styles/game-header.css';
 
 /**
  * 游戏页/房间页专属顶栏。大厅的「🎮 游戏大厅 + 导航」不再出现在游戏里。
  *
- * 两种形态共用同一个返回尖括号：
- * - close=true（游戏主页）：左侧「返回尖括号 + 游戏 logo + 游戏名」，右侧只有用户区；
- * - close=false（房间页）：左侧「返回尖括号 + 游戏名（房间名）」，右侧只有用户区。
+ * - mode='game'（游戏主页）：左侧「返回 + 游戏名称」，名称靠左、不显示 logo；
+ *   右侧是设置按钮 + 头像（保留用户菜单入口）。
+ * - mode='room'（房间/对局）：左侧只有关闭按钮，右侧只有设置按钮；
+ *   顶部中间不显示游戏名称，把空间完整留给棋盘。
  */
 export const GameHeader = observer(({
   title,
   subtitle,
-  icon,
   onBack,
   extra,
-  close = false,
+  mode = 'game',
+  settingsRoom,
 }: {
   title: string;
   subtitle?: string;
-  /** 游戏 logo（emoji），close 形态下显示在返回按钮与标题之间 */
-  icon?: string;
   onBack: () => void;
   extra?: React.ReactNode;
-  /** true 时额外显示游戏 logo：用于游戏主页 */
-  close?: boolean;
+  /** game=游戏主页（名称靠左 + 头像）；room=房间/对局（左上关闭 + 右上设置） */
+  mode?: 'game' | 'room';
+  /** 房间页传入：设置弹框里显示观战/计时配置 */
+  settingsRoom?: SettingsRoom;
 }) => (
-  <header className="game-header">
+  <header className={`game-header game-header-${mode}`}>
     <div className="game-header-left">
-      <button className="game-back" onClick={onBack} aria-label={close ? '返回大厅' : '返回'}>
-        <span className="game-back-arrow" />
+      <button
+        className={`game-back${mode === 'room' ? ' is-close' : ''}`}
+        onClick={onBack}
+        aria-label={mode === 'room' ? '关闭房间' : '返回大厅'}
+      >
+        {mode === 'room'
+          ? <span className="game-back-close" aria-hidden>×</span>
+          : <span className="game-back-arrow" />}
       </button>
-      {close ? (
-        <span className="game-header-logo" aria-hidden>{icon || '🎮'}</span>
-      ) : null}
-      <div className="game-header-title">
-        <span className="game-header-name">{title}</span>
-        {subtitle ? <span className="game-header-sub">{subtitle}</span> : null}
-      </div>
+      {mode === 'game' && (
+        <div className="game-header-title">
+          <span className="game-header-name">{title}</span>
+          {subtitle ? <span className="game-header-sub">{subtitle}</span> : null}
+        </div>
+      )}
     </div>
 
     <div className="game-header-right">
       {extra}
-      <UserMenu />
+      {/* 背景音乐 / 语音包 / 房间配置统一收进设置弹框 */}
+      <GameSettings room={settingsRoom} />
+      {mode === 'game' && <UserMenu />}
     </div>
   </header>
 ));

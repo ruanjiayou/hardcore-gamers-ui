@@ -1,19 +1,28 @@
 import { describe, test, expect } from 'bun:test';
-import { snakeControlsLayout, joystickAngle } from '../src/games/snake/Scene2D';
+import {
+  snakeControlsLayout,
+  joystickAngle,
+  snakeMinimapLayout,
+  minimapPoint,
+  snakeMinimapSelfPoint,
+  snakeViewport,
+  clipSnakeSegments,
+  joystickKnobOffset,
+} from '../src/games/snake/Scene2D';
 
 describe('贪吃蛇控件：固定屏幕布局，与场景/镜头无关', () => {
-  test('桌面与手机都是左下加速、右下摇杆，且都在下半屏', () => {
+  test('桌面与手机都是左下摇杆、右下加速，且都在下半屏', () => {
     for (const [w, h] of [[1280, 800], [375, 667], [820, 1180]]) {
       const { boost, joy } = snakeControlsLayout(w, h);
-      expect(boost.x).toBeLessThan(w / 2);
-      expect(joy.x).toBeGreaterThan(w / 2);
+      expect(joy.x).toBeLessThan(w / 2);
+      expect(boost.x).toBeGreaterThan(w / 2);
       expect(boost.y).toBeGreaterThan(h / 2);
       expect(joy.y).toBeGreaterThan(h / 2);
       // 加速按钮和摇杆本体不重叠
       expect(Math.hypot(boost.x - joy.x, boost.y - joy.y)).toBeGreaterThan(boost.r + joy.r + 20);
       // 摇杆热区不出屏
       expect(joy.x - joy.r * 1.45).toBeGreaterThan(0);
-      expect(joy.x + joy.r * 1.45).toBeLessThan(w + 20);
+      expect(boost.x + boost.r).toBeLessThan(w + 1);
     }
   });
 
@@ -32,5 +41,80 @@ describe('贪吃蛇控件：固定屏幕布局，与场景/镜头无关', () => 
     expect(joystickAngle(joy, joy.x, joy.y - 40)).toBeCloseTo(-Math.PI / 2, 6);
     expect(joystickAngle(joy, joy.x, joy.y)).toBeNull();
     expect(joystickAngle(joy, joy.x + 3, joy.y + 3)).toBeNull();
+  });
+
+  test('摇杆手柄只由输入决定：松手回中，不读取也不跟随蛇的朝向', () => {
+    const joy = snakeControlsLayout(375, 667).joy;
+    // 松手（knob=null）永远回中——函数签名里没有"蛇朝向"这个入参，
+    // 摇杆是输入（因），蛇怎么走（果）不会反向写回手柄。
+    expect(joystickKnobOffset(joy, null)).toEqual({ dx: 0, dy: 0 });
+    // 拖动时手柄 = 手指相对圆心的方向，且被 clamp 在半径内
+    const right = joystickKnobOffset(joy, { x: joy.x + 999, y: joy.y });
+    expect(right.dx).toBeGreaterThan(0);
+    expect(right.dy).toBe(0);
+    expect(right.dx).toBeCloseTo(joy.r * 0.82, 6);
+    const upLeft = joystickKnobOffset(joy, { x: joy.x - 30, y: joy.y - 30 });
+    expect(upLeft.dx).toBeLessThan(0);
+    expect(upLeft.dy).toBeLessThan(0);
+    // 与手指同心的偏移可还原为绝对角度（手柄和瞄准方向一致）
+    const knob = { x: joy.x + 30, y: joy.y - 30 };
+    const off = joystickKnobOffset(joy, knob);
+    expect(Math.atan2(off.dy, off.dx)).toBeCloseTo(joystickAngle(joy, knob.x, knob.y)!, 6);
+  });
+});
+
+describe('贪吃蛇微缩地图与局部绘制', () => {
+  test('小地图在右上角，自己的世界坐标映射为地图上的相对位置', () => {
+    for (const [w, h] of [[1280, 800], [375, 667]]) {
+      const m = snakeMinimapLayout(w, h);
+      expect(m.x).toBeGreaterThan(w / 2);
+      expect(m.y).toBeLessThan(h / 2);
+      expect(m.x + m.w).toBeLessThanOrEqual(w);
+      expect(m.y + m.h).toBeLessThan(h);
+      const [topLeft] = minimapPoint(m, 3600, 2600, 0, 0);
+      expect(topLeft).toBeCloseTo(m.x, 6);
+      const [centerX, centerY] = minimapPoint(m, 3600, 2600, 1800, 1300);
+      expect(centerX).toBeCloseTo(m.x + m.w / 2, 6);
+      expect(centerY).toBeCloseTo(m.y + m.h / 2, 6);
+    }
+  });
+
+  test('小地图只显示自己：映射只吃自己的坐标，四角都落在地图框内', () => {
+    for (const [w, h] of [[1280, 800], [375, 667]]) {
+      const m = snakeMinimapLayout(w, h);
+      const [cx, cy] = snakeMinimapSelfPoint(w, h, 3600, 2600, 1800, 1300);
+      expect(cx).toBeCloseTo(m.x + m.w / 2, 6);
+      expect(cy).toBeCloseTo(m.y + m.h / 2, 6);
+      for (const [x, y] of [[0, 0], [3600, 0], [0, 2600], [3600, 2600]]) {
+        const [px, py] = snakeMinimapSelfPoint(w, h, 3600, 2600, x, y);
+        expect(px).toBeGreaterThanOrEqual(m.x);
+        expect(px).toBeLessThanOrEqual(m.x + m.w);
+        expect(py).toBeGreaterThanOrEqual(m.y);
+        expect(py).toBeLessThanOrEqual(m.y + m.h);
+      }
+    }
+  });
+
+  test('局部窗口随镜头移动，且始终钳在世界内', () => {
+    const a = snakeViewport({ x: 300, y: 300 }, 800, 600, 1, 3600, 2600);
+    const b = snakeViewport({ x: 1200, y: 900 }, 800, 600, 1, 3600, 2600);
+    expect(a.x0).toBe(0);
+    expect(a.y0).toBe(0);
+    expect(b.x0).toBeGreaterThan(a.x0);
+    expect(b.y0).toBeGreaterThan(a.y0);
+    expect(b.x1).toBeLessThanOrEqual(3600);
+    expect(b.y1).toBeLessThanOrEqual(2600);
+    // 外扩一圈：比单纯视口大
+    expect(b.x1 - b.x0).toBeGreaterThan(800);
+  });
+
+  test('长路径只保留镜头附近的段，绕回来的两段不会被连成一条直线', () => {
+    const pts: [number, number][] = [
+      [0, 0], [100, 100], [200, 200], [900, 900], [1000, 1000], [200, 210], [100, 110],
+    ];
+    const segs = clipSnakeSegments(pts, { x0: 80, y0: 80, x1: 250, y1: 250 });
+    expect(segs.length).toBe(2);
+    expect(segs[0]).toEqual([[0, 0], [100, 100], [200, 200], [900, 900]]);
+    expect(segs[1]).toEqual([[1000, 1000], [200, 210], [100, 110]]);
   });
 });

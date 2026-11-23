@@ -59,22 +59,6 @@
   transform: rotate(45deg) translate(1px, -1px);
 }
 
-/* 游戏主页左上的游戏 logo（emoji 底板），标题在它右边 */
-.game-header-logo {
-  flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 19px;
-  line-height: 1;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-}
-
 .game-header-title {
   display: flex;
   align-items: baseline;
@@ -106,6 +90,18 @@
   flex: 0 0 auto;
 }
 
+/* 房间/对局顶栏：只有左上关闭 + 右上设置，中间完全留空 */
+.game-back.is-close {
+  font-size: 26px;
+  line-height: 1;
+  font-weight: 400;
+}
+
+.game-back-close {
+  display: block;
+  transform: translateY(-1px);
+}
+
 /* 顶栏里的用户区收窄一点，给游戏名留空间 */
 .game-header .navbar-user {
   gap: 8px;
@@ -129,13 +125,6 @@
 
   .game-header-name {
     font-size: 16px;
-  }
-
-  .game-header-logo {
-    width: 28px;
-    height: 28px;
-    font-size: 17px;
-    border-radius: 9px;
   }
 
   .game-header-sub {

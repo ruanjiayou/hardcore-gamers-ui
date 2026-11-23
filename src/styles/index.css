@@ -7,6 +7,9 @@
 html,
 body,
 #root {
+  /* Safari 旧版本不认 dvh：先给 vh 兜底，支持 dvh 的浏览器再覆盖。
+     dvh 会随地址栏收起/展开变化，vh 在 iOS Safari 里按最大可视高度算。 */
+  height: 100vh;
   height: 100dvh;
 }
 

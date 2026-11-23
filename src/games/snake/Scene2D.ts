@@ -1,10 +1,12 @@
-// 贪吃蛇 2D 场景（纯 Canvas 2D）：连续像素世界，Slither 风格
+// 贪吃蛇 2D 场景：世界层用 Canvas 2D，UI 层用 DOM/CSS
 // - 世界 3600×2600 像素，屏幕只显示一部分：镜头平滑跟随自己的蛇头，移动时场景滚动
 // - 蛇 = 一条有宽度的折线（round join/cap），按路径绘制，不是格子
+// - 只画镜头附近：世界很大，但每帧只把视口外扩一圈的局部路径/食物送进 Canvas
 // - 输入与场景解耦：方向由屏幕固定位置的虚拟摇杆给"世界绝对角度"，
-//   不再按"指针相对蛇头屏幕位置"计算 —— 镜头怎么滚动、蛇贴不贴边，操作含义都一样。
-//   左下角加速按钮（带冷却环）、右下角虚拟摇杆；鼠标移动 / WASD 也能给同样的绝对角度。
-// - HUD：左上角分数/最高分/玩家；死亡后弹重生/退出框
+//   镜头怎么滚动、蛇贴不贴边，操作含义都一样。摇杆是"因"（控制蛇的目标朝向），
+//   蛇怎么走是"果"；摇杆手柄只反映手指输入，松手就回中，绝不镜像蛇的朝向。
+// - 动画统一走 requestAnimationFrame：世界层逐帧画蛇/食物；HUD/小地图/摇杆/按钮
+//   等 UI 是 DOM，在同一个 rAF 里按变化更新（transform/text），不再有 UI 节流。
 import LogicSnake, {
   SNAKE_BOOST_CD_MS,
   SNAKE_FOOD_RADIUS,
@@ -17,11 +19,8 @@ const OUTSIDE = '#06060b';
 const GRID = 'rgba(104,116,170,0.10)';
 const GRID_STRONG = 'rgba(120,136,205,0.18)';
 const BORDER = 'rgba(120,140,220,0.55)';
-const TEXT = '#eef0f8';
-const SUBTEXT = '#8b8ba7';
 const FOOD_COLOR = '#ff5d5d';
 const SNAKE_COLORS = ['#4ade80', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#34d399'];
-const BOOST_COLOR = '#38bdf8';
 
 /** 相机缩放：按屏幕尺寸自适应，保证不同设备看到的"世界范围"接近 */
 const ZOOM_MIN = 0.7;
@@ -33,23 +32,103 @@ const SMOOTH_LAG = 60;
 /** 触屏死区（像素）：按下后至少移动这么远才开始算方向 */
 const TOUCH_DEAD_ZONE = 4;
 /** 摇杆圆心离屏幕边缘的距离 / 半径范围（CSS 像素） */
-const JOY_MARGIN = 26;
+const JOY_MARGIN = 38;
 const JOY_R_MIN = 54;
 const JOY_R_MAX = 78;
-/** 摇杆手柄相对圆心的距离比例 */
-const JOY_KNOB = 0.56;
+/** 局部绘制窗口相对视口的外扩比例：留出提前量，镜头滚动时不会露出突兀的断头 */
+const VIEW_MARGIN = 0.2;
+/** 高分屏上限：手机 3x DPI 下 2x 全屏填充很贵，1.5x 对高速运动画面足够清晰 */
+const DPR_MAX = 1.5;
+const TAU = Math.PI * 2;
 
 /**
  * 控件布局（纯函数）：只吃画布尺寸，不吃镜头/蛇头/世界坐标 —— 控制与场景彻底解耦。
- * 左下角加速按钮、右下角虚拟摇杆，两者不重叠。
+ * 左下角虚拟摇杆、右下角加速按钮，两者不重叠。
  */
 export function snakeControlsLayout(cssW: number, cssH: number) {
   const br = Math.max(34, Math.min(44, Math.round(Math.min(cssW, cssH) * 0.07)));
   const jr = Math.max(JOY_R_MIN, Math.min(JOY_R_MAX, Math.round(Math.min(cssW, cssH) * 0.11)));
   return {
-    boost: { x: br + 22, y: cssH - br - 22, r: br },
-    joy: { x: cssW - jr - JOY_MARGIN, y: cssH - jr - JOY_MARGIN, r: jr },
+    boost: { x: cssW - br - 22, y: cssH - br - 22, r: br },
+    joy: { x: jr + JOY_MARGIN, y: cssH - jr - JOY_MARGIN, r: jr },
   };
+}
+
+export interface WorldRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** 微缩地图在画布右上角（避让右上角设置按钮，放在它下方） */
+export function snakeMinimapLayout(cssW: number, cssH: number) {
+  const w = Math.max(88, Math.min(160, Math.round(cssW * 0.28)));
+  const h = Math.round(w * 0.72);
+  return { x: Math.max(8, cssW - w - 12), y: 64, w, h };
+}
+
+/** 世界坐标 → 微缩地图坐标（纯函数，便于校验"自己的位置"） */
+export function minimapPoint(layout: { x: number; y: number; w: number; h: number }, worldW: number, worldH: number, x: number, y: number) {
+  return [layout.x + (x / worldW) * layout.w, layout.y + (y / worldH) * layout.h] as [number, number];
+}
+
+/** 小地图只标自己：入参里没有食物/镜头/其他玩家，位置完全由自己的世界坐标决定 */
+export function snakeMinimapSelfPoint(cssW: number, cssH: number, worldW: number, worldH: number, x: number, y: number) {
+  const m = snakeMinimapLayout(cssW, cssH);
+  return minimapPoint({ x: m.x + 6, y: m.y + 6, w: m.w - 12, h: m.h - 12 }, worldW, worldH, x, y);
+}
+
+/**
+ * 当前镜头对应的"局部绘制窗口"：视口向四周各外扩 margin 比例，再钳到世界内。
+ * 蛇头移动 → 镜头移动 → 这个窗口跟着更新，窗口外的路径/食物不进 Canvas。
+ */
+export function snakeViewport(
+  cam: { x: number; y: number },
+  cssW: number,
+  cssH: number,
+  zoom: number,
+  worldW: number,
+  worldH: number,
+  margin = 0.2,
+): WorldRect {
+  const halfW = cssW / (2 * zoom);
+  const halfH = cssH / (2 * zoom);
+  return {
+    x0: Math.max(0, cam.x - halfW * (1 + margin)),
+    y0: Math.max(0, cam.y - halfH * (1 + margin)),
+    x1: Math.min(worldW, cam.x + halfW * (1 + margin)),
+    y1: Math.min(worldH, cam.y + halfH * (1 + margin)),
+  };
+}
+
+/**
+ * 把一条长路径裁成若干段，只保留与局部窗口相交的部分。
+ * 段之间用独立 moveTo 断开，避免蛇绕回来时把屏幕外的一段连成一条直线。
+ */
+export function clipSnakeSegments(pts: [number, number][], r: WorldRect): [number, number][][] {
+  const segments: [number, number][][] = [];
+  let cur: [number, number][] | null = null;
+  let prevIn = false;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const inside = p[0] >= r.x0 && p[0] <= r.x1 && p[1] >= r.y0 && p[1] <= r.y1;
+    if (inside) {
+      if (!prevIn) {
+        cur = i > 0 ? [pts[i - 1]] : [];
+        cur.push(p);
+      } else {
+        cur!.push(p);
+      }
+    } else if (prevIn && cur) {
+      cur.push(p);
+      segments.push(cur);
+      cur = null;
+    }
+    prevIn = inside;
+  }
+  if (cur && cur.length > 1) segments.push(cur);
+  return segments;
 }
 
 /**
@@ -63,15 +142,26 @@ export function joystickAngle(joy: { x: number; y: number; r: number }, px: numb
   return Math.atan2(dy, dx);
 }
 
-interface Rect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+/**
+ * 摇杆手柄相对圆心的偏移（纯函数）。
+ * - knob 为 null（松手/未操作）→ 回中 {0,0}，与蛇的朝向无关：
+ *   摇杆是输入设备，只显示"手指把它推到哪"，不是蛇当前姿态的仪表盘。
+ * - 拖动中 → 用手指位置，并 clamp 在半径内。
+ */
+export function joystickKnobOffset(
+  joy: { x: number; y: number; r: number },
+  knob: { x: number; y: number } | null,
+  maxRatio = 0.82,
+) {
+  if (!knob) return { dx: 0, dy: 0 };
+  const dx = knob.x - joy.x;
+  const dy = knob.y - joy.y;
+  const d = Math.hypot(dx, dy) || 1;
+  const clamped = Math.min(d, joy.r * maxRatio);
+  return { dx: (dx / d) * clamped, dy: (dy / d) * clamped };
 }
 
 interface Camera {
-  /** 视口中心，世界坐标（像素） */
   x: number;
   y: number;
 }
@@ -81,6 +171,30 @@ interface DispSnake {
   y: number;
   angle: number;
   pts: [number, number][];
+}
+
+/** UI 层 DOM 节点集合 */
+interface SnakeUi {
+  root: HTMLDivElement;
+  hud: HTMLDivElement;
+  hudMode: HTMLDivElement;
+  hudScore: HTMLSpanElement;
+  hudBest: HTMLSpanElement;
+  hudPlayers: HTMLDivElement;
+  minimap: HTMLDivElement;
+  minimapDot: HTMLDivElement;
+  boost: HTMLDivElement;
+  boostRing: HTMLDivElement;
+  boostLabel: HTMLSpanElement;
+  joystick: HTMLDivElement;
+  joyBase: HTMLDivElement;
+  joyKnob: HTMLDivElement;
+  hint: HTMLDivElement;
+  overlay: HTMLDivElement;
+  death: HTMLDivElement;
+  deathScore: HTMLDivElement;
+  deathRespawn: HTMLButtonElement;
+  deathExit: HTMLButtonElement;
 }
 
 export default class Scene2DSnake {
@@ -102,26 +216,38 @@ export default class Scene2DSnake {
   private startedAt = 0;
   /** 远端蛇的平滑显示状态 */
   private disp = new Map<string, DispSnake>();
+  /** 食物预渲染精灵：避免每帧为每颗食物画三层圆 */
+  private foodSprite: HTMLCanvasElement | null = null;
+  private foodSpriteSize = 0;
+  /** 指针坐标缓存：pointermove 不再每次读 getBoundingClientRect 触发强制布局 */
+  private rectCache: { left: number; top: number } | null = null;
+  /** DOM UI 层 */
+  private ui: SnakeUi | null = null;
+  /** UI 脏检查签名：只有内容变化才写 DOM，连续量（位置/透明度）每帧直接写 transform/opacity */
+  private hudSig = '';
+  private overlaySig = '';
+  private boostLabelSig = '';
+  private hudPlayersSig = '';
 
   // 输入状态（全部是屏幕坐标，与镜头/世界无关）
-  private pointerId: number | null = null;
-  private boostPressed = false;
   /** 正在拖摇杆的那根手指 */
   private joyPointerId: number | null = null;
-  /** 手指当前位置（画手柄用） */
+  /** 手指当前位置（决定手柄偏移；松手置 null → 手柄回中） */
   private joyKnob: { x: number; y: number } | null = null;
-  /** 触屏按下点：移动超过死区才真正开始瞄准（避免一按就甩头） */
+  /** 触屏按下点：移动超过死区才真正开始瞄准 */
   private touchStart: { x: number; y: number } | null = null;
   private touchLocked = false;
-  /** 死亡弹框按钮区域（屏幕坐标），tap 命中用 */
-  private deadUi: { respawn: Rect; exit: Rect } | null = null;
 
   private onKey = (e: KeyboardEvent) => this.handleKey(e);
   private onResize = () => this.resize();
-  private onPointerDown = (e: PointerEvent) => this.handlePointerDown(e);
-  private onPointerMove = (e: PointerEvent) => this.handlePointerMove(e);
-  private onPointerUp = (e: PointerEvent) => this.handlePointerUp(e);
+  private onCanvasDown = (e: PointerEvent) => this.handleCanvasDown(e);
+  private onCanvasMove = (e: PointerEvent) => this.handleCanvasMove(e);
   private onContextMenu = (e: Event) => e.preventDefault();
+
+  private onJoyDown = (e: PointerEvent) => this.handleJoyDown(e);
+  private onJoyMove = (e: PointerEvent) => this.handleJoyMove(e);
+  private onJoyUp = (e: PointerEvent) => this.handleJoyUp(e);
+  private onBoostDown = (e: PointerEvent) => this.handleBoostDown(e);
 
   constructor(canvas: HTMLCanvasElement, logic: LogicSnake) {
     this.canvas = canvas;
@@ -147,13 +273,12 @@ export default class Scene2DSnake {
     this.startedAt = performance.now();
     this.canvas.style.touchAction = 'none';
     (this.canvas.style as any).webkitUserSelect = 'none';
+    this.buildUi();
+
     window.addEventListener('resize', this.onResize);
     window.addEventListener('keydown', this.onKey);
-    this.canvas.addEventListener('pointerdown', this.onPointerDown);
-    this.canvas.addEventListener('pointermove', this.onPointerMove);
-    this.canvas.addEventListener('pointerup', this.onPointerUp);
-    this.canvas.addEventListener('pointercancel', this.onPointerUp);
-    this.canvas.addEventListener('pointerleave', this.onPointerUp);
+    this.canvas.addEventListener('pointerdown', this.onCanvasDown);
+    this.canvas.addEventListener('pointermove', this.onCanvasMove);
     this.canvas.addEventListener('contextmenu', this.onContextMenu);
     if (typeof ResizeObserver !== 'undefined') {
       this.ro = new ResizeObserver(() => this.resize());
@@ -166,22 +291,105 @@ export default class Scene2DSnake {
   dispose() {
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onKey);
-    this.canvas.removeEventListener('pointerdown', this.onPointerDown);
-    this.canvas.removeEventListener('pointermove', this.onPointerMove);
-    this.canvas.removeEventListener('pointerup', this.onPointerUp);
-    this.canvas.removeEventListener('pointercancel', this.onPointerUp);
-    this.canvas.removeEventListener('pointerleave', this.onPointerUp);
+    this.canvas.removeEventListener('pointerdown', this.onCanvasDown);
+    this.canvas.removeEventListener('pointermove', this.onCanvasMove);
     this.canvas.removeEventListener('contextmenu', this.onContextMenu);
     this.ro?.disconnect();
     this.ro = null;
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.ui?.root.remove();
+    this.ui = null;
+    this.foodSprite = null;
+    this.rectCache = null;
     this.inited = false;
-    this.pointerId = null;
     this.joyPointerId = null;
     this.joyKnob = null;
     this.touchStart = null;
-    this.boostPressed = false;
+    this.touchLocked = false;
+  }
+
+  // ===== DOM UI 构建 =====
+  private buildUi() {
+    const parent = this.canvas.parentElement;
+    if (!parent) return;
+    const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string) => {
+      const node = document.createElement(tag);
+      node.className = cls;
+      return node;
+    };
+    const root = el('div', 'snake-dom-ui');
+    const hud = el('div', 'snake-hud');
+    const hudMode = el('div', 'snake-hud-mode');
+    const hudScores = el('div', 'snake-hud-scores');
+    const hudScore = el('span', 'snake-hud-score');
+    const hudBest = el('span', 'snake-hud-best');
+    hudScores.append(hudScore, hudBest);
+    const hudPlayers = el('div', 'snake-hud-players');
+    hud.append(hudMode, hudScores, hudPlayers);
+
+    const minimap = el('div', 'snake-minimap');
+    const minimapDot = el('div', 'snake-minimap-dot');
+    minimap.appendChild(minimapDot);
+
+    const boost = el('div', 'snake-boost');
+    const boostRing = el('div', 'snake-boost-ring');
+    const boostLabel = el('span', 'snake-boost-label');
+    boost.append(boostRing, boostLabel);
+
+    const joystick = el('div', 'snake-joystick');
+    const joyBase = el('div', 'snake-joy-base');
+    const joyKnob = el('div', 'snake-joy-knob');
+    joystick.append(joyBase, joyKnob);
+
+    const hint = el('div', 'snake-hint');
+    hint.textContent = '左下摇杆控方向 · 鼠标/WASD 亦可 · 右下加速';
+
+    const overlay = el('div', 'snake-overlay');
+    const death = el('div', 'snake-death');
+    const deathScore = el('div', 'snake-death-score');
+    const deathActions = el('div', 'snake-death-actions');
+    const deathRespawn = el('button', 'snake-death-btn primary');
+    deathRespawn.textContent = '重生';
+    const deathExit = el('button', 'snake-death-btn');
+    deathExit.textContent = '退出';
+    deathActions.append(deathRespawn, deathExit);
+    const deathTitle = el('div', 'snake-death-title');
+    deathTitle.textContent = '已出局';
+    const deathNote = el('div', 'snake-death-note');
+    deathNote.textContent = '分数已记入排行榜';
+    death.append(deathTitle, deathScore, deathNote, deathActions);
+
+    root.append(hud, minimap, boost, joystick, hint, overlay, death);
+    parent.appendChild(root);
+    this.ui = {
+      root, hud, hudMode, hudScore, hudBest, hudPlayers,
+      minimap, minimapDot, boost, boostRing, boostLabel,
+      joystick, joyBase, joyKnob, hint, overlay,
+      death, deathScore, deathRespawn, deathExit,
+    };
+
+    joystick.addEventListener('pointerdown', this.onJoyDown);
+    joystick.addEventListener('pointermove', this.onJoyMove);
+    joystick.addEventListener('pointerup', this.onJoyUp);
+    joystick.addEventListener('pointercancel', this.onJoyUp);
+    joystick.addEventListener('pointerleave', this.onJoyUp);
+    boost.addEventListener('pointerdown', this.onBoostDown);
+    deathRespawn.addEventListener('click', () => {
+      this.deathReset();
+      this.logic.respawn();
+    });
+    deathExit.addEventListener('click', () => {
+      this.deathReset();
+      this.logic.exit();
+    });
+  }
+
+  private deathReset() {
+    this.joyPointerId = null;
+    this.joyKnob = null;
+    this.touchStart = null;
+    this.touchLocked = false;
   }
 
   // ===== 布局 =====
@@ -190,10 +398,32 @@ export default class Scene2DSnake {
     const rect = this.canvas.getBoundingClientRect();
     this.cssW = Math.max(1, Math.round(rect.width || 800));
     this.cssH = Math.max(1, Math.round(rect.height || 600));
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.rectCache = { left: rect.left, top: rect.top };
+    this.dpr = Math.min(DPR_MAX, window.devicePixelRatio || 1);
     this.canvas.width = Math.round(this.cssW * this.dpr);
     this.canvas.height = Math.round(this.cssH * this.dpr);
+    this.foodSprite = null;
     this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(this.cssW / 900, this.cssH / 720)));
+    this.layoutUi();
+  }
+
+  /** DOM 控件的尺寸/位置依赖画布尺寸，resize 时放一次；位置连续变化的部分每帧写 transform */
+  private layoutUi() {
+    const ui = this.ui;
+    if (!ui) return;
+    const { boost, joy } = snakeControlsLayout(this.cssW, this.cssH);
+    const m = snakeMinimapLayout(this.cssW, this.cssH);
+    Object.assign(ui.joystick.style, {
+      left: `${joy.x - joy.r}px`, top: `${joy.y - joy.r}px`,
+      width: `${joy.r * 2}px`, height: `${joy.r * 2}px`,
+    });
+    Object.assign(ui.boost.style, {
+      left: `${boost.x - boost.r}px`, top: `${boost.y - boost.r}px`,
+      width: `${boost.r * 2}px`, height: `${boost.r * 2}px`,
+    });
+    Object.assign(ui.minimap.style, {
+      left: `${m.x}px`, top: `${m.y}px`, width: `${m.w}px`, height: `${m.h}px`,
+    });
   }
 
   private loop = () => {
@@ -218,128 +448,99 @@ export default class Scene2DSnake {
     };
     const dir = map[e.key];
     if (!dir) return;
-    // 方向键默认会滚动页面，必须拦掉
     e.preventDefault();
     this.logic.aimDir(dir);
   }
 
-  /** 左下角加速按钮（屏幕固定坐标） */
-  private boostButton() {
-    return snakeControlsLayout(this.cssW, this.cssH).boost;
-  }
-
-  private inBoost(x: number, y: number) {
-    const b = this.boostButton();
-    return (x - b.x) ** 2 + (y - b.y) ** 2 <= (b.r + 12) ** 2;
-  }
-
-  /** 右下角虚拟摇杆（屏幕固定坐标，绝不跟随镜头或蛇头） */
   private joystick() {
     return snakeControlsLayout(this.cssW, this.cssH).joy;
   }
 
-  /** 摇杆热区：圈本身再放宽一点，手机上手指容易按中 */
-  private inJoystick(x: number, y: number) {
-    const j = this.joystick();
-    return Math.hypot(x - j.x, y - j.y) <= j.r * 1.45;
+  private pointerXY(e: PointerEvent) {
+    const r = this.rectCache;
+    return r
+      ? { x: e.clientX - r.left, y: e.clientY - r.top }
+      : { x: e.clientX - this.canvas.getBoundingClientRect().left, y: e.clientY - this.canvas.getBoundingClientRect().top };
   }
 
-  /** 摇杆：手柄相对圆心的角度就是世界绝对朝向（0 = 向右） */
+  /** 摇杆角度 → 目标朝向（因），蛇怎么走是果；摇杆手柄不读这个角度 */
   private aimFromJoystick(px: number, py: number) {
     const angle = joystickAngle(this.joystick(), px, py);
-    if (angle === null) return; // 圆心附近不给方向，避免乱跳
-    this.logic.aim(angle);
+    if (angle !== null) this.logic.aim(angle);
   }
 
-  /**
-   * 鼠标：以"屏幕中心"为原点算绝对角度（固定参考点，与镜头/蛇头位置无关）；
-   * 落在摇杆圈里时直接用摇杆角度，保持鼠标与摇杆显示一致。
-   */
+  /** 鼠标：以屏幕中心为固定参考点给绝对朝向；小地图区域跳过，避免误改方向 */
   private aimFromPointer(px: number, py: number) {
-    if (this.inJoystick(px, py)) {
-      this.aimFromJoystick(px, py);
-      return;
-    }
+    const m = snakeMinimapLayout(this.cssW, this.cssH);
+    if (px >= m.x - 8 && px <= m.x + m.w + 8 && py >= m.y - 8 && py <= m.y + m.h + 8) return;
     const dx = px - this.cssW / 2;
     const dy = py - this.cssH / 2;
     if (Math.hypot(dx, dy) < 24) return;
     this.logic.aim(Math.atan2(dy, dx));
   }
 
-  private hitRect(r: Rect, x: number, y: number) {
-    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  private handleCanvasDown(e: PointerEvent) {
+    const rect = this.canvas.getBoundingClientRect();
+    this.rectCache = { left: rect.left, top: rect.top };
+    if (e.pointerType === 'mouse') {
+      const { x, y } = this.pointerXY(e);
+      this.aimFromPointer(x, y);
+    }
+    // 触屏的控制全部交给 DOM 摇杆/加速按钮，画布空白触摸不改方向
   }
 
-  private handlePointerDown(e: PointerEvent) {
-    const rect = this.canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    // 死亡弹框优先：按钮命中就执行，其余点击一律不穿透（弹框期间不转向）
-    if (this.deadUi) {
-      if (this.hitRect(this.deadUi.respawn, x, y)) {
-        this.deadUi = null;
-        this.logic.respawn();
-        return;
-      }
-      if (this.hitRect(this.deadUi.exit, x, y)) {
-        this.deadUi = null;
-        this.logic.exit();
-        return;
-      }
-      return;
-    }
-
-    if (this.inBoost(x, y)) {
-      this.boostPressed = true;
-      (this.canvas as any).setPointerCapture?.(e.pointerId);
-      if (this.state.boostCd <= 0) this.logic.boost();
-      return;
-    }
-
-    if (e.pointerType === 'touch') {
-      // 触屏必须按在摇杆热区里；按下先不给方向，移动超过 4px 死区才开始算，
-      // 避免手指刚落下就把蛇掰向一个莫名其妙的角度。
-      if (!this.inJoystick(x, y)) return;
-      this.pointerId = e.pointerId;
-      this.joyPointerId = e.pointerId;
-      this.touchStart = { x: e.clientX, y: e.clientY };
-      this.touchLocked = false;
-      (this.canvas as any).setPointerCapture?.(e.pointerId);
-      return;
-    }
-    // 鼠标：不用按下也能给方向，参考点是固定的屏幕中心/摇杆圆心
+  private handleCanvasMove(e: PointerEvent) {
+    if (e.pointerType !== 'mouse') return;
+    const { x, y } = this.pointerXY(e);
     this.aimFromPointer(x, y);
   }
 
-  private handlePointerMove(e: PointerEvent) {
-    if (this.boostPressed) return;
+  private handleJoyDown(e: PointerEvent) {
     const rect = this.canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    if (e.pointerType === 'touch') {
-      // 触屏：只有拖摇杆的那根手指有效
-      if (this.joyPointerId !== e.pointerId || !this.touchStart) return;
-      if (!this.touchLocked) {
-        const d = Math.hypot(e.clientX - this.touchStart.x, e.clientY - this.touchStart.y);
-        if (d < TOUCH_DEAD_ZONE) return;
-        this.touchLocked = true;
-      }
+    this.rectCache = { left: rect.left, top: rect.top };
+    e.preventDefault();
+    e.stopPropagation();
+    this.joyPointerId = e.pointerId;
+    this.touchStart = { x: e.clientX, y: e.clientY };
+    this.touchLocked = false;
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    // 按下即让手柄跟手（鼠标点击摇杆也能立即指向）
+    const { x, y } = this.pointerXY(e);
+    const j = this.joystick();
+    if (Math.hypot(x - j.x, y - j.y) >= TOUCH_DEAD_ZONE) {
+      this.touchLocked = true;
       this.joyKnob = { x, y };
       this.aimFromJoystick(x, y);
-      return;
     }
-    this.aimFromPointer(x, y);
   }
 
-  private handlePointerUp(e?: PointerEvent) {
-    if (e && this.pointerId !== null && e.pointerId !== this.pointerId) return;
-    this.pointerId = null;
+  private handleJoyMove(e: PointerEvent) {
+    if (this.joyPointerId !== e.pointerId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!this.touchLocked && this.touchStart) {
+      const d = Math.hypot(e.clientX - this.touchStart.x, e.clientY - this.touchStart.y);
+      if (d < TOUCH_DEAD_ZONE) return;
+      this.touchLocked = true;
+    }
+    const { x, y } = this.pointerXY(e);
+    this.joyKnob = { x, y };
+    this.aimFromJoystick(x, y);
+  }
+
+  private handleJoyUp(e: PointerEvent) {
+    if (this.joyPointerId !== null && e.pointerId !== this.joyPointerId) return;
+    // 松手：手柄回中（knob=null），但蛇保持最后的目标朝向继续前进
     this.joyPointerId = null;
     this.joyKnob = null;
     this.touchStart = null;
     this.touchLocked = false;
-    this.boostPressed = false;
+  }
+
+  private handleBoostDown(e: PointerEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (this.state.boostCd <= 0) this.logic.boost();
   }
 
   // ===== 坐标换算（世界 → 屏幕） =====
@@ -359,7 +560,7 @@ export default class Scene2DSnake {
     const dt = this.lastFrame ? Math.min(64, now - this.lastFrame) : 16;
     this.lastFrame = now;
 
-    // 每帧重新取一次视图：本地预测按"距快照经过的时间"前推，必须逐帧算才顺滑
+    // 每帧重新取视图：本地预测按"距快照经过的时间"前推，必须逐帧算才顺滑
     this.state = this.logic.view();
 
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -369,19 +570,20 @@ export default class Scene2DSnake {
     this.updateCamera(dt);
     this.smoothRemote(dt);
 
-    this.drawWorld();
-    this.drawFood(now);
-    this.drawSnakes(now);
-    this.drawHud();
-    this.drawBoostButton();
-    this.drawJoystick();
-    this.drawOverlay();
-    this.drawHint();
+    const view = snakeViewport(
+      this.cam, this.cssW, this.cssH, this.zoom,
+      this.state.w, this.state.h, VIEW_MARGIN,
+    );
+    this.drawWorld(view);
+    this.drawFood(now, view);
+    this.drawSnakes(now, view);
+
+    // UI 在同一个 rAF 里更新：连续量每帧写 transform/opacity，静态内容按脏检查写
+    this.syncUi(now);
   }
 
   /**
    * 把镜头中心钳在"视野不越出世界"的范围内，避免贴边时露出大片世界外空底色。
-   * 世界比视口还小（极端情况）时退化为居中。
    */
   private clampCam(p: Camera): Camera {
     const halfW = this.cssW / (2 * this.zoom);
@@ -437,7 +639,7 @@ export default class Scene2DSnake {
     for (const id of [...this.disp.keys()]) if (!alive.has(id)) this.disp.delete(id);
   }
 
-  private drawWorld() {
+  private drawWorld(view: WorldRect) {
     const ctx = this.ctx;
     const { w, h } = this.state;
     const x0 = this.sx(0);
@@ -445,19 +647,17 @@ export default class Scene2DSnake {
     const x1 = this.sx(w);
     const y1 = this.sy(h);
 
-    // 世界之外：更暗，让边界一眼可见
     ctx.fillStyle = OUTSIDE;
     if (x0 > 0) ctx.fillRect(0, 0, x0, this.cssH);
     if (y0 > 0) ctx.fillRect(0, 0, this.cssW, y0);
     if (x1 < this.cssW) ctx.fillRect(x1, 0, this.cssW - x1, this.cssH);
     if (y1 < this.cssH) ctx.fillRect(0, y1, this.cssW, this.cssH - y1);
 
-    // 稀疏网格（每 100 世界像素一格），纯参考线，移动时提供视差感
     const step = 100;
-    const left = this.cam.x - this.cssW / (2 * this.zoom);
-    const right = this.cam.x + this.cssW / (2 * this.zoom);
-    const top = this.cam.y - this.cssH / (2 * this.zoom);
-    const bottom = this.cam.y + this.cssH / (2 * this.zoom);
+    const left = view.x0;
+    const right = view.x1;
+    const top = view.y0;
+    const bottom = view.y1;
 
     ctx.lineWidth = 1;
     ctx.strokeStyle = GRID;
@@ -474,7 +674,6 @@ export default class Scene2DSnake {
     }
     ctx.stroke();
 
-    // 每 500 像素一条稍亮的线，方便判断远近
     ctx.strokeStyle = GRID_STRONG;
     ctx.beginPath();
     for (let gx = Math.max(0, Math.floor(left / 500) * 500); gx <= Math.min(w, right); gx += 500) {
@@ -489,41 +688,57 @@ export default class Scene2DSnake {
     }
     ctx.stroke();
 
-    // 地图边界
     ctx.strokeStyle = BORDER;
     ctx.lineWidth = 2;
     ctx.strokeRect(x0 + 1, y0 + 1, x1 - x0 - 2, y1 - y0 - 2);
   }
 
-  private drawFood(now: number) {
+  /** 食物三层圆只画一次到精灵，之后每帧一次 drawImage */
+  private buildFoodSprite() {
+    if (typeof document === 'undefined') return;
+    const r = SNAKE_FOOD_RADIUS * this.zoom;
+    const size = Math.ceil(r * 5.2);
+    const c = document.createElement('canvas');
+    c.width = c.height = Math.ceil(size * this.dpr);
+    const g = c.getContext('2d');
+    if (!g) return;
+    g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    const mid = size / 2;
+    g.beginPath();
+    g.arc(mid, mid, r * 2.1, 0, TAU);
+    g.fillStyle = 'rgba(255,93,93,0.10)';
+    g.fill();
+    g.beginPath();
+    g.arc(mid, mid, r, 0, TAU);
+    g.fillStyle = FOOD_COLOR;
+    g.fill();
+    g.beginPath();
+    g.arc(mid - r * 0.28, mid - r * 0.28, r * 0.32, 0, TAU);
+    g.fillStyle = 'rgba(255,255,255,0.55)';
+    g.fill();
+    this.foodSprite = c;
+    this.foodSpriteSize = size;
+  }
+
+  private drawFood(now: number, view: WorldRect) {
+    if (!this.foodSprite) this.buildFoodSprite();
+    const sprite = this.foodSprite;
+    if (!sprite) return;
     const ctx = this.ctx;
     const r = SNAKE_FOOD_RADIUS * this.zoom;
-    const pulse = 0.5 + 0.5 * Math.sin(now / 300);
+    const pulse = 1 + 0.05 * (0.5 + 0.5 * Math.sin(now / 300));
+    const size = this.foodSpriteSize * pulse;
+    const half = size / 2;
     for (const [fx, fy] of this.state.food) {
-      const cx = this.sx(fx);
-      const cy = this.sy(fy);
-      if (cx < -r * 4 || cy < -r * 4 || cx > this.cssW + r * 4 || cy > this.cssH + r * 4) continue;
-      // 外发光
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * (2.1 + 0.15 * pulse), 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,93,93,0.10)';
-      ctx.fill();
-      // 果肉
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * (0.92 + 0.08 * pulse), 0, Math.PI * 2);
-      ctx.fillStyle = FOOD_COLOR;
-      ctx.fill();
-      // 高光
-      ctx.beginPath();
-      ctx.arc(cx - r * 0.28, cy - r * 0.28, r * 0.32, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,255,255,0.55)';
-      ctx.fill();
+      if (fx < view.x0 - r || fx > view.x1 + r || fy < view.y0 - r || fy > view.y1 + r) continue;
+      ctx.drawImage(sprite, this.sx(fx) - half, this.sy(fy) - half, size, size);
     }
   }
 
-  private drawSnakes(now: number) {
+  private drawSnakes(now: number, view: WorldRect) {
     const ctx = this.ctx;
     const radius = this.state.radius * this.zoom;
+    const margin = radius / this.zoom * 2;
 
     this.state.snakes.forEach((snake, idx) => {
       const color = SNAKE_COLORS[idx % SNAKE_COLORS.length];
@@ -531,33 +746,43 @@ export default class Scene2DSnake {
       const pts = disp ? disp.pts : snake.pts;
       if (!pts.length) return;
 
+      const segments = clipSnakeSegments(pts, {
+        x0: view.x0 - margin, y0: view.y0 - margin,
+        x1: view.x1 + margin, y1: view.y1 + margin,
+      });
+      if (!segments.length) return;
+
+      const head = pts[0];
+      const hx = this.sx(head[0]);
+      const hy = this.sy(head[1]);
+      const headVisible = head[0] >= view.x0 - margin && head[0] <= view.x1 + margin
+        && head[1] >= view.y0 - margin && head[1] <= view.y1 + margin
+        && hx > -radius * 3 && hx < this.cssW + radius * 3
+        && hy > -radius * 3 && hy < this.cssH + radius * 3;
+
       const alpha = snake.alive ? 1 : 0.22;
       ctx.globalAlpha = alpha;
 
-      // 身体：一条有宽度的折线（圆角连接 = 平滑的蛇），先描深色外轮廓再描本色
-      if (pts.length > 1) {
-        ctx.beginPath();
-        ctx.moveTo(this.sx(pts[0][0]), this.sy(pts[0][1]));
-        for (let i = 1; i < pts.length; i++) ctx.lineTo(this.sx(pts[i][0]), this.sy(pts[i][1]));
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = 'rgba(0,0,0,0.38)';
-        ctx.lineWidth = radius * 2 + Math.max(2, radius * 0.32);
-        ctx.stroke();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = radius * 2;
-        ctx.stroke();
-
-        // 身体高光：一条更窄更亮的线，制造圆柱感
-        ctx.strokeStyle = 'rgba(255,255,255,0.13)';
-        ctx.lineWidth = radius * 0.8;
-        ctx.stroke();
+      ctx.beginPath();
+      for (const seg of segments) {
+        ctx.moveTo(this.sx(seg[0][0]), this.sy(seg[0][1]));
+        for (let i = 1; i < seg.length; i++) ctx.lineTo(this.sx(seg[i][0]), this.sy(seg[i][1]));
       }
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(0,0,0,0.38)';
+      ctx.lineWidth = radius * 2 + Math.max(2, radius * 0.32);
+      ctx.stroke();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = radius * 2;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.13)';
+      ctx.lineWidth = radius * 0.8;
+      ctx.stroke();
 
-      // 加速时的尾焰光晕
-      if (snake.boosting && snake.alive) {
+      if (headVisible && snake.boosting && snake.alive) {
         ctx.beginPath();
-        ctx.moveTo(this.sx(pts[0][0]), this.sy(pts[0][1]));
+        ctx.moveTo(hx, hy);
         for (let i = 1; i < Math.min(pts.length, 6); i++) ctx.lineTo(this.sx(pts[i][0]), this.sy(pts[i][1]));
         ctx.lineCap = 'round';
         ctx.strokeStyle = 'rgba(125,211,252,0.35)';
@@ -565,273 +790,182 @@ export default class Scene2DSnake {
         ctx.stroke();
       }
 
-      const head = pts[0];
-      const hx = this.sx(head[0]);
-      const hy = this.sy(head[1]);
-      const angle = disp ? disp.angle : snake.angle;
-
-      // 蛇头：比身体略大的圆 + 朝向对齐的眼睛
-      ctx.beginPath();
-      ctx.arc(hx, hy, radius * 1.06, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-      if (snake.mine) {
-        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
-
-      const ex = Math.cos(angle);
-      const ey = Math.sin(angle);
-      const px = -ey;
-      const py = ex;
-      const eyeR = Math.max(1.6, radius * 0.26);
-      for (const side of [-1, 1]) {
-        const cxp = hx + ex * radius * 0.42 + px * radius * 0.42 * side;
-        const cyp = hy + ey * radius * 0.42 + py * radius * 0.42 * side;
+      if (headVisible) {
+        const angle = disp ? disp.angle : snake.angle;
         ctx.beginPath();
-        ctx.arc(cxp, cyp, eyeR, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(10,10,18,0.82)';
+        ctx.arc(hx, hy, radius * 1.06, 0, Math.PI * 2);
+        ctx.fillStyle = color;
         ctx.fill();
-      }
+        if (snake.mine) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
 
-      // 无敌护盾（重生后 3s）
-      if (snake.invincible > 0 && snake.alive) {
-        const a = 0.3 + 0.35 * Math.sin(now / 150);
-        ctx.beginPath();
-        ctx.arc(hx, hy, radius * (1.8 + 0.12 * Math.sin(now / 220)), 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(96,165,250,${a.toFixed(2)})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
+        const ex = Math.cos(angle);
+        const ey = Math.sin(angle);
+        const px = -ey;
+        const py = ex;
+        const eyeR = Math.max(1.6, radius * 0.26);
+        for (const side of [-1, 1]) {
+          const cxp = hx + ex * radius * 0.42 + px * radius * 0.42 * side;
+          const cyp = hy + ey * radius * 0.42 + py * radius * 0.42 * side;
+          ctx.beginPath();
+          ctx.arc(cxp, cyp, eyeR, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(10,10,18,0.82)';
+          ctx.fill();
+        }
 
-      ctx.globalAlpha = 1;
+        if (snake.invincible > 0 && snake.alive) {
+          const a = 0.3 + 0.35 * Math.sin(now / 150);
+          ctx.beginPath();
+          ctx.arc(hx, hy, radius * (1.8 + 0.12 * Math.sin(now / 220)), 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(96,165,250,${a.toFixed(2)})`;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
 
-      // 别人的名字（小字浮在头顶）
-      if (!snake.mine) {
-        const name = this.state.players.find(p => p.id === snake.id)?.nickname;
-        if (name) {
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'bottom';
-          ctx.font = '11px system-ui, sans-serif';
-          ctx.fillStyle = 'rgba(10,10,18,0.55)';
-          ctx.fillText(name, hx, hy - radius * 1.5 + 1);
-          ctx.fillStyle = 'rgba(226,232,248,0.75)';
-          ctx.fillText(name, hx, hy - radius * 1.5);
-          ctx.textAlign = 'left';
+        ctx.globalAlpha = 1;
+        if (!snake.mine) {
+          const name = this.state.players.find(p => p.id === snake.id)?.nickname;
+          if (name) {
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.font = '11px system-ui, sans-serif';
+            ctx.fillStyle = 'rgba(10,10,18,0.55)';
+            ctx.fillText(name, hx, hy - radius * 1.5 + 1);
+            ctx.fillStyle = 'rgba(226,232,248,0.75)';
+            ctx.fillText(name, hx, hy - radius * 1.5);
+            ctx.textAlign = 'left';
+          }
         }
       }
+      ctx.globalAlpha = 1;
     });
   }
 
-  /** 左上角信息条：分数 / 最高分 / 模式 / 玩家列表（屏幕坐标，不随镜头缩放） */
-  private drawHud() {
-    const ctx = this.ctx;
+  // ===== DOM UI 同步（同一个 rAF 内；连续量每帧写，静态量按签名脏检查） =====
+  private syncUi(now: number) {
+    const ui = this.ui;
+    if (!ui) return;
     const s = this.state;
-    const compact = this.cssW < 560;
-    const w = compact ? Math.min(200, this.cssW - 120) : 210;
-    const rows = Math.min(s.snakes.length, 4);
-    const showPlayers = s.snakes.length > 1;
-    const h = 52 + (showPlayers ? 16 + rows * 17 : 0);
+    const showControls = s.status === 'playing' && !s.awaiting && s.alive;
 
-    ctx.save();
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = 'rgba(18,18,30,0.78)';
-    this.roundRect(ctx, 12, 12, w, h, 12);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    ctx.fillStyle = SUBTEXT;
-    ctx.font = '11px system-ui, sans-serif';
-    ctx.fillText(s.variant === 'endless' ? '无尽挑战' : '多人对战', 24, 22);
-
-    ctx.fillStyle = TEXT;
-    ctx.font = 'bold 22px system-ui, sans-serif';
-    ctx.fillText(String(s.score), 24, 36);
-    const scoreW = ctx.measureText(String(s.score)).width;
-
-    ctx.fillStyle = SUBTEXT;
-    ctx.font = '11px system-ui, sans-serif';
-    ctx.fillText(`最高 ${s.best}`, 24 + scoreW + 10, 46);
-
-    if (showPlayers) {
-      let y = 68;
-      s.snakes.slice(0, 4).forEach((snake, i) => {
-        const name = s.players.find(p => p.id === snake.id)?.nickname || `玩家${i + 1}`;
-        const color = SNAKE_COLORS[i % SNAKE_COLORS.length];
-        ctx.globalAlpha = snake.alive ? 1 : 0.45;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(24, y + 5, 3.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = snake.mine ? TEXT : SUBTEXT;
-        ctx.font = `${snake.mine ? 'bold ' : ''}11px system-ui, sans-serif`;
-        ctx.fillText(this.truncate(name, 9), 34, y);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = snake.alive ? TEXT : SUBTEXT;
-        ctx.fillText(snake.alive ? String(snake.score) : '等待重生', 12 + w - 12, y);
-        ctx.textAlign = 'left';
-        ctx.globalAlpha = 1;
-        y += 17;
-      });
+    // --- HUD 文本：脏检查 ---
+    const mode = s.variant === 'endless' ? '无尽挑战' : '多人对战';
+    const hudSig = `${mode}|${s.score}|${s.best}`;
+    if (hudSig !== this.hudSig) {
+      ui.hudMode.textContent = mode;
+      ui.hudScore.textContent = String(s.score);
+      ui.hudBest.textContent = `最高 ${s.best}`;
+      this.hudSig = hudSig;
     }
-    ctx.restore();
-  }
-
-  /** 左下角加速按钮：冷却时按剩余比例画环并显示秒数 */
-  private drawBoostButton() {
-    const ctx = this.ctx;
-    const b = this.boostButton();
-    const cd = this.state.boostCd;
-    const boosting = this.state.boosting;
-    const ready = cd <= 0;
-    const pulse = boosting ? 1 + 0.04 * Math.sin(performance.now() / 90) : 1;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r * pulse, 0, Math.PI * 2);
-    ctx.fillStyle = ready ? 'rgba(56,189,248,0.22)' : 'rgba(24,24,36,0.82)';
-    ctx.fill();
-    ctx.strokeStyle = ready ? BOOST_COLOR : 'rgba(255,255,255,0.18)';
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-
-    if (!ready) {
-      const ratio = Math.max(0, Math.min(1, cd / SNAKE_BOOST_CD_MS));
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - ratio));
-      ctx.strokeStyle = 'rgba(56,189,248,0.55)';
-      ctx.lineWidth = 3;
-      ctx.stroke();
+    const playersSig = s.snakes.length > 1
+      ? s.snakes.slice(0, 4).map(snake => {
+        const name = s.players.find(p => p.id === snake.id)?.nickname || '';
+        return `${snake.id}:${name}:${snake.score}:${snake.alive ? 1 : 0}`;
+      }).join('|')
+      : '';
+    if (playersSig !== this.hudPlayersSig) {
+      this.renderPlayers(ui.hudPlayers, s);
+      this.hudPlayersSig = playersSig;
     }
 
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    if (ready) {
-      ctx.fillStyle = TEXT;
-      ctx.font = `bold ${Math.round(b.r * 0.42)}px system-ui, sans-serif`;
-      ctx.fillText('加速', b.x, b.y);
+    // --- 小地图：只画自己，白点位置每帧更新（transform 很便宜） ---
+    const showMap = !!s.w && !!s.h && s.status !== 'waiting';
+    ui.minimap.style.display = showMap ? '' : 'none';
+    if (showMap) {
+      const me = s.snakes.find(snake => snake.mine);
+      const m = snakeMinimapLayout(this.cssW, this.cssH);
+      if (me && m.w > 12 && m.h > 12) {
+        const [px, py] = snakeMinimapSelfPoint(this.cssW, this.cssH, s.w, s.h, me.x, me.y);
+        // 白点绝对定位在 minimap 容器内：换算成容器内的相对偏移（snakeMinimapSelfPoint 已含 6px 内边距）
+        ui.minimapDot.style.transform = `translate(${(px - m.x).toFixed(1)}px, ${(py - m.y).toFixed(1)}px) translate(-50%, -50%)`;
+        ui.minimapDot.style.display = '';
+      } else {
+        ui.minimapDot.style.display = 'none';
+      }
+    }
+
+    // --- 加速按钮：冷却环用 conic-gradient，标签按 0.1s 粒度脏检查 ---
+    ui.boost.style.display = showControls ? '' : 'none';
+    if (showControls) {
+      const cd = s.boostCd;
+      const ready = cd <= 0;
+      const ratio = ready ? 0 : Math.max(0, Math.min(1, cd / SNAKE_BOOST_CD_MS));
+      ui.boost.classList.toggle('ready', ready);
+      ui.boost.classList.toggle('boosting', !!s.boosting);
+      ui.boostRing.style.background = ready
+        ? 'rgba(56,189,248,0.22)'
+        : `conic-gradient(rgba(56,189,248,0.55) ${((1 - ratio) * 360).toFixed(1)}deg, rgba(24,24,36,0.82) 0deg)`;
+      const label = ready ? '加速' : (cd >= 10_000 ? String(Math.ceil(cd / 1000)) : (cd / 1000).toFixed(1));
+      if (label !== this.boostLabelSig) {
+        ui.boostLabel.textContent = label;
+        this.boostLabelSig = label;
+      }
+    }
+
+    // --- 摇杆：手柄只由 joyKnob（手指输入）决定；松手回中，绝不镜像蛇朝向 ---
+    ui.joystick.style.display = showControls ? '' : 'none';
+    if (showControls) {
+      const j = this.joystick();
+      const off = joystickKnobOffset(j, this.joyKnob);
+      ui.joyKnob.style.transform = `translate(${(j.r + off.dx).toFixed(1)}px, ${(j.r + off.dy).toFixed(1)}px) translate(-50%, -50%)`;
+      ui.joystick.classList.toggle('active', this.joyPointerId !== null && this.touchLocked);
+    } else if (this.joyPointerId !== null) {
+      // 死亡瞬间松开输入，避免复活后手柄卡在旧位置
+      this.deathReset();
+    }
+
+    // --- 开场提示：7s 淡出（连续量，每帧写 opacity） ---
+    if (s.status === 'playing' && s.alive) {
+      const age = now - this.startedAt;
+      const alpha = age > 7000 ? 0 : (age < 5500 ? 1 : Math.max(0, 1 - (age - 5500) / 1500));
+      ui.hint.style.opacity = alpha.toFixed(3);
+      ui.hint.style.display = alpha > 0 ? '' : 'none';
     } else {
-      ctx.fillStyle = SUBTEXT;
-      // 冷却 60s：两位数秒数（"60"），最后 10s 才显示一位小数，避免小圆里挤 4 个字符
-      const label = cd >= 10_000 ? String(Math.ceil(cd / 1000)) : (cd / 1000).toFixed(1);
-      ctx.font = `bold ${Math.round(b.r * 0.46)}px system-ui, sans-serif`;
-      ctx.fillText(label, b.x, b.y);
-    }
-    ctx.restore();
-  }
-
-  /**
-   * 右下角虚拟摇杆：屏幕固定位置，与镜头/世界完全无关。
-   * 圈里的小圆点就是"当前期望朝向"，拖动它（或移动鼠标 / 按 WASD）都会同步指向同一个绝对角度。
-   */
-  private drawJoystick() {
-    const s = this.state;
-    // 死亡弹框/未开局时不画控件，避免和弹框抢点击
-    if (s.status !== 'playing' || s.awaiting || !s.alive) return;
-    const ctx = this.ctx;
-    const j = this.joystick();
-    const active = this.joyPointerId !== null && this.touchLocked;
-    const angle = this.logic.aimAngle;
-    let kx = j.x + Math.cos(angle) * j.r * JOY_KNOB;
-    let ky = j.y + Math.sin(angle) * j.r * JOY_KNOB;
-    if (active && this.joyKnob) {
-      const dx = this.joyKnob.x - j.x;
-      const dy = this.joyKnob.y - j.y;
-      const d = Math.hypot(dx, dy) || 1;
-      const clamped = Math.min(d, j.r * 0.82);
-      kx = j.x + (dx / d) * clamped;
-      ky = j.y + (dy / d) * clamped;
+      ui.hint.style.display = 'none';
     }
 
-    ctx.save();
-    ctx.globalAlpha = active ? 0.98 : 0.76;
-    // 外圈
-    ctx.beginPath();
-    ctx.arc(j.x, j.y, j.r, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(12,14,26,0.44)';
-    ctx.fill();
-    ctx.strokeStyle = active ? 'rgba(96,165,250,0.85)' : 'rgba(150,170,230,0.45)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    // 8 个刻度点：让"绝对方向"的参照更直观
-    ctx.fillStyle = 'rgba(226,232,248,0.35)';
-    for (let i = 0; i < 8; i++) {
-      const a = (i * Math.PI) / 4;
-      ctx.beginPath();
-      ctx.arc(j.x + Math.cos(a) * j.r * 0.88, j.y + Math.sin(a) * j.r * 0.88, 1.6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    // 圆心 → 手柄
-    ctx.beginPath();
-    ctx.moveTo(j.x, j.y);
-    ctx.lineTo(kx, ky);
-    ctx.strokeStyle = 'rgba(226,232,248,0.42)';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    // 圆心
-    ctx.beginPath();
-    ctx.arc(j.x, j.y, j.r * 0.09, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(226,232,248,0.35)';
-    ctx.fill();
-    // 手柄
-    ctx.beginPath();
-    ctx.arc(kx, ky, j.r * 0.24, 0, Math.PI * 2);
-    ctx.fillStyle = active ? 'rgba(96,165,250,0.95)' : 'rgba(96,165,250,0.72)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(226,232,248,0.9)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.restore();
+    // --- 中央提示 / 死亡卡片：按状态签名切换 ---
+    this.syncOverlay(ui, s, now);
   }
 
-  /** 开局几秒的操作提示（右下摇杆 / 鼠标 / WASD） */
-  private drawHint() {
-    if (this.state.status !== 'playing' || !this.state.alive) return;
-    const age = performance.now() - this.startedAt;
-    if (age > 7000) return;
-    const alpha = age < 5500 ? 1 : Math.max(0, 1 - (age - 5500) / 1500);
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '11px system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(226,232,248,0.72)';
-    const text = '右下摇杆控方向 · 鼠标/WASD 亦可 · 左下加速';
-    const w = Math.min(this.cssW - 20, ctx.measureText(text).width + 28);
-    ctx.fillStyle = 'rgba(12,12,22,0.6)';
-    this.roundRect(ctx, (this.cssW - w) / 2, this.cssH - 46, w, 28, 14);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(226,232,248,0.78)';
-    ctx.fillText(text, this.cssW / 2, this.cssH - 32);
-    ctx.restore();
+  private renderPlayers(container: HTMLDivElement, s: SnakeView) {
+    container.replaceChildren();
+    if (s.snakes.length <= 1) return;
+    s.snakes.slice(0, 4).forEach((snake, i) => {
+      const row = document.createElement('div');
+      row.className = 'snake-player-row' + (snake.alive ? '' : ' dead');
+      const dot = document.createElement('span');
+      dot.className = 'snake-player-dot';
+      dot.style.background = SNAKE_COLORS[i % SNAKE_COLORS.length];
+      const name = document.createElement('span');
+      name.className = 'snake-player-name' + (snake.mine ? ' me' : '');
+      const raw = s.players.find(p => p.id === snake.id)?.nickname || `玩家${i + 1}`;
+      name.textContent = raw.length > 9 ? `${raw.slice(0, 9)}…` : raw;
+      const score = document.createElement('span');
+      score.className = 'snake-player-score';
+      score.textContent = snake.alive ? String(snake.score) : '等待重生';
+      row.append(dot, name, score);
+      container.appendChild(row);
+    });
   }
 
-  /** 等待 / 死亡重生 / 结束 的中央提示 */
-  private drawOverlay() {
-    const s = this.state;
-    const ctx = this.ctx;
+  private syncOverlay(ui: SnakeUi, s: SnakeView, now: number) {
+    let kind = '';
     let title = '';
     let sub = '';
-    // 弹框按钮区域每帧重算：不显示弹框时必须清空，否则点击会被拦掉
-    this.deadUi = null;
-
     if (s.status === 'waiting') {
-      // 无尽房是"进房即开局"的常开对局，根本没有"等待开始"这一态：
-      // 首帧快照正常在 1s 内到达，这段时间不弹提示（否则会让人误以为在等人）。
-      // 只有真连不上（>3s 没快照）才给个兜底文案，避免画面一片空白。
       if (s.variant === 'endless') {
-        if (performance.now() - this.startedAt < 3000) return;
-        title = '连接中…';
-        sub = '正在进入对局';
+        if (now - this.startedAt >= 3000) {
+          kind = 'notice'; title = '连接中…'; sub = '正在进入对局';
+        }
       } else {
-        title = '等待对局开始';
-        sub = '进入房间后会自动开局';
+        kind = 'notice'; title = '等待对局开始'; sub = '进入房间后会自动开局';
       }
     } else if (s.status === 'over') {
+      kind = 'notice';
       if (s.variant === 'multi') {
         const winner = s.snakes.find(x => x.id === s.winner);
         const name = winner ? (s.players.find(p => p.id === winner.id)?.nickname || '玩家') : '';
@@ -841,134 +975,44 @@ export default class Scene2DSnake {
       }
       sub = `本局最高 ${s.best} 分`;
     } else if (!s.alive) {
-      // 无尽模式：死亡后不再自动重生，弹框让玩家选「重生 / 退出」
       if (s.awaiting) {
-        this.drawDeathCard();
-        return;
+        kind = 'death';
+      } else {
+        kind = 'notice'; title = '已出局'; sub = '对局已结束';
       }
-      title = '已出局';
-      sub = '对局已结束';
     } else if (s.invincible > 0 && s.variant === 'endless') {
-      // 无敌保护提示：小字提示，不遮挡画面
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = 'bold 13px system-ui, sans-serif';
-      const text = `无敌 ${(s.invincible / 1000).toFixed(1)}s`;
-      const w = ctx.measureText(text).width + 26;
-      ctx.fillStyle = 'rgba(56,189,248,0.22)';
-      this.roundRect(ctx, (this.cssW - w) / 2, 16, w, 28, 14);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(96,165,250,0.55)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.fillStyle = '#bfe3ff';
-      ctx.fillText(text, this.cssW / 2, 30);
-      ctx.restore();
-      return;
+      kind = 'invincible';
+      sub = `无敌 ${(s.invincible / 1000).toFixed(1)}s`;
     }
 
-    if (!title) return;
+    const sig = `${kind}|${title}|${sub}`;
+    if (sig === this.overlaySig) return;
+    this.overlaySig = sig;
 
-    const w = Math.min(320, this.cssW - 40);
-    const h = sub ? 96 : 68;
-    const x = (this.cssW - w) / 2;
-    const y = (this.cssH - h) / 2;
-
-    ctx.save();
-    ctx.fillStyle = 'rgba(10,10,18,0.82)';
-    this.roundRect(ctx, x, y, w, h, 14);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = TEXT;
-    ctx.font = 'bold 20px system-ui, sans-serif';
-    ctx.fillText(title, this.cssW / 2, y + (sub ? 22 : 24));
-    if (sub) {
-      ctx.fillStyle = SUBTEXT;
-      ctx.font = '13px system-ui, sans-serif';
-      ctx.fillText(sub, this.cssW / 2, y + 54);
+    ui.overlay.replaceChildren();
+    ui.overlay.className = 'snake-overlay';
+    ui.overlay.style.display = kind ? '' : 'none';
+    ui.death.style.display = kind === 'death' ? '' : 'none';
+    if (kind === 'death') {
+      ui.deathScore.textContent = `本局得分 ${s.score} · 最高 ${s.best}`;
+    } else if (kind === 'invincible') {
+      ui.overlay.classList.add('snake-invincible');
+      ui.overlay.textContent = sub;
+    } else if (kind === 'notice') {
+      const card = document.createElement('div');
+      card.className = 'snake-notice-card';
+      const t = document.createElement('div');
+      t.className = 'snake-notice-title';
+      t.textContent = title;
+      card.appendChild(t);
+      if (sub) {
+        const d = document.createElement('div');
+        d.className = 'snake-notice-sub';
+        d.textContent = sub;
+        card.appendChild(d);
+      }
+      ui.overlay.appendChild(card);
     }
-    ctx.restore();
-  }
-
-  /**
-   * 无尽模式死亡弹框：重生 / 退出。
-   * 分数在服务端"死亡那一 tick"就写进排行榜了，这里只负责展示与让玩家选择。
-   */
-  private drawDeathCard() {
-    const s = this.state;
-    const ctx = this.ctx;
-    const w = Math.min(330, this.cssW - 40);
-    const h = 186;
-    const x = (this.cssW - w) / 2;
-    const y = (this.cssH - h) / 2;
-
-    ctx.save();
-    // 压暗背景，把注意力收到卡片上
-    ctx.fillStyle = 'rgba(6,8,14,0.55)';
-    ctx.fillRect(0, 0, this.cssW, this.cssH);
-
-    ctx.fillStyle = 'rgba(22,22,34,0.97)';
-    this.roundRect(ctx, x, y, w, h, 16);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = '#f5f7ff';
-    ctx.font = 'bold 20px system-ui, sans-serif';
-    ctx.fillText('已出局', this.cssW / 2, y + 22);
-
-    ctx.fillStyle = 'rgba(160,168,190,0.95)';
-    ctx.font = '13px system-ui, sans-serif';
-    ctx.fillText(`本局得分 ${s.score} · 最高 ${s.best}`, this.cssW / 2, y + 56);
-    ctx.fillText('分数已记入排行榜', this.cssW / 2, y + 78);
-
-    const bw = (w - 52) / 2;
-    const bh = 42;
-    const by = y + h - bh - 22;
-    const respawn: Rect = { x: x + 20, y: by, w: bw, h: bh };
-    const exit: Rect = { x: x + 32 + bw, y: by, w: bw, h: bh };
-    this.drawCardButton(respawn, '重生', true);
-    this.drawCardButton(exit, '退出', false);
-    this.deadUi = { respawn, exit };
-    ctx.restore();
-  }
-
-  private drawCardButton(r: Rect, label: string, primary: boolean) {
-    const ctx = this.ctx;
-    ctx.fillStyle = primary ? '#3b82f6' : 'rgba(255,255,255,0.09)';
-    this.roundRect(ctx, r.x, r.y, r.w, r.h, 10);
-    ctx.fill();
-    ctx.strokeStyle = primary ? 'rgba(147,197,253,0.85)' : 'rgba(255,255,255,0.16)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = primary ? '#ffffff' : 'rgba(226,232,248,0.92)';
-    ctx.font = 'bold 14px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 0.5);
-  }
-  private truncate(s: string, n: number) {
-    return s.length > n ? `${s.slice(0, n)}…` : s;
-  }
-
-  private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-    const radius = Math.max(0, Math.min(r, Math.min(w, h) / 2));
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.arcTo(x + w, y, x + w, y + h, radius);
-    ctx.arcTo(x + w, y + h, x, y + h, radius);
-    ctx.arcTo(x, y + h, x, y, radius);
-    ctx.arcTo(x, y, x + w, y, radius);
-    ctx.closePath();
   }
 }
 
