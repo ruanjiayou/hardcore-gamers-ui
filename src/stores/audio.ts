@@ -143,7 +143,8 @@ export default class AudioStore {
     this.saveLocalSettings();
   }
 
-  play(key: SfxKey) { audioPlayer.playSfx(key); }
+  /** 播放音效；minIntervalMs 用于给高频事件（实时快照等）做节流 */
+  play(key: SfxKey, minIntervalMs = 0) { audioPlayer.playSfx(key, minIntervalMs); }
   startBgm() { audioPlayer.playBgm(); }
   stopBgm() { audioPlayer.stopBgm(); }
   nextBgm() { audioPlayer.nextBgm(); }

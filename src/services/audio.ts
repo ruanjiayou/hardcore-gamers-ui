@@ -42,8 +42,17 @@ class AudioPlayer {
 
   private audio: GameAudio = { bgm: [], sfx: {} };
   private sfxCache = new Map<string, HTMLAudioElement>();
-  /** 正在播放的音效克隆体；静音时要逐个停掉，光调 volume 不够 */
+  /**
+   * 音效元素池：url -> 可复用的 HTMLAudioElement 列表。
+   * 之前每次播放都 cloneNode() 新建一个媒体元素，实时游戏每秒能触发十几次，
+   * 在手机上是实打实的媒体栈开销（还会撞上 iOS 同时存在的媒体元素上限）。
+   * 改成"取一个空闲的复用，用完还池"。
+   */
+  private sfxPool = new Map<string, HTMLAudioElement[]>();
+  /** 正在播放的音效；静音时要逐个停掉，光调 volume 不够 */
   private activeSfx = new Set<HTMLAudioElement>();
+  /** 每个音效 key 的最小播放间隔（ms）：防止同一音效被高频事件刷屏 */
+  private sfxLastAt = new Map<string, number>();
   private bgm: HTMLAudioElement | null = null;
   private bgmIndex = 0;
   private wantsBgm = false;
@@ -66,12 +75,15 @@ class AudioPlayer {
   private reload() {
     this.audio = resolveGameAudio(this.pack, this.gameId);
     this.sfxCache.clear();
+    this.sfxPool.clear();
+    this.sfxLastAt.clear();
     for (const url of Object.values(this.audio.sfx)) {
       if (!url) continue;
       const element = new Audio(url);
       element.preload = 'auto';
       element.volume = this.sfxVolume();
       this.sfxCache.set(url, element);
+      this.sfxPool.set(url, []);
     }
     if (this.wantsBgm) {
       if (this.bgm) {
@@ -187,23 +199,57 @@ class AudioPlayer {
   }
 
   /** 播放当前游戏的音效；未加载语音包 / 无对应 URL 时静默跳过。背景音乐开关不影响音效。 */
-  playSfx(key: SfxKey) {
+  playSfx(key: SfxKey, minIntervalMs = 0) {
     const url = this.audio.sfx?.[key];
     if (!url) return;
-    const base = this.sfxCache.get(url);
-    const audio = base ? (base.cloneNode() as HTMLAudioElement) : new Audio(url);
-    // cloneNode 会复制 base 的 volume，这里按当前总音量重新算操作音音量
+    // 同一音效的最小间隔：实时类事件（20Hz 快照等）高频触发时直接丢弃，
+    // 避免同一秒里播放十几次同一个音（手机上的媒体栈开销 + 听觉噪声）。
+    const now = performance.now();
+    if (minIntervalMs > 0) {
+      const last = this.sfxLastAt.get(key) ?? -Infinity;
+      if (now - last < minIntervalMs) return;
+    }
+    this.sfxLastAt.set(key, now);
+
+    const audio = this.takeSfx(url);
+    if (!audio) return;
     audio.volume = this.sfxVolume();
-    // 记录克隆体，静音时才能把它们一起停掉；播放结束/失败后自动移除
+    audio.currentTime = 0;
+    // 记录播放中的元素，静音时才能把它们一起停掉；播放结束/失败后归还池
     this.activeSfx.add(audio);
     const cleanup = () => {
       this.activeSfx.delete(audio);
       audio.onended = null;
       audio.onerror = null;
+      this.giveBackSfx(url, audio);
     };
     audio.onended = cleanup;
     audio.onerror = cleanup;
     audio.play().catch(cleanup);
+  }
+
+  /**
+   * 取一个可复用的音效元素：优先用池里空闲的，没有就从模板 clone 一个。
+   * 池上限很小（同一音效最多 4 个并发），保证不会无限创建媒体元素。
+   */
+  private takeSfx(url: string): HTMLAudioElement | null {
+    const pool = this.sfxPool.get(url);
+    if (pool) {
+      const reused = pool.pop();
+      if (reused) return reused;
+    }
+    const base = this.sfxCache.get(url);
+    if (!base) return null;
+    return base.cloneNode() as HTMLAudioElement;
+  }
+
+  /** 播放结束把元素还回池里（下一个音效直接复用，不再新建媒体元素） */
+  private giveBackSfx(url: string, audio: HTMLAudioElement) {
+    const pool = this.sfxPool.get(url);
+    if (!pool) return;
+    if (pool.length >= 4) return; // 并发上限，避免无限堆积
+    try { audio.pause(); } catch { /* ignore */ }
+    pool.push(audio);
   }
 }
 

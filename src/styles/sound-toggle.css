@@ -35,11 +35,10 @@
   border-radius: 21px;
   font-size: 17px;
   color: #e8e8f0;
-  background: rgba(24, 24, 36, 0.82);
+  /* 同 .hud-btn：浮在每帧重绘的 canvas 上，不能用 backdrop-filter（每帧重模糊） */
+  background: rgba(24, 24, 36, 0.93);
   border-color: rgba(255, 255, 255, 0.14);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
 .sound-toggle.hud-btn:hover {

@@ -39,6 +39,23 @@ const JOY_R_MAX = 78;
 const VIEW_MARGIN = 0.2;
 /** 高分屏上限：手机 3x DPI 下 2x 全屏填充很贵，1.5x 对高速运动画面足够清晰 */
 const DPR_MAX = 1.5;
+/**
+ * 自适应分辨率下限：掉帧时允许降到 1.0 / 0.75 再渲染，
+ * 保证低端机 / 大屏设备至少能维持稳定帧率。
+ */
+const DPR_MIN = 0.75;
+/** 帧间隔超过这个值算"掉帧"（60fps 预算 16.7ms，留 20% 余量） */
+const FRAME_BUDGET_MS = 20;
+/** 连续掉帧多少帧才降档（避免偶发抖动就降画质） */
+const DOWNGRADE_FRAMES = 45;
+/** 连续流畅多少帧才升档（升档比降档保守，防止来回抖） */
+const UPGRADE_FRAMES = 180;
+/**
+ * 目标渲染帧间隔（ms）：约 60fps。
+ * 120Hz 屏幕上按这个间隔只画一半的帧 —— 游戏本身是 60fps 节奏，
+ * 多画的那一半只会把 GPU/合成开销翻倍（移动端尤其明显），观感没有区别。
+ */
+const TARGET_FRAME_MS = 15.5;
 const TAU = Math.PI * 2;
 
 /**
@@ -132,6 +149,30 @@ export function clipSnakeSegments(pts: [number, number][], r: WorldRect): [numbe
 }
 
 /**
+ * 裁剪的零分配版本：把可见段的"起止下标"写进 out（[start, end, start, end…]），
+ * 返回段数。绘制时从 start-1 画到 end+1（两端各多带一个窗口外的点，路径才不断）。
+ * 每帧不再新建段数组与点数组。
+ */
+export function clipSnakeSegmentRanges(pts: [number, number][], r: WorldRect, out: number[]): number {
+  out.length = 0;
+  let prevIn = false;
+  let start = -1;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const inside = p[0] >= r.x0 && p[0] <= r.x1 && p[1] >= r.y0 && p[1] <= r.y1;
+    if (inside) {
+      if (!prevIn) start = i;
+    } else if (prevIn) {
+      out.push(start, i - 1);
+      start = -1;
+    }
+    prevIn = inside;
+  }
+  if (prevIn && start >= 0) out.push(start, pts.length - 1);
+  return out.length / 2;
+}
+
+/**
  * 摇杆 → 世界绝对朝向的换算（纯函数）：只依赖固定圆心和手指屏幕坐标，
  * 与镜头位置、蛇头坐标、世界大小毫无关系。圆心附近返回 null（不给方向）。
  */
@@ -166,6 +207,32 @@ interface Camera {
   y: number;
 }
 
+/**
+ * DOM 写入去重：只有值真的变了才写样式。
+ * 之前每帧无条件写 transform / opacity / display / background / class，
+ * 即使值没变也会让浏览器做一次样式失效 + 重绘（conic-gradient 那条尤其贵）。
+ */
+class DomWriter {
+  private styles = new WeakMap<HTMLElement, Map<string, string>>();
+  private classes = new WeakMap<HTMLElement, Map<string, boolean>>();
+
+  style(el: HTMLElement, prop: string, value: string) {
+    let m = this.styles.get(el);
+    if (!m) { m = new Map(); this.styles.set(el, m); }
+    if (m.get(prop) === value) return;
+    m.set(prop, value);
+    (el.style as unknown as Record<string, string>)[prop] = value;
+  }
+
+  cls(el: HTMLElement, name: string, on: boolean) {
+    let m = this.classes.get(el);
+    if (!m) { m = new Map(); this.classes.set(el, m); }
+    if (m.get(name) === on) return;
+    m.set(name, on);
+    el.classList.toggle(name, on);
+  }
+}
+
 interface DispSnake {
   x: number;
   y: number;
@@ -195,6 +262,8 @@ interface SnakeUi {
   deathScore: HTMLDivElement;
   deathRespawn: HTMLButtonElement;
   deathExit: HTMLButtonElement;
+  /** 可选的帧率诊断浮层（?fps=1 开启） */
+  fps: HTMLDivElement | null;
 }
 
 export default class Scene2DSnake {
@@ -213,6 +282,9 @@ export default class Scene2DSnake {
   private raf = 0;
   private ro: ResizeObserver | null = null;
   private lastFrame = 0;
+  /** 帧率节流用：上一次 rAF 的时间戳与累加器 */
+  private lastLoopAt = 0;
+  private frameAccum = 0;
   private startedAt = 0;
   /** 远端蛇的平滑显示状态 */
   private disp = new Map<string, DispSnake>();
@@ -228,6 +300,25 @@ export default class Scene2DSnake {
   private overlaySig = '';
   private boostLabelSig = '';
   private hudPlayersSig = '';
+  /** DOM 写入去重器 */
+  private dom = new DomWriter();
+  /** 当前渲染缩放（DPR 上限）：掉帧时自动下调，恢复后回升 */
+  private renderScale = DPR_MAX;
+  /** 上一帧到本帧的间隔（ms）：用来判断是否掉帧 */
+  private lastFrameGap = 0;
+  /** 连续掉帧 / 连续流畅的帧数（自适应分辨率的迟滞计数） */
+  private slowFrames = 0;
+  private fastFrames = 0;
+  /** 路径裁剪用的复用缓冲：避免每帧新建段数组 */
+  private segRanges: number[] = [];
+  /** 昵称索引：避免每条蛇每帧都线性查 players */
+  private nameMap = new Map<string, string>();
+  /** 存活蛇 id 集合（复用，避免每帧新建） */
+  private aliveIds = new Set<string>();
+  /** 帧率诊断：统计窗口内的帧数 */
+  private fpsFrames = 0;
+  private fpsSince = 0;
+  private fpsText = '';
 
   // 输入状态（全部是屏幕坐标，与镜头/世界无关）
   /** 正在拖摇杆的那根手指 */
@@ -361,12 +452,23 @@ export default class Scene2DSnake {
     death.append(deathTitle, deathScore, deathNote, deathActions);
 
     root.append(hud, minimap, boost, joystick, hint, overlay, death);
+
+    // 帧率诊断浮层：URL 带 ?fps=1 才显示，方便在真机上核对帧率/画质档位
+    let fps: HTMLDivElement | null = null;
+    try {
+      if (new URLSearchParams(window.location.search).get('fps') === '1') {
+        fps = el('div', 'snake-fps');
+        fps.textContent = 'fps --';
+        root.appendChild(fps);
+      }
+    } catch { /* ignore */ }
+
     parent.appendChild(root);
     this.ui = {
       root, hud, hudMode, hudScore, hudBest, hudPlayers,
       minimap, minimapDot, boost, boostRing, boostLabel,
       joystick, joyBase, joyKnob, hint, overlay,
-      death, deathScore, deathRespawn, deathExit,
+      death, deathScore, deathRespawn, deathExit, fps,
     };
 
     joystick.addEventListener('pointerdown', this.onJoyDown);
@@ -399,12 +501,39 @@ export default class Scene2DSnake {
     this.cssW = Math.max(1, Math.round(rect.width || 800));
     this.cssH = Math.max(1, Math.round(rect.height || 600));
     this.rectCache = { left: rect.left, top: rect.top };
-    this.dpr = Math.min(DPR_MAX, window.devicePixelRatio || 1);
+    this.dpr = Math.min(this.renderScale, window.devicePixelRatio || 1);
     this.canvas.width = Math.round(this.cssW * this.dpr);
     this.canvas.height = Math.round(this.cssH * this.dpr);
     this.foodSprite = null;
     this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(this.cssW / 900, this.cssH / 720)));
     this.layoutUi();
+  }
+
+  /**
+   * 自适应分辨率：低端机 / 大屏设备上全屏 canvas 的光栅化是主要开销，
+   * 掉帧时把渲染缩放降一档（DPR_MAX → 1.25 → 1.0 → 0.75），
+   * 帧率恢复后再逐步升回去。迟滞计数避免来回抖动。
+   */
+  private checkQuality() {
+    const gap = this.lastFrameGap;
+    if (gap > FRAME_BUDGET_MS) {
+      this.slowFrames++;
+      this.fastFrames = 0;
+    } else if (gap > 0 && gap < FRAME_BUDGET_MS - 2) {
+      this.fastFrames++;
+      this.slowFrames = 0;
+    }
+    if (this.slowFrames >= DOWNGRADE_FRAMES && this.renderScale > DPR_MIN) {
+      this.renderScale = Math.max(DPR_MIN, this.renderScale - 0.25);
+      this.slowFrames = 0;
+      this.fastFrames = 0;
+      this.resize();
+    } else if (this.fastFrames >= UPGRADE_FRAMES && this.renderScale < DPR_MAX) {
+      this.renderScale = Math.min(DPR_MAX, this.renderScale + 0.25);
+      this.fastFrames = 0;
+      this.slowFrames = 0;
+      this.resize();
+    }
   }
 
   /** DOM 控件的尺寸/位置依赖画布尺寸，resize 时放一次；位置连续变化的部分每帧写 transform */
@@ -428,6 +557,19 @@ export default class Scene2DSnake {
 
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
+    const now = performance.now();
+    if (!this.lastLoopAt) {
+      this.lastLoopAt = now;
+      this.render();
+      return;
+    }
+    let delta = now - this.lastLoopAt;
+    this.lastLoopAt = now;
+    // 切后台再回来时不要"补帧"，直接丢掉这一段
+    if (delta > 250) delta = TARGET_FRAME_MS;
+    this.frameAccum += delta;
+    if (this.frameAccum < TARGET_FRAME_MS) return;
+    this.frameAccum = Math.max(0, this.frameAccum - TARGET_FRAME_MS);
     this.render();
   };
 
@@ -558,14 +700,14 @@ export default class Scene2DSnake {
     const ctx = this.ctx;
     const now = performance.now();
     const dt = this.lastFrame ? Math.min(64, now - this.lastFrame) : 16;
+    this.lastFrameGap = this.lastFrame ? now - this.lastFrame : 0;
     this.lastFrame = now;
+    this.checkQuality();
 
     // 每帧重新取视图：本地预测按"距快照经过的时间"前推，必须逐帧算才顺滑
     this.state = this.logic.view();
 
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.fillStyle = BG;
-    ctx.fillRect(0, 0, this.cssW, this.cssH);
 
     this.updateCamera(dt);
     this.smoothRemote(dt);
@@ -618,10 +760,8 @@ export default class Scene2DSnake {
   /** 远端蛇：向最新快照缓动，把 20Hz 补成 60fps（自己的蛇走本地预测，不参与） */
   private smoothRemote(dt: number) {
     const k = Math.min(1, dt / SMOOTH_LAG);
-    const alive = new Set<string>();
     for (const s of this.state.snakes) {
       if (s.mine) continue;
-      alive.add(s.id);
       const cur = this.disp.get(s.id);
       if (!cur || cur.pts.length !== s.pts.length) {
         this.disp.set(s.id, { x: s.x, y: s.y, angle: s.angle, pts: s.pts.map(p => [p[0], p[1]] as [number, number]) });
@@ -636,7 +776,12 @@ export default class Scene2DSnake {
         cur.pts[i][1] += (s.pts[i][1] - cur.pts[i][1]) * k;
       }
     }
-    for (const id of [...this.disp.keys()]) if (!alive.has(id)) this.disp.delete(id);
+    // 回收已经离场的蛇：复用同一个 Set（clear + 重新填），避免每帧新建数组/集合
+    this.aliveIds.clear();
+    for (const s of this.state.snakes) this.aliveIds.add(s.id);
+    if (this.disp.size !== this.aliveIds.size) {
+      for (const id of [...this.disp.keys()]) if (!this.aliveIds.has(id)) this.disp.delete(id);
+    }
   }
 
   private drawWorld(view: WorldRect) {
@@ -647,11 +792,18 @@ export default class Scene2DSnake {
     const x1 = this.sx(w);
     const y1 = this.sy(h);
 
+    // 先整屏铺"世界外"底色，再在世界矩形上铺"世界内"底色：
+    // 两次填充覆盖全屏，没有重叠区域，比"全屏 + 4 块世界外矩形"少 3 次大面积填充。
     ctx.fillStyle = OUTSIDE;
-    if (x0 > 0) ctx.fillRect(0, 0, x0, this.cssH);
-    if (y0 > 0) ctx.fillRect(0, 0, this.cssW, y0);
-    if (x1 < this.cssW) ctx.fillRect(x1, 0, this.cssW - x1, this.cssH);
-    if (y1 < this.cssH) ctx.fillRect(0, y1, this.cssW, this.cssH - y1);
+    ctx.fillRect(0, 0, this.cssW, this.cssH);
+    if (x1 > 0 && y1 > 0 && x0 < this.cssW && y0 < this.cssH) {
+      ctx.fillStyle = BG;
+      ctx.fillRect(
+        Math.max(0, x0), Math.max(0, y0),
+        Math.min(this.cssW, x1) - Math.max(0, x0),
+        Math.min(this.cssH, y1) - Math.max(0, y0),
+      );
+    }
 
     const step = 100;
     const left = view.x0;
@@ -740,17 +892,21 @@ export default class Scene2DSnake {
     const radius = this.state.radius * this.zoom;
     const margin = radius / this.zoom * 2;
 
+    // 昵称索引：避免每条蛇每帧线性查 players
+    this.nameMap.clear();
+    for (const p of this.state.players) this.nameMap.set(p.id, p.nickname);
+
     this.state.snakes.forEach((snake, idx) => {
       const color = SNAKE_COLORS[idx % SNAKE_COLORS.length];
       const disp = snake.mine ? null : this.disp.get(snake.id);
       const pts = disp ? disp.pts : snake.pts;
       if (!pts.length) return;
 
-      const segments = clipSnakeSegments(pts, {
+      const segCount = clipSnakeSegmentRanges(pts, {
         x0: view.x0 - margin, y0: view.y0 - margin,
         x1: view.x1 + margin, y1: view.y1 + margin,
-      });
-      if (!segments.length) return;
+      }, this.segRanges);
+      if (!segCount) return;
 
       const head = pts[0];
       const hx = this.sx(head[0]);
@@ -764,9 +920,12 @@ export default class Scene2DSnake {
       ctx.globalAlpha = alpha;
 
       ctx.beginPath();
-      for (const seg of segments) {
-        ctx.moveTo(this.sx(seg[0][0]), this.sy(seg[0][1]));
-        for (let i = 1; i < seg.length; i++) ctx.lineTo(this.sx(seg[i][0]), this.sy(seg[i][1]));
+      for (let s = 0; s < segCount; s++) {
+        const from = Math.max(0, this.segRanges[s * 2] - 1);
+        const to = Math.min(pts.length - 1, this.segRanges[s * 2 + 1] + 1);
+        if (to <= from) continue;
+        ctx.moveTo(this.sx(pts[from][0]), this.sy(pts[from][1]));
+        for (let i = from + 1; i <= to; i++) ctx.lineTo(this.sx(pts[i][0]), this.sy(pts[i][1]));
       }
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
@@ -776,9 +935,12 @@ export default class Scene2DSnake {
       ctx.strokeStyle = color;
       ctx.lineWidth = radius * 2;
       ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,0.13)';
-      ctx.lineWidth = radius * 0.8;
-      ctx.stroke();
+      // 高光只给玩家自己那条：远端蛇省掉一整遍宽描边（多人局里这是笔不小的光栅开销）
+      if (snake.mine) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.13)';
+        ctx.lineWidth = radius * 0.8;
+        ctx.stroke();
+      }
 
       if (headVisible && snake.boosting && snake.alive) {
         ctx.beginPath();
@@ -827,7 +989,7 @@ export default class Scene2DSnake {
 
         ctx.globalAlpha = 1;
         if (!snake.mine) {
-          const name = this.state.players.find(p => p.id === snake.id)?.nickname;
+          const name = this.nameMap.get(snake.id);
           if (name) {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
@@ -844,7 +1006,7 @@ export default class Scene2DSnake {
     });
   }
 
-  // ===== DOM UI 同步（同一个 rAF 内；连续量每帧写，静态量按签名脏检查） =====
+  // ===== DOM UI 同步（同一个 rAF 内；所有写入都做去重，值没变就不碰 DOM） =====
   private syncUi(now: number) {
     const ui = this.ui;
     if (!ui) return;
@@ -871,33 +1033,38 @@ export default class Scene2DSnake {
       this.hudPlayersSig = playersSig;
     }
 
-    // --- 小地图：只画自己，白点位置每帧更新（transform 很便宜） ---
+    // --- 小地图：只标自己，白点位置变了才写 transform ---
     const showMap = !!s.w && !!s.h && s.status !== 'waiting';
-    ui.minimap.style.display = showMap ? '' : 'none';
+    this.dom.style(ui.minimap, 'display', showMap ? '' : 'none');
     if (showMap) {
       const me = s.snakes.find(snake => snake.mine);
       const m = snakeMinimapLayout(this.cssW, this.cssH);
       if (me && m.w > 12 && m.h > 12) {
         const [px, py] = snakeMinimapSelfPoint(this.cssW, this.cssH, s.w, s.h, me.x, me.y);
         // 白点绝对定位在 minimap 容器内：换算成容器内的相对偏移（snakeMinimapSelfPoint 已含 6px 内边距）
-        ui.minimapDot.style.transform = `translate(${(px - m.x).toFixed(1)}px, ${(py - m.y).toFixed(1)}px) translate(-50%, -50%)`;
-        ui.minimapDot.style.display = '';
+        // 量化到 0.5px：肉眼无差别，但能少写很多次 transform
+        const dx = Math.round((px - m.x) * 2) / 2;
+        const dy = Math.round((py - m.y) * 2) / 2;
+        this.dom.style(ui.minimapDot, 'transform', `translate(${dx}px, ${dy}px) translate(-50%, -50%)`);
+        this.dom.style(ui.minimapDot, 'display', '');
       } else {
-        ui.minimapDot.style.display = 'none';
+        this.dom.style(ui.minimapDot, 'display', 'none');
       }
     }
 
-    // --- 加速按钮：冷却环用 conic-gradient，标签按 0.1s 粒度脏检查 ---
-    ui.boost.style.display = showControls ? '' : 'none';
+    // --- 加速按钮：冷却环用 conic-gradient，量化到 2° 且只在变化时写 ---
+    this.dom.style(ui.boost, 'display', showControls ? '' : 'none');
     if (showControls) {
       const cd = s.boostCd;
       const ready = cd <= 0;
       const ratio = ready ? 0 : Math.max(0, Math.min(1, cd / SNAKE_BOOST_CD_MS));
-      ui.boost.classList.toggle('ready', ready);
-      ui.boost.classList.toggle('boosting', !!s.boosting);
-      ui.boostRing.style.background = ready
+      this.dom.cls(ui.boost, 'ready', ready);
+      this.dom.cls(ui.boost, 'boosting', !!s.boosting);
+      // conic-gradient 字符串每帧重写会触发一次样式重算 + 重绘，量化到 2° 再去重
+      const deg = ready ? 0 : Math.round((1 - ratio) * 360 / 2) * 2;
+      this.dom.style(ui.boostRing, 'background', ready
         ? 'rgba(56,189,248,0.22)'
-        : `conic-gradient(rgba(56,189,248,0.55) ${((1 - ratio) * 360).toFixed(1)}deg, rgba(24,24,36,0.82) 0deg)`;
+        : `conic-gradient(rgba(56,189,248,0.55) ${deg}deg, rgba(24,24,36,0.82) 0deg)`);
       const label = ready ? '加速' : (cd >= 10_000 ? String(Math.ceil(cd / 1000)) : (cd / 1000).toFixed(1));
       if (label !== this.boostLabelSig) {
         ui.boostLabel.textContent = label;
@@ -906,29 +1073,53 @@ export default class Scene2DSnake {
     }
 
     // --- 摇杆：手柄只由 joyKnob（手指输入）决定；松手回中，绝不镜像蛇朝向 ---
-    ui.joystick.style.display = showControls ? '' : 'none';
+    this.dom.style(ui.joystick, 'display', showControls ? '' : 'none');
     if (showControls) {
+      // 没在拖动时手柄停在圆心（写一次即可，靠 CSS transition 平滑回中）；
+      // 拖动时才每帧跟随手指。
       const j = this.joystick();
-      const off = joystickKnobOffset(j, this.joyKnob);
-      ui.joyKnob.style.transform = `translate(${(j.r + off.dx).toFixed(1)}px, ${(j.r + off.dy).toFixed(1)}px) translate(-50%, -50%)`;
-      ui.joystick.classList.toggle('active', this.joyPointerId !== null && this.touchLocked);
+      if (this.joyKnob) {
+        const off = joystickKnobOffset(j, this.joyKnob);
+        this.dom.style(ui.joyKnob, 'transform', `translate(${(j.r + off.dx).toFixed(1)}px, ${(j.r + off.dy).toFixed(1)}px) translate(-50%, -50%)`);
+      } else {
+        this.dom.style(ui.joyKnob, 'transform', `translate(${j.r}px, ${j.r}px) translate(-50%, -50%)`);
+      }
+      this.dom.cls(ui.joystick, 'active', this.joyPointerId !== null && this.touchLocked);
     } else if (this.joyPointerId !== null) {
       // 死亡瞬间松开输入，避免复活后手柄卡在旧位置
       this.deathReset();
     }
 
-    // --- 开场提示：7s 淡出（连续量，每帧写 opacity） ---
+    // --- 开场提示：7s 淡出（透明度量化到 0.05，变化时才写） ---
     if (s.status === 'playing' && s.alive) {
       const age = now - this.startedAt;
       const alpha = age > 7000 ? 0 : (age < 5500 ? 1 : Math.max(0, 1 - (age - 5500) / 1500));
-      ui.hint.style.opacity = alpha.toFixed(3);
-      ui.hint.style.display = alpha > 0 ? '' : 'none';
+      const q = Math.round(alpha * 20) / 20;
+      this.dom.style(ui.hint, 'opacity', q.toFixed(2));
+      this.dom.style(ui.hint, 'display', q > 0 ? '' : 'none');
     } else {
-      ui.hint.style.display = 'none';
+      this.dom.style(ui.hint, 'display', 'none');
     }
 
     // --- 中央提示 / 死亡卡片：按状态签名切换 ---
     this.syncOverlay(ui, s, now);
+
+    // --- 帧率诊断（?fps=1 才显示）：fps / 帧耗时 / 当前画质档位 ---
+    if (ui.fps) {
+      this.fpsFrames++;
+      if (!this.fpsSince) this.fpsSince = now;
+      const span = now - this.fpsSince;
+      if (span >= 500) {
+        const fps = Math.round(this.fpsFrames * 1000 / span);
+        const text = `fps ${fps} · ${this.lastFrameGap.toFixed(1)}ms · 画质 ${this.renderScale.toFixed(2)}x`;
+        if (text !== this.fpsText) {
+          this.fpsText = text;
+          ui.fps.textContent = text;
+        }
+        this.fpsFrames = 0;
+        this.fpsSince = now;
+      }
+    }
   }
 
   private renderPlayers(container: HTMLDivElement, s: SnakeView) {

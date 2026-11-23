@@ -174,6 +174,21 @@
   box-sizing: border-box;
 }
 
+/* 帧率诊断浮层：URL 带 ?fps=1 时显示，用来在真机上核对帧率与画质档位 */
+.snake-fps {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(12, 12, 22, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #9ae6b4;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* 左上角 HUD */
 .snake-hud {
   position: absolute;
@@ -1028,13 +1043,13 @@ body.immersive-mode .navbar {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(24, 24, 36, 0.82);
+  /* 这里刻意不用 backdrop-filter：按钮浮在每帧都在重绘的 canvas 上，
+     毛玻璃会让浏览器每帧重新模糊一次背景（移动端尤其贵）。改成不透明半透明底色。 */
+  background: rgba(24, 24, 36, 0.93);
   color: #e8e8f0;
   border: 1px solid rgba(255, 255, 255, 0.14);
   font-size: 14px;
   font-weight: 700;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
@@ -1069,11 +1084,10 @@ body.immersive-mode .navbar {
   gap: 8px;
   padding: 8px;
   border-radius: 14px;
-  background: rgba(16, 16, 26, 0.92);
+  background: rgba(16, 16, 26, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  /* 同 .hud-btn：抽屉也盖在动画 canvas 上，不用 backdrop-filter（每帧重模糊） */
   overflow: hidden;
 }
 

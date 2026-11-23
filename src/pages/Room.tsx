@@ -115,7 +115,11 @@ export const RoomPage = observer(() => {
     store.room.changePlayer(data);
     if (data.field === 'score' && Number(data.value) > 0) store.audio.play('collect');
   }
-  const onPlayerAction = () => {
+  const onPlayerAction = (data?: any) => {
+    // 实时游戏（贪吃蛇）用同一个事件广播 20Hz 的局面快照，不是"落子"。
+    // 之前这里每 90ms 播一次 move 音效 → 每秒十几次媒体元素创建/播放，
+    // 在手机上是很实在的开销（同时也是一片噪声）。回合制游戏才播落子音。
+    if (data?.snake) return;
     const now = performance.now();
     if (now - lastMoveSfxAt < 90) return;
     lastMoveSfxAt = now;

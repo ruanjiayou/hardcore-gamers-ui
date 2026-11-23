@@ -164,6 +164,8 @@ export default class LogicSnake extends EventEmitter {
   private hasAim = false;
   /** 渲染校正量（像素 / 弧度）：新快照把蛇头往回拉时，用它把跳变摊平 */
   private corr = { x: 0, y: 0, a: 0 };
+  /** 上一次校正量衰减的时间戳：保证一帧只衰减一次 */
+  private lastDecayAt = 0;
   /** 最近几次快照间隔（ms），用于识别慢网并自适应放宽预测 */
   private gaps: number[] = [];
   private avgGap = 0;
@@ -456,17 +458,22 @@ export default class LogicSnake extends EventEmitter {
     const mySnake = this.snakes.find(s => s.mine);
     const pred = this.predict(now);
 
-    // 校正量逐帧衰减：新快照带来的几像素回拉被摊到 ~5 帧里，视觉上是连续的
-    if (this.corr.x || this.corr.y || this.corr.a) {
-      // 慢网时衰减更慢：本地位置保持得更久，不被迟到的快照硬拽回去
-      const k = this.stale ? 0.86 : 0.7;
-      this.corr.x *= k;
-      this.corr.y *= k;
-      this.corr.a *= k;
-      if (Math.abs(this.corr.x) < 0.05 && Math.abs(this.corr.y) < 0.05 && Math.abs(this.corr.a) < 0.0005) {
-        this.corr.x = 0;
-        this.corr.y = 0;
-        this.corr.a = 0;
+    // 校正量逐帧衰减：新快照带来的几像素回拉被摊到 ~5 帧里，视觉上是连续的。
+    // 按时间戳节流：渲染循环每帧会调一次 view()，快照到达时又会调一次，
+    // 不节流的话校正量会被衰减两次（回拉变得突兀，蛇会"弹一下"）。
+    if (now - this.lastDecayAt >= 4) {
+      this.lastDecayAt = now;
+      if (this.corr.x || this.corr.y || this.corr.a) {
+        // 慢网时衰减更慢：本地位置保持得更久，不被迟到的快照硬拽回去
+        const k = this.stale ? 0.86 : 0.7;
+        this.corr.x *= k;
+        this.corr.y *= k;
+        this.corr.a *= k;
+        if (Math.abs(this.corr.x) < 0.05 && Math.abs(this.corr.y) < 0.05 && Math.abs(this.corr.a) < 0.0005) {
+          this.corr.x = 0;
+          this.corr.y = 0;
+          this.corr.a = 0;
+        }
       }
     }
 
@@ -491,11 +498,22 @@ export default class LogicSnake extends EventEmitter {
       };
     });
 
-    // 预测已经吃到的食物先本地隐藏，避免"蛇头压过食物却还在"的穿模观感
+    // 预测已经吃到的食物先本地隐藏，避免"蛇头压过食物却还在"的穿模观感。
+    // 先做一次 O(n) 扫描判断附近有没有食物：绝大多数帧没有，就直接把原数组交出去，
+    // 省掉每帧一次 70 元素的数组复制（渲染循环每秒要跑 60 次）。
     let food = this.food;
     if (pred && mySnake?.alive) {
       const limit = SNAKE_HEAD_RADIUS + SNAKE_FOOD_RADIUS;
-      food = this.food.filter(([fx, fy]) => Math.hypot(fx - headX, fy - headY) > limit);
+      const limit2 = limit * limit;
+      let near = false;
+      for (let i = 0; i < this.food.length; i++) {
+        const dx = this.food[i][0] - headX;
+        const dy = this.food[i][1] - headY;
+        if (dx * dx + dy * dy <= limit2) { near = true; break; }
+      }
+      if (near) {
+        food = this.food.filter(([fx, fy]) => Math.hypot(fx - headX, fy - headY) > limit);
+      }
     }
 
     return {
