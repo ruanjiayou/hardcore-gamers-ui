@@ -782,6 +782,12 @@
   margin-left: 0;
 }
 
+/* 房主徽标：私有房显示「房主」，官方房显示「临时房主」（SB-039） */
+.player-item .badge.owner {
+  background: #374151;
+  color: #fff;
+}
+
 .chat {
   flex: 1;
   display: flex;

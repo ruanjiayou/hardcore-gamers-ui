@@ -52,6 +52,7 @@ export const PlayerList = observer(({
 
   const ownerId = store.room.roomInfo?.owner_id;
   const isOwner = store.game.player_id === ownerId;
+  const isOfficialRoom = !!store.room.roomInfo?.official;
   const canKick = isOwner && store.room.roomInfo?.status === constant.ROOM.STATUS.waiting;
 
   return (
@@ -78,8 +79,15 @@ export const PlayerList = observer(({
                 {team && <span className="badge team">{team}</span>}
                 {player.nickname || '玩家'}
                 {tag && <span className="badge">{tag}</span>}
+                {/* 官方房只有临时房主（SB-039），标出来免得误以为能解散/踢人到底 */}
+                {player._id === ownerId && (
+                  <span className="badge owner">{isOfficialRoom ? '临时房主' : '房主'}</span>
+                )}
               </span>
-              {canKick && !isMe && <span className='danger' onClick={() => kickOut(room_id, player._id)}>踢出</span>}
+              {/* 私有房主不可被踢（要转让或解散，SB-039）；官方房只有临时房主，可以踢 */}
+              {canKick && !isMe && !(player._id === ownerId && !isOfficialRoom) && (
+                <span className='danger' onClick={() => kickOut(room_id, player._id)}>踢出</span>
+              )}
             </div>
           );
         })}
