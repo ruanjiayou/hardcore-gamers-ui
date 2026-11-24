@@ -124,11 +124,14 @@ export interface WorldRect {
   y1: number;
 }
 
-/** 微缩地图在画布右上角（避让右上角设置按钮，放在它下方） */
-export function snakeMinimapLayout(cssW: number, cssH: number) {
-  const w = Math.max(88, Math.min(160, Math.round(cssW * 0.28)));
+/**
+ * 微缩地图放在**左上角关闭键下方**（右上角整块让给排行榜）。
+ * topInset 是刘海屏的安全区高度：全屏对局时画布顶边 = 屏幕顶边，必须让开。
+ */
+export function snakeMinimapLayout(cssW: number, cssH: number, topInset = 0) {
+  const w = Math.max(88, Math.min(150, Math.round(cssW * 0.26)));
   const h = Math.round(w * 0.72);
-  return { x: Math.max(8, cssW - w - 12), y: 64, w, h };
+  return { x: 12, y: topInset + 62, w, h };
 }
 
 /** 世界坐标 → 微缩地图坐标（纯函数，便于校验"自己的位置"） */
@@ -137,8 +140,8 @@ export function minimapPoint(layout: { x: number; y: number; w: number; h: numbe
 }
 
 /** 小地图只标自己：入参里没有食物/镜头/其他玩家，位置完全由自己的世界坐标决定 */
-export function snakeMinimapSelfPoint(cssW: number, cssH: number, worldW: number, worldH: number, x: number, y: number) {
-  const m = snakeMinimapLayout(cssW, cssH);
+export function snakeMinimapSelfPoint(cssW: number, cssH: number, worldW: number, worldH: number, x: number, y: number, topInset = 0) {
+  const m = snakeMinimapLayout(cssW, cssH, topInset);
   return minimapPoint({ x: m.x + 6, y: m.y + 6, w: m.w - 12, h: m.h - 12 }, worldW, worldH, x, y);
 }
 
@@ -349,6 +352,8 @@ export default class Scene2DSnake {
   private dom = new DomWriter();
   /** 当前渲染缩放（DPR 上限）：掉帧时自动下调，恢复后回升 */
   private renderScale = DPR_MAX;
+  /** 刘海屏顶部安全区（px）：全屏对局里画布顶边 = 屏幕顶边，DOM 控件要给状态栏/刘海让位 */
+  private safeTop = 0;
   /** 上一帧到本帧的间隔（ms）：用来判断是否掉帧 */
   private lastFrameGap = 0;
   /** 连续掉帧 / 连续流畅的帧数（自适应分辨率的迟滞计数） */
@@ -585,8 +590,9 @@ export default class Scene2DSnake {
   private layoutUi() {
     const ui = this.ui;
     if (!ui) return;
+    this.measureSafeTop();
     const { boost, joy } = snakeControlsLayout(this.cssW, this.cssH);
-    const m = snakeMinimapLayout(this.cssW, this.cssH);
+    const m = snakeMinimapLayout(this.cssW, this.cssH, this.safeTop);
     Object.assign(ui.joystick.style, {
       left: `${joy.x - joy.r}px`, top: `${joy.y - joy.r}px`,
       width: `${joy.r * 2}px`, height: `${joy.r * 2}px`,
@@ -598,6 +604,20 @@ export default class Scene2DSnake {
     Object.assign(ui.minimap.style, {
       left: `${m.x}px`, top: `${m.y}px`, width: `${m.w}px`, height: `${m.h}px`,
     });
+  }
+
+  /**
+   * 读一次刘海屏顶部安全区高度。
+   * CSS env() 只能在样式里用，这里用一个 height:env(...) 的探针把它量成像素，
+   * 免得为了一个数值在 JS 里硬编码机型。resize 时读一次即可，不算热点。
+   */
+  private measureSafeTop() {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;left:-9999px;top:0;width:0;'
+      + 'height:env(safe-area-inset-top, 0px);pointer-events:none;visibility:hidden';
+    document.body.appendChild(probe);
+    this.safeTop = Math.round(probe.getBoundingClientRect().height) || 0;
+    probe.remove();
   }
 
   private loop = () => {
@@ -658,7 +678,7 @@ export default class Scene2DSnake {
 
   /** 鼠标：以屏幕中心为固定参考点给绝对朝向；小地图区域跳过，避免误改方向 */
   private aimFromPointer(px: number, py: number) {
-    const m = snakeMinimapLayout(this.cssW, this.cssH);
+    const m = snakeMinimapLayout(this.cssW, this.cssH, this.safeTop);
     if (px >= m.x - 8 && px <= m.x + m.w + 8 && py >= m.y - 8 && py <= m.y + m.h + 8) return;
     const dx = px - this.cssW / 2;
     const dy = py - this.cssH / 2;
@@ -1134,13 +1154,15 @@ export default class Scene2DSnake {
     const mode = s.variant === 'endless' ? '无尽挑战' : '多人对战';
     const hudSig = `${mode}|${s.score}|${s.best}`;
     if (hudSig !== this.hudSig) {
-      ui.hudMode.textContent = mode;
+      ui.hudMode.textContent = `🏆 排行榜 · ${mode}`;
       ui.hudScore.textContent = String(s.score);
       ui.hudBest.textContent = `最高 ${s.best}`;
       this.hudSig = hudSig;
     }
+    // 排行榜签名：按分数排序后取前 10（分数/生死/名字任一变化才重建 DOM）
+    const ranked = [...s.snakes].sort((a, b) => b.score - a.score);
     const playersSig = s.snakes.length > 1
-      ? s.snakes.slice(0, 4).map(snake => {
+      ? ranked.slice(0, 10).map(snake => {
         const name = s.players.find(p => p.id === snake.id)?.nickname || '';
         return `${snake.id}:${name}:${snake.score}:${snake.alive ? 1 : 0}`;
       }).join('|')
@@ -1155,9 +1177,9 @@ export default class Scene2DSnake {
     this.dom.style(ui.minimap, 'display', showMap ? '' : 'none');
     if (showMap) {
       const me = s.snakes.find(snake => snake.mine);
-      const m = snakeMinimapLayout(this.cssW, this.cssH);
+      const m = snakeMinimapLayout(this.cssW, this.cssH, this.safeTop);
       if (me && m.w > 12 && m.h > 12) {
-        const [px, py] = snakeMinimapSelfPoint(this.cssW, this.cssH, s.w, s.h, me.x, me.y);
+        const [px, py] = snakeMinimapSelfPoint(this.cssW, this.cssH, s.w, s.h, me.x, me.y, this.safeTop);
         // 白点绝对定位在 minimap 容器内：换算成容器内的相对偏移（snakeMinimapSelfPoint 已含 6px 内边距）
         // 量化到 0.5px：肉眼无差别，但能少写很多次 transform
         const dx = Math.round((px - m.x) * 2) / 2;
@@ -1242,9 +1264,20 @@ export default class Scene2DSnake {
   private renderPlayers(container: HTMLDivElement, s: SnakeView) {
     container.replaceChildren();
     if (s.snakes.length <= 1) return;
-    s.snakes.slice(0, 4).forEach((snake, i) => {
+    // 排行榜：按分数从高到低取前 10 名（自己一定在里面 —— 否则看不到自己的名次）
+    const ranked = [...s.snakes].sort((a, b) => b.score - a.score);
+    const top = ranked.slice(0, 10);
+    const me = ranked.find(x => x.mine);
+    if (me && !top.includes(me)) top[top.length - 1] = me;
+    top.forEach((snake, i) => {
+      const rank = ranked.indexOf(snake) + 1;
       const row = document.createElement('div');
-      row.className = 'snake-player-row' + (snake.alive ? '' : ' dead');
+      row.className = 'snake-player-row'
+        + (snake.mine ? ' me' : '')
+        + (snake.alive ? '' : ' dead');
+      const rankEl = document.createElement('span');
+      rankEl.className = 'snake-player-rank';
+      rankEl.textContent = String(rank);
       const dot = document.createElement('span');
       dot.className = 'snake-player-dot';
       dot.style.background = snake.team
@@ -1255,12 +1288,12 @@ export default class Scene2DSnake {
       const raw = s.players.find(p => p.id === snake.id)?.nickname || `玩家${i + 1}`;
       // 团队模式：名字前挂队伍标签
       name.textContent = snake.team
-        ? `${snake.team}·${raw.length > 9 ? `${raw.slice(0, 9)}…` : raw}`
-        : (raw.length > 9 ? `${raw.slice(0, 9)}…` : raw);
+        ? `${snake.team}·${raw.length > 7 ? `${raw.slice(0, 7)}…` : raw}`
+        : (raw.length > 8 ? `${raw.slice(0, 8)}…` : raw);
       const score = document.createElement('span');
       score.className = 'snake-player-score';
       score.textContent = snake.alive ? String(snake.score) : '等待重生';
-      row.append(dot, name, score);
+      row.append(rankEl, dot, name, score);
       container.appendChild(row);
     });
   }

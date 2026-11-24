@@ -9,7 +9,7 @@ import '../styles/navbar.css';
  * 右上角用户区：登录后是一个无边框的头像按钮，点击展开菜单（昵称在第一排）；
  * 未登录显示同一个头像 + 登录入口。
  * 连接状态不再用独立的小绿点：在线时头像带绿色辉光，断线时头像整体转黑白、
- * 沿中线竖着裂成两半（只有一条裂缝，不是多块碎片）。
+ * 沿一条**闪电形折线**竖着裂成两半（只有一条裂缝，不是多块碎片）。
  * 大厅导航栏与游戏页/房间页标题栏共用，所有页面观感一致。
  */
 export const UserMenu = observer(() => {
@@ -46,14 +46,20 @@ export const UserMenu = observer(() => {
         <img className="avatar-image" src={avatarUrl} alt="" onError={() => setAvatarBroken(true)} />
       )}
       {hasAvatar && !connected && (
-        // 断线：同一张图切成左右两半、中间留一条竖缝，只裂一次；整体 grayscale 走 CSS filter
+        // 断线：同一张图沿闪电形折线切成左右两半、中间留一条缝，只裂一次；整体 grayscale 走 CSS filter
         <>
           <img className="avatar-image avatar-half avatar-half-left" src={avatarUrl} alt="" onError={() => setAvatarBroken(true)} />
           <img className="avatar-image avatar-half avatar-half-right" src={avatarUrl} alt="" onError={() => setAvatarBroken(true)} />
         </>
       )}
       {!hasAvatar && <span className="avatar-face" aria-hidden>👤</span>}
-      {!connected && <span className="avatar-crack-line" aria-hidden />}
+      {!connected && (
+        /* 裂缝本体：深色折线 + 一侧亮边，坐标与 CSS clip-path 的折线拐点一一对应 */
+        <svg className="avatar-crack-svg" viewBox="0 0 36 36" preserveAspectRatio="none" aria-hidden>
+          <polyline className="crack-dark" points="18,0 21.6,7.9 15.5,16.2 20.5,24.5 16.6,31 18,36" />
+          <polyline className="crack-light" points="19.1,0 22.7,7.9 16.6,16.2 21.6,24.5 17.7,31 19.1,36" />
+        </svg>
+      )}
     </span>
   );
 

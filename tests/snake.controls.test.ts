@@ -64,10 +64,12 @@ describe('贪吃蛇控件：固定屏幕布局，与场景/镜头无关', () => 
 });
 
 describe('贪吃蛇微缩地图与局部绘制', () => {
-  test('小地图在右上角，自己的世界坐标映射为地图上的相对位置', () => {
+  test('小地图在左上角关闭键下方，自己的世界坐标映射为地图上的相对位置', () => {
     for (const [w, h] of [[1280, 800], [375, 667]]) {
       const m = snakeMinimapLayout(w, h);
-      expect(m.x).toBeGreaterThan(w / 2);
+      // 左上角、且在 42px 的关闭键（top 10 + 42）之下，两者不重叠
+      expect(m.x).toBeLessThan(w / 2);
+      expect(m.y).toBeGreaterThanOrEqual(52);
       expect(m.y).toBeLessThan(h / 2);
       expect(m.x + m.w).toBeLessThanOrEqual(w);
       expect(m.y + m.h).toBeLessThan(h);
@@ -77,6 +79,18 @@ describe('贪吃蛇微缩地图与局部绘制', () => {
       expect(centerX).toBeCloseTo(m.x + m.w / 2, 6);
       expect(centerY).toBeCloseTo(m.y + m.h / 2, 6);
     }
+  });
+
+  test('刘海屏安全区：topInset 把地图整体下移，不压在关闭键上', () => {
+    const base = snakeMinimapLayout(390, 844, 0);
+    const notch = snakeMinimapLayout(390, 844, 47);
+    expect(notch.y - base.y).toBe(47);
+    expect(notch.x).toBe(base.x);
+    expect(notch.w).toBe(base.w);
+    // 自己的白点同样跟着下移
+    const [, py0] = snakeMinimapSelfPoint(390, 844, 3600, 2600, 0, 0, 0);
+    const [, py1] = snakeMinimapSelfPoint(390, 844, 3600, 2600, 0, 0, 47);
+    expect(py1 - py0).toBe(47);
   });
 
   test('小地图只显示自己：映射只吃自己的坐标，四角都落在地图框内', () => {

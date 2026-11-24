@@ -10,6 +10,7 @@ import '../styles/index.css';
 import '../styles/room.css';
 import GameCanvas from "../core/GameCanvas";
 import { gameManager } from "../core/GameManager";
+import { resolveExitIntent, resolveLeaveToast } from '../core/exitIntent';
 import { runInAction } from 'mobx';
 import { notificationManager } from '../components/Notifications'
 import { GameHeader } from '../components/GameHeader';
@@ -38,9 +39,11 @@ export const RoomPage = observer(() => {
     tick: 0, // 每秒自增，驱动倒计时重渲染
     // 2048 终局标记：服务端 gameover 会把房间拨回 waiting，靠它区分"结束"和"等待开局"
     soloOver: false,
+    // 本局已结束（组队模式认输/自我淘汰后）：退出沉浸对局，回到房间界面
+    endedMatch: false,
     // 单机游戏分数快照（从 gameManager.game.logic 读，随 tick 刷新到右侧面板）
     soloStats: { score: 0, best: 0, lines: 0, level: 0 },
-    setV(key: 'showAgreeDraw' | 'showLeaveDialog' | 'showPanel' | 'match_id' | 'loading' | 'tcEnabled' | 'tcStepSec' | 'tcTotalMin' | 'tcSaving' | 'tick' | 'soloOver' | 'soloStats', v: any) {
+    setV(key: 'showAgreeDraw' | 'showLeaveDialog' | 'showPanel' | 'match_id' | 'loading' | 'tcEnabled' | 'tcStepSec' | 'tcTotalMin' | 'tcSaving' | 'tick' | 'soloOver' | 'endedMatch' | 'soloStats', v: any) {
       // @ts-ignore - 动态字段赋值
       local[key] = v;
     }
@@ -316,8 +319,8 @@ export const RoomPage = observer(() => {
       }
       store.room.clear();
       store.game.setPlayer({ ...store.game.player, room_id: '' })
-      // 服务端区分"房间已解散"（自建房房主/临时房）与"已离开房间"
-      notificationManager.show(message || '已离开房间', 'success');
+      // 提示语按场景给：单机游戏说"已退出游戏"，不要拿服务端的"房间已解散"吓用户
+      notificationManager.show(resolveLeaveToast(exitIntent, message), 'success');
       // 固定回游戏主页：用 history 回退可能回到已解散的房间地址
     navigate(`/game/${slug}`, { replace: true });
     });
@@ -336,6 +339,36 @@ export const RoomPage = observer(() => {
       // 固定回游戏主页：用 history 回退可能回到已解散的房间地址
     navigate(`/game/${slug}`, { replace: true });
     });
+  };
+  /**
+   * 结束本局（对局进行中时关闭按钮的语义）：
+   * - 回合制（棋类）：认输 → 服务端结算 → 房间回到等待态，玩家留在房间界面
+   * - 贪吃蛇组队：自我淘汰 → 对局继续，本局对玩家结束 → 退出沉浸视图回到房间
+   */
+  const handleEndGame = () => {
+    if (!room_id) return;
+    socketEvents.excute(SendoutEvent.PlayerSurrender, {
+      room_id: room_id,
+      match_id: local.match_id,
+      player_id: store.game.player_id,
+    }, (success: boolean, message?: string) => {
+      if (!success) {
+        notificationManager.show(message || '结束本局失败', 'warning');
+        return;
+      }
+      // 结束本局后退出沉浸对局，回到房间界面（组队对局仍在继续，可观战）
+      local.setV('endedMatch', true);
+      notificationManager.show('本局已结束，已回到房间', 'success');
+      init(room_id);
+    });
+  };
+  /** 关闭按钮的统一入口：按场景决定是"结束本局"还是"退出房间" */
+  const handleExit = () => {
+    if (exitIntent.endsMatch) {
+      handleEndGame();
+      return;
+    }
+    handleLeaveRoom();
   };
   /** 观战开关：房主在开局前切换（服务端仅等待态允许） */
   const handleToggleSpectate = (allow: boolean) => {
@@ -441,6 +474,13 @@ export const RoomPage = observer(() => {
   // 官方无尽桌没有"开始游戏"：进房即开局
   const autoStarted = isEndlessArena && !!store.room.roomInfo?.official;
   const clock = store.room.clock;
+  // 关闭按钮的语义按场景分化：单机=退出游戏 / 官方房=退出房间 / 组队对局中=结束游戏回房间
+  const exitIntent = resolveExitIntent({
+    isSoloGame,
+    roomStatus: store.room.status || '',
+    isEndlessArena,
+    endedMatch: local.endedMatch,
+  });
   // 解散按钮仅自建非官方房的房主显示；官方房/他人房间/临时房只能"退出"
   const isOwner = store.room.roomInfo?.owner_id === store.game.player_id;
   const canDisband = isOwner && !store.room.roomInfo?.official && !store.room.roomInfo?.transient;
@@ -464,7 +504,8 @@ export const RoomPage = observer(() => {
     },
   };
   // 贪吃蛇对局中切全屏沉浸：棋盘铺满视口，房间操作收进右上角悬浮按钮
-  const immersive = slug === 'snake' && store.room.status === RoomStatus.playing;
+  // 组队模式认输后（endedMatch）：退出沉浸，回到房间面板（对局继续，可观战）
+  const immersive = slug === 'snake' && store.room.status === RoomStatus.playing && !local.endedMatch;
 
   useEffect(() => {
     if (!immersive) return;
@@ -487,6 +528,7 @@ export const RoomPage = observer(() => {
           subtitle={store.room.roomInfo?.name || variantInfo?.label || ''}
           mode="room"
           settingsRoom={settingsRoom}
+          closeLabel={exitIntent.title}
           onBack={() => local.setV('showLeaveDialog', true)}
         />
       )}
@@ -559,8 +601,8 @@ export const RoomPage = observer(() => {
                 onClick={() => local.setV('showPanel', !local.showPanel)}
               >☰</button>
             </div>
-            <div className="hud-corner hud-top-right">
-              {/* 全屏对局没有顶栏，右上角只放设置；小地图画在它下方 */}
+            <div className="hud-corner hud-bottom-right">
+              {/* 设置放在加速按钮正上方：右上角整块让给排行榜，小地图挪到左上关闭键下方 */}
               <GameSettings className="hud-btn" room={settingsRoom} />
             </div>
             {local.showPanel && (
@@ -638,12 +680,16 @@ export const RoomPage = observer(() => {
       </div>
       </div>
 
-      {/* 左上角返回 / 退出：确认弹框。房主自建房可解散，其余只能退出；游戏中仅单人/无尽可退出 */}
+      {/* 左上角关闭按钮的确认弹框。
+          语义按场景分化（见 core/exitIntent.ts）：
+          - 单人游戏 → "退出游戏"（临时房销毁，不弹"房间已解散"）
+          - 官方房间 → "退出房间"（官方桌永不销毁）
+          - 组队/对局中 → "结束游戏"，结束后回到房间界面 */}
       {local.showLeaveDialog && (
         <div className="leave-overlay" onMouseDown={() => local.setV('showLeaveDialog', false)}>
-          <div className="leave-dialog" onMouseDown={e => e.stopPropagation()} role="dialog" aria-label="离开房间">
-            <h3>离开房间</h3>
-            <p className="leave-hint">确定要离开当前房间吗？</p>
+          <div className="leave-dialog" onMouseDown={e => e.stopPropagation()} role="dialog" aria-label={exitIntent.title}>
+            <h3>{exitIntent.title}</h3>
+            <p className="leave-hint">{exitIntent.hint}</p>
             <div className="leave-actions">
               <button onClick={() => local.setV('showLeaveDialog', false)}>取消</button>
               {canDisband && [RoomStatus.waiting, RoomStatus.finished].includes(store.room.status) && (
@@ -651,8 +697,8 @@ export const RoomPage = observer(() => {
               )}
               <button
                 className={canDisband ? '' : 'danger'}
-                onClick={() => { local.setV('showLeaveDialog', false); handleLeaveRoom(); }}
-              >退出房间</button>
+                onClick={() => { local.setV('showLeaveDialog', false); handleExit(); }}
+              >{exitIntent.confirmText}</button>
             </div>
           </div>
         </div>

@@ -19,12 +19,14 @@
   min-height: 0;
 }
 
+/* 游戏列表改成横向滚动（每列 2 个）后，高度由两行卡片自然撑开，
+   不再固定 600px —— 否则右侧会留一大片空白 */
 .lobby-content > .game-list-panel {
-  height: 600px;
+  height: auto;
 }
 
 .game-list-panel .games-grid {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
 }
 
@@ -39,7 +41,7 @@
   height: 92px;
 }
 
-/* Mobile：改为上下排列，游戏列表仍用固定高度 */
+/* Mobile：改为上下排列，游戏列表高度由横向滚动的两行卡片自然决定 */
 @media (max-width: 767px) {
   .lobby-content {
     flex-direction: column;
@@ -52,6 +54,6 @@
   }
 
   .lobby-content > .game-list-panel {
-    height: 520px;
+    height: auto;
   }
 }

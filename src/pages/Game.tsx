@@ -113,9 +113,9 @@ export const GamePage = observer(() => {
 
   }
   const socket = getSocket();
-  /** 刷新官方房间列表：只展示官方桌，私有房/临时房不对外显示 */
+  /** 刷新官方房间列表：只展示官方桌，私有房/临时房不对外显示（贪吃蛇主页不展示房间列表，跳过） */
   const loadOfficialRooms = () => {
-    if (!game?._id || !socket) return;
+    if (isSnakeHome || !game?._id || !socket) return;
     socketEvents.getRooms(game._id, (rooms: any[]) => {
       local.setV({ rooms: (rooms || []).filter(r => r.official === true) });
     });
@@ -190,8 +190,11 @@ export const GamePage = observer(() => {
       ))}
     </div>
   );
-  // 贪吃蛇的两张玩法卡片很高，会把顶部的榜单挤到折叠；唯独这里把榜单放到卡片中间
+  // 贪吃蛇主页单独排版：榜单在上、玩法卡片在下、底部固定大按钮；
+  // 不再展示官方房间列表（无尽竞技房常驻 playing，列表里永远是"对局中 + 加入不可用"，纯误导）
   const isSnakeHome = slug === 'snake';
+  // 首帧 variants 还没回填时 activeVariant 为空，退回第一个玩法，避免底部按钮闪成另一个玩法
+  const isEndlessVariant = (activeVariant || variants[0]?.key) === 'endless';
 
   return (
     <div className="game-page">
@@ -208,14 +211,12 @@ export const GamePage = observer(() => {
       />
       <div className="game-body">
         <div className={`game-container${isSnakeHome ? ' snake-home' : ''}`}>
-          {/* 贪吃蛇：玩法卡片在上、排行榜居中、匹配/房间列表在下；其他游戏仍是榜单最上方 */}
-          {isSnakeHome && variantTabs}
-          {!isSnakeHome && leaderboard}
-          {!isSnakeHome && variantTabs}
-          {isSnakeHome && leaderboard}
+          {/* 榜单永远在最上面；贪吃蛇的玩法卡片紧随其后，其余游戏是"榜单 → 卡片 → 工具栏" */}
+          {leaderboard}
+          {variantTabs}
 
-          {/* 房间玩法：匹配/创建收进一条工具栏，不再挤在标题行 */}
-          {!isSolo && (
+          {/* 房间玩法：匹配/创建收进一条工具栏，不再挤在标题行（贪吃蛇改走底部大按钮） */}
+          {!isSolo && !isSnakeHome && (
             <div className="game-toolbar">
               <button className="primary" disabled={local.matching} onClick={handleMatch}>
                 {local.matching ? '匹配中…' : '匹配'}
@@ -227,8 +228,8 @@ export const GamePage = observer(() => {
             </div>
           )}
 
-          {/* 官方房间列表：只有该游戏预建了官方桌时才显示，私有房不展示 */}
-          {!isSolo && local.rooms.length > 0 && (
+          {/* 官方房间列表：只有该游戏预建了官方桌时才显示，私有房不展示（贪吃蛇不展示） */}
+          {!isSolo && !isSnakeHome && local.rooms.length > 0 && (
             <div className="room-list">
               <div className="room-list-header">
                 <h3>🏛️ 官方房间</h3>
@@ -270,6 +271,32 @@ export const GamePage = observer(() => {
                 {local.starting ? '正在开局…' : `▶ 开始${variantInfo?.label || '游戏'}`}
               </button>
               <p className="solo-hint">单人模式，无需房间，成绩实时计入{variantInfo?.board === 'endless' ? '无尽榜' : '排行榜'}</p>
+            </div>
+          )}
+
+          {/* 贪吃蛇：底部固定主操作。无尽挑战=开始挑战（进常驻竞技房），团队模式=创建团队房间 */}
+          {isSnakeHome && (
+            <div className="snake-actions">
+              {isEndlessVariant ? (
+                <>
+                  <button className="solo-start-btn" disabled={local.matching} onClick={handleMatch}>
+                    {local.matching ? '正在进入竞技场…' : '▶ 开始无尽挑战'}
+                  </button>
+                  <p className="solo-hint">进入无尽竞技房，与场上玩家、人机同图刷分</p>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="solo-start-btn"
+                    onClick={() => local.setV({ type: 'create', show: true, allowSpectate: true })}
+                  >创建团队房间</button>
+                  {/* 匹配入口保留在次要位置：团队房建好后需要能被人找到，否则只能自己开局 */}
+                  <button className="snake-join-btn" disabled={local.matching} onClick={handleMatch}>
+                    {local.matching ? '正在加入…' : '快速加入现有房间'}
+                  </button>
+                  <p className="solo-hint">最多 6 队同场，每队 5 人，最后存活的一队获胜</p>
+                </>
+              )}
             </div>
           )}
 

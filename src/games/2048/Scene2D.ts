@@ -22,6 +22,8 @@ export interface Board2048Layout {
   gridH: number;
   /** 分数 / 最高分两个框的位置（逻辑像素） */
   scores: { x: number; y: number }[];
+  /** 分数框内文字对齐：宽屏居中、手机端左对齐 */
+  scoreAlign: 'center' | 'left';
   /** 宽屏：棋盘在左、分数框在右；窄屏：分数在上、棋盘在下 */
   wide: boolean;
 }
@@ -29,6 +31,7 @@ export interface Board2048Layout {
 /**
  * 2048 画布内部布局（纯函数，便于 resize / 单测）：
  * PC 横屏时棋盘与分数左右排列，尽量利用宽度；手机竖屏时分数在上、棋盘在下。
+ * 手机端的分数框**贴棋盘左边缘左对齐**（不再水平居中），与下方棋盘左缘对齐成一条竖线。
  */
 export function layout2048(cssW: number, cssH: number): Board2048Layout {
   const wide = cssW >= 600 && cssW > cssH * 1.05;
@@ -44,10 +47,12 @@ export function layout2048(cssW: number, cssH: number): Board2048Layout {
         { x: MARGIN + GRID + GAP, y: MARGIN },
         { x: MARGIN + GRID + GAP, y: MARGIN + SCORE_H + GAP },
       ],
+      scoreAlign: 'center',
       wide: true,
     };
   }
-  const firstScoreX = (MARGIN * 2 + GRID - SCORE_W * 2 - GAP) / 2;
+  // 窄屏（手机）：两个分数框从棋盘左边缘起排（左对齐），不再整体居中
+  const firstScoreX = MARGIN;
   return {
     baseW: MARGIN * 2 + GRID,
     baseH: MARGIN * 2 + SCORE_H + GAP + GRID,
@@ -59,6 +64,7 @@ export function layout2048(cssW: number, cssH: number): Board2048Layout {
       { x: firstScoreX, y: MARGIN },
       { x: firstScoreX + SCORE_W + GAP, y: MARGIN },
     ],
+    scoreAlign: 'left',
     wide: false,
   };
 }
@@ -395,17 +401,20 @@ export default class Scene2D2048 {
 
   private scoreBox(ctx: CanvasRenderingContext2D, x: number, y: number, label: string, value: string) {
     ctx.fillStyle = '#a39482';
-    this.roundRect(ctx, x, y, 104, 52, 6);
+    this.roundRect(ctx, x, y, SCORE_W, SCORE_H, 6);
     ctx.fill();
+    // 手机端：框内文字左对齐（与框一起贴棋盘左边缘），留 12px 内边距
+    const align = this.layout.scoreAlign;
+    const tx = align === 'left' ? x + 12 : x + SCORE_W / 2;
     ctx.fillStyle = '#eee4da';
     ctx.font = '13px system-ui, sans-serif';
-    ctx.textAlign = 'center';
+    ctx.textAlign = align;
     ctx.textBaseline = 'top';
-    ctx.fillText(label, x + 52, y + 4);
+    ctx.fillText(label, tx, y + 4);
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 24px system-ui, sans-serif';
     ctx.textBaseline = 'bottom';
-    ctx.fillText(value, x + 52, y + 48);
+    ctx.fillText(value, tx, y + SCORE_H - 4);
   }
 
   private drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, value: number) {

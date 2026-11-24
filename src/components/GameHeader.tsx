@@ -8,7 +8,7 @@ import '../styles/game-header.css';
  * 游戏页/房间页专属顶栏。大厅的「🎮 游戏大厅 + 导航」不再出现在游戏里。
  *
  * - mode='game'（游戏主页）：左侧「返回 + 游戏名称」，名称靠左、不显示 logo；
- *   右侧是设置按钮 + 头像（保留用户菜单入口）。
+ *   右侧只留头像（用户菜单入口），**设置按钮改成右下角悬浮**（拇指够得着、不占顶栏）。
  * - mode='room'（房间/对局）：左侧只有关闭按钮，右侧只有设置按钮；
  *   顶部中间不显示游戏名称，把空间完整留给棋盘。
  */
@@ -19,6 +19,7 @@ export const GameHeader = observer(({
   extra,
   mode = 'game',
   settingsRoom,
+  closeLabel,
 }: {
   title: string;
   subtitle?: string;
@@ -28,13 +29,15 @@ export const GameHeader = observer(({
   mode?: 'game' | 'room';
   /** 房间页传入：设置弹框里显示观战/计时配置 */
   settingsRoom?: SettingsRoom;
+  /** 关闭按钮的无障碍标签（按场景：退出游戏 / 退出房间 / 结束游戏） */
+  closeLabel?: string;
 }) => (
   <header className={`game-header game-header-${mode}`}>
     <div className="game-header-left">
       <button
         className={`game-back${mode === 'room' ? ' is-close' : ''}`}
         onClick={onBack}
-        aria-label={mode === 'room' ? '关闭房间' : '返回大厅'}
+        aria-label={mode === 'room' ? (closeLabel || '关闭房间') : '返回大厅'}
       >
         {mode === 'room'
           ? <span className="game-back-close" aria-hidden>×</span>
@@ -50,10 +53,17 @@ export const GameHeader = observer(({
 
     <div className="game-header-right">
       {extra}
-      {/* 背景音乐 / 语音包 / 房间配置统一收进设置弹框 */}
-      <GameSettings room={settingsRoom} />
+      {/* 房间/对局：设置留在顶栏右上；游戏主页：设置改成右下角悬浮（game-settings-fab） */}
+      {mode === 'room' && <GameSettings room={settingsRoom} />}
       {mode === 'game' && <UserMenu />}
     </div>
+
+    {/* 游戏主页的设置按钮放右下角悬浮：不占顶栏位置，拇指够得着 */}
+    {mode === 'game' && (
+      <div className="game-settings-fab">
+        <GameSettings />
+      </div>
+    )}
   </header>
 ));
 

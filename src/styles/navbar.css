@@ -109,31 +109,47 @@
   object-fit: cover;
 }
 
-/* 断线：一张头像切成左右两半，只有中间这一条竖缝 */
+/* 断线：一张头像沿闪电形折线切成左右两半（不是笔直的竖线）
+   折线拐点（与 UserMenu.tsx 里 SVG 的 polyline 保持一致）：
+   (50,0) → (60,22) → (43,45) → (57,68) → (46,86) → (50,100) */
 .avatar-image.avatar-half {
   object-position: center;
 }
 
 .avatar-half-left {
-  clip-path: inset(0 50% 0 0);
+  clip-path: polygon(0% 0%, 50% 0%, 60% 22%, 43% 45%, 57% 68%, 46% 86%, 50% 100%, 0% 100%);
   transform: translateX(-1px);
 }
 
 .avatar-half-right {
-  clip-path: inset(0 0 0 50%);
+  clip-path: polygon(100% 0%, 100% 100%, 50% 100%, 46% 86%, 57% 68%, 43% 45%, 60% 22%, 50% 0%);
   transform: translateX(1px);
 }
 
-.avatar-crack-line {
+/* 裂缝本体：深色折线 + 右侧一道亮边，模拟碎片断口 */
+.avatar-crack-svg {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 2px;
-  transform: translateX(-50%);
-  background: linear-gradient(90deg, rgba(8, 8, 12, 0.95) 0 55%, rgba(245, 245, 245, 0.85) 55% 100%);
-  box-shadow: 0 0 3px rgba(0, 0, 0, 0.75);
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
+  z-index: 2;
+}
+
+.avatar-crack-svg .crack-dark {
+  fill: none;
+  stroke: rgba(8, 8, 12, 0.95);
+  stroke-width: 1.7;
+  stroke-linejoin: miter;
+  stroke-linecap: butt;
+}
+
+.avatar-crack-svg .crack-light {
+  fill: none;
+  stroke: rgba(245, 245, 248, 0.8);
+  stroke-width: 0.7;
+  stroke-linejoin: miter;
+  stroke-linecap: butt;
 }
 
 .dropdown-menu {
