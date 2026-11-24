@@ -9,6 +9,7 @@ import {
   clipSnakeSegments,
   joystickKnobOffset,
   rankTopSnakes,
+  snakeColorSlots,
 } from '../src/games/snake/Scene2D';
 
 describe('贪吃蛇控件：固定屏幕布局，与场景/镜头无关', () => {
@@ -163,5 +164,35 @@ describe('贪吃蛇排行榜', () => {
     const top = rankTopSnakes([mk('a', 5), mk('b', 9)], 10);
     expect(top.map(x => x.snake.id)).toEqual(['b', 'a']);
     expect(rankTopSnakes([], 10)).toEqual([]);
+  });
+});
+
+describe('贪吃蛇配色：按玩家固定色槽，别人离场不变色', () => {
+  test('色槽按 id 首次出现顺序分配，已存在的 id 保留原槽位', () => {
+    const slots = new Map<string, number>();
+    snakeColorSlots(slots, ['a', 'b', 'c']);
+    expect(slots.get('a')).toBe(0);
+    expect(slots.get('b')).toBe(1);
+    expect(slots.get('c')).toBe(2);
+  });
+
+  test('别人离场（服务端 splice 导致数组下标位移）不会让自己的色槽变化', () => {
+    const slots = new Map<string, number>();
+    snakeColorSlots(slots, ['a', 'b', 'c']);
+    // b 离场：服务端把 b 从 state.snakes 里摘掉，剩下的下标全部前移
+    snakeColorSlots(slots, ['a', 'c']);
+    expect(slots.get('a')).toBe(0);
+    expect(slots.get('b')).toBe(1); // 自己的槽位不变
+    expect(slots.get('c')).toBe(2); // c 也不因下标位移而换色
+  });
+
+  test('同一个 id 反复刷新不会重新分配槽位（不会越刷越变）', () => {
+    const slots = new Map<string, number>();
+    snakeColorSlots(slots, ['a', 'b']);
+    snakeColorSlots(slots, ['a', 'b']);
+    snakeColorSlots(slots, ['b', 'a']);
+    expect(slots.get('a')).toBe(0);
+    expect(slots.get('b')).toBe(1);
+    expect(slots.size).toBe(2);
   });
 });

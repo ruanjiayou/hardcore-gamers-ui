@@ -83,7 +83,7 @@ export const Leaderboard = observer(({ slug, limit, boards }: Props) => {
                 <div className="player-info">
                   {/* 排行榜统一展示：去掉机器人昵称前缀与类型标记，人机与玩家外观一致 */}
                   <span className="player-avatar">{player.type === 'robot' ? '👤' : (player.avatar || '👤')}</span>
-                  <span className="player-name">{String(player.nickname || '玩家').replace(/^\s*🤖\s*/u, '') || '玩家'}</span>
+                  <span className="player-name">{player.nickname || '玩家'}</span>
                 </div>
                 <div className="player-rating">{player.score}</div>
               </div>

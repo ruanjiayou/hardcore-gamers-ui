@@ -57,17 +57,6 @@
   transition: transform 0.18s ease;
 }
 
-/* 游戏主页顶栏：昵称在头像左边 */
-.user-button-name {
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-  font-weight: 600;
-  color: inherit;
-}
-
 .user-button:hover {
   transform: translateY(-1px);
 }

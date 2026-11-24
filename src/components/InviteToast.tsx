@@ -50,7 +50,7 @@ export const InviteToasts = observer(() => {
             <div className="invite-head">
               <span className="invite-avatar">{from.avatar || '👤'}</span>
               <div className="invite-text">
-                <strong>{from.nickname}</strong>
+                <strong>{from.nickname || '玩家'}</strong>
                 <p>邀请你加入「{invite.room_name || invite.game_title || '房间'}」</p>
               </div>
             </div>

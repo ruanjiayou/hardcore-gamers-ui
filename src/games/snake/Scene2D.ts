@@ -169,6 +169,20 @@ export function rankTopSnakes<T extends { score: number; mine?: boolean }>(
 }
 
 /**
+ * 稳定的蛇身配色槽位：按玩家 id **首次出现顺序**分配，已有 id 保留原槽位。
+ *
+ * 原来按 `state.snakes` 数组下标取色：别人离场时服务端 splice 一下，下标位移，
+ * 剩下的人集体变色；榜单圆点更是按名次下标取色，别人一死排名一变，
+ * 自己名字旁边的圆点颜色就变了（和蛇身色还对不上）。
+ */
+export function snakeColorSlots(slots: Map<string, number>, ids: readonly string[]): Map<string, number> {
+  for (const id of ids) {
+    if (!slots.has(id)) slots.set(id, slots.size);
+  }
+  return slots;
+}
+
+/**
  * 当前镜头对应的"局部绘制窗口"：视口向四周各外扩 margin 比例，再钳到世界内。
  * 蛇头移动 → 镜头移动 → 这个窗口跟着更新，窗口外的路径/食物不进 Canvas。
  */
@@ -318,7 +332,6 @@ interface SnakeUi {
   hud: HTMLDivElement;
   hudMode: HTMLDivElement;
   hudScore: HTMLSpanElement;
-  hudBest: HTMLSpanElement;
   hudPlayers: HTMLDivElement;
   minimap: HTMLDivElement;
   minimapDot: HTMLDivElement;
@@ -360,6 +373,8 @@ export default class Scene2DSnake {
   private startedAt = 0;
   /** 远端蛇的平滑显示状态 */
   private disp = new Map<string, DispSnake>();
+  /** 蛇身/榜单圆点的稳定配色槽位（按玩家 id 首次出现顺序，GM-snake-23） */
+  private colorSlots = new Map<string, number>();
   /** 食物/道具预渲染精灵：按 (类型, 半径) 缓存，避免每帧为每颗画多层圆 */
   private foodSprites = new Map<string, { canvas: HTMLCanvasElement; size: number }>();
   /** 边界内辉光的四条渐变条：null=还没建，undefined=当前环境建不了（无 document） */
@@ -489,8 +504,7 @@ export default class Scene2DSnake {
     const hudMode = el('div', 'snake-hud-mode');
     const hudScores = el('div', 'snake-hud-scores');
     const hudScore = el('span', 'snake-hud-score');
-    const hudBest = el('span', 'snake-hud-best');
-    hudScores.append(hudScore, hudBest);
+    hudScores.append(hudScore);
     const hudPlayers = el('div', 'snake-hud-players');
     hud.append(hudMode, hudScores, hudPlayers);
 
@@ -540,7 +554,7 @@ export default class Scene2DSnake {
 
     parent.appendChild(root);
     this.ui = {
-      root, hud, hudMode, hudScore, hudBest, hudPlayers,
+      root, hud, hudMode, hudScore, hudPlayers,
       minimap, minimapDot, boost, boostRing, boostLabel,
       joystick, joyBase, joyKnob, hint, overlay,
       death, deathScore, deathRespawn, deathExit, fps,
@@ -1082,6 +1096,21 @@ export default class Scene2DSnake {
     }
   }
 
+  /** 刷新配色槽位：按玩家 id 首次出现顺序分配，已有 id 保留原槽位（GM-snake-23） */
+  private syncColorSlots() {
+    snakeColorSlots(this.colorSlots, this.state.snakes.map(s => s.id));
+  }
+
+  /** 取色：团队按队伍，无尽按玩家固定槽位（蛇身与榜单圆点共用，GM-snake-23） */
+  private colorOf(snake: SnakeView['snakes'][number]): string {
+    if (snake.team) {
+      return TEAM_COLORS[snake.team]
+        || TEAM_FALLBACK_COLORS[teamColorIndex(snake.team) % TEAM_FALLBACK_COLORS.length];
+    }
+    const slot = this.colorSlots.get(snake.id) ?? 0;
+    return SNAKE_COLORS[slot % SNAKE_COLORS.length];
+  }
+
   private drawSnakes(now: number, view: WorldRect) {
     const ctx = this.ctx;
     const radius = this.state.radius * this.zoom;
@@ -1091,14 +1120,15 @@ export default class Scene2DSnake {
     this.nameMap.clear();
     for (const p of this.state.players) this.nameMap.set(p.id, p.nickname);
 
-    this.state.snakes.forEach((snake, idx) => {
+    // 配色槽位每帧刷新一次：按玩家 id 首次出现顺序，别人离场不会让自己的颜色变
+    this.syncColorSlots();
+
+    this.state.snakes.forEach((snake) => {
       // 死掉的蛇直接不画：死亡瞬间身体已经沿路径变成了残骸食物，
       // 再叠一层半透明的旧蛇身就是"残影"（残骸和尸体两条形状重叠，看着像没死透）。
       if (!snake.alive) return;
-      // 团队模式按队伍取色（队友同色），无尽模式按加入顺序轮转取色
-      const color = snake.team
-        ? (TEAM_COLORS[snake.team] || TEAM_FALLBACK_COLORS[teamColorIndex(snake.team) % TEAM_FALLBACK_COLORS.length])
-        : SNAKE_COLORS[idx % SNAKE_COLORS.length];
+      // 团队模式按队伍取色（队友同色），无尽模式按玩家固定槽位取色
+      const color = this.colorOf(snake);
       const disp = snake.mine ? null : this.disp.get(snake.id);
       const pts = disp ? disp.pts : snake.pts;
       if (!pts.length) return;
@@ -1234,12 +1264,11 @@ export default class Scene2DSnake {
     const showControls = s.status === 'playing' && !s.awaiting && s.alive;
 
     // --- HUD 文本：脏检查 ---
-    const mode = s.variant === 'endless' ? '无尽挑战' : '多人对战';
-    const hudSig = `${mode}|${s.score}|${s.best}`;
+    // 标题只留「排行榜」（不再拼玩法名），也不显示本玩家最高分（GM-snake-21）
+    const hudSig = String(s.score);
     if (hudSig !== this.hudSig) {
-      ui.hudMode.textContent = `🏆 排行榜 · ${mode}`;
+      ui.hudMode.textContent = '🏆 排行榜';
       ui.hudScore.textContent = String(s.score);
-      ui.hudBest.textContent = `最高 ${s.best}`;
       this.hudSig = hudSig;
     }
     // 排行榜签名：按分数排序后取前 10（分数/生死/名字任一变化才重建 DOM）
@@ -1347,6 +1376,7 @@ export default class Scene2DSnake {
     container.replaceChildren();
     if (s.snakes.length <= 1) return;
     // 排行榜：按分数从高到低取前 10 名（自己一定在里面 —— 否则看不到自己的名次）
+    this.syncColorSlots();
     const top = rankTopSnakes(s.snakes, 10);
     top.forEach(({ snake, rank }, i) => {
       const row = document.createElement('div');
@@ -1358,9 +1388,8 @@ export default class Scene2DSnake {
       rankEl.textContent = String(rank);
       const dot = document.createElement('span');
       dot.className = 'snake-player-dot';
-      dot.style.background = snake.team
-        ? (TEAM_COLORS[snake.team] || TEAM_FALLBACK_COLORS[teamColorIndex(snake.team) % TEAM_FALLBACK_COLORS.length])
-        : SNAKE_COLORS[i % SNAKE_COLORS.length];
+      // 圆点用玩家固定色槽（与蛇身同色）：按名次取色会让人一死就变色
+      dot.style.background = this.colorOf(snake);
       const name = document.createElement('span');
       name.className = 'snake-player-name' + (snake.mine ? ' me' : '');
       const raw = s.players.find(p => p.id === snake.id)?.nickname || `玩家${i + 1}`;
@@ -1424,7 +1453,12 @@ export default class Scene2DSnake {
       ui.deathScore.textContent = `本局得分 ${s.score} · 最高 ${s.best}`;
     } else if (kind === 'invincible') {
       ui.overlay.classList.add('snake-invincible');
-      ui.overlay.textContent = sub;
+      // 文字必须写在胶囊元素里：原来是裸文本节点（flex item 落在 y=0），
+      // 胶囊却是 top:16px 的伪元素 → 文字在框外（GM-snake-22）
+      const tip = document.createElement('div');
+      tip.className = 'snake-invincible-tip';
+      tip.textContent = sub;
+      ui.overlay.appendChild(tip);
     } else if (kind === 'notice') {
       const card = document.createElement('div');
       card.className = 'snake-notice-card';

@@ -19,6 +19,8 @@ export const Navbar = observer(() => {
   if (location.pathname === '/login') return null;
   // 游戏页/房间页有自己的顶栏（返回 + 游戏名 + 用户区），不再叠大厅的 logo 与导航
   if (location.pathname.startsWith('/game')) return null;
+  // 玩家中心 / 公开主页顶部不要「游戏大厅 + 用户头像」那一栏（UI-052）
+  if (location.pathname === '/me' || location.pathname.startsWith('/user')) return null;
 
   return (
     <nav className="navbar">

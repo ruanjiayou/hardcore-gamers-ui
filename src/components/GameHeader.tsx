@@ -8,7 +8,7 @@ import '../styles/game-header.css';
  * 游戏页/房间页专属顶栏。大厅的「🎮 游戏大厅 + 导航」不再出现在游戏里。
  *
  * - mode='game'（游戏主页）：左侧「返回 + 游戏名称」，名称靠左、不显示 logo；
- *   右侧只留头像（用户菜单入口），**设置按钮改成右下角悬浮**（拇指够得着、不占顶栏）。
+ *   右侧只留头像（用户菜单入口），**设置已下沉到头像下拉菜单「⚙ 游戏设置」**（UI-050）。
  * - mode='room'（房间/对局）：左侧只有关闭按钮，右侧只有设置按钮；
  *   顶部中间不显示游戏名称，把空间完整留给棋盘。
  */
@@ -56,18 +56,11 @@ export const GameHeader = observer(({
 
     <div className="game-header-right">
       {extra}
-      {/* 房间/对局：设置留在顶栏右上；游戏主页：设置改成右下角悬浮（game-settings-fab） */}
+      {/* 房间/对局：设置留在顶栏右上；游戏主页：设置在头像下拉菜单里（UI-050） */}
       {mode === 'room' && <GameSettings room={settingsRoom} />}
-      {/* 游戏主页右上角：玩家昵称 + 头像（点开是个人中心 / 公开主页，见 UI-046） */}
-      {mode === 'game' && <UserMenu showName profileGame={profileGame} />}
+      {/* 游戏主页右上角：头像（点开是玩家中心 / 公开主页 / 游戏设置，见 UI-050） */}
+      {mode === 'game' && <UserMenu scope="game" profileGame={profileGame} />}
     </div>
-
-    {/* 游戏主页的设置按钮放右下角悬浮：不占顶栏位置，拇指够得着 */}
-    {mode === 'game' && (
-      <div className="game-settings-fab">
-        <GameSettings />
-      </div>
-    )}
   </header>
 ));
 

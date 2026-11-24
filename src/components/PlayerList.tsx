@@ -10,18 +10,16 @@ import constant from '../constant';
  * - 观战者优先显示「观」，不再叠加「你」「机」
  * - 转让入口已移除：房主离开由服务端自动转让给非人机玩家
  * - showAddRobot 时标题右侧显示「添加人机」按钮（房主等待态、非单人对局）
+ * - 「✉ 邀请」按钮已移除：邀请入口改到房间页操作区，且只在房间（未开局）可用（UI-055）
  */
 export const PlayerList = observer(({
   room_id,
   showAddRobot = false,
   onAddRobot,
-  onInvite,
 }: {
   room_id: string;
   showAddRobot?: boolean;
   onAddRobot?: () => void;
-  /** 邀请好友进房（房间内玩家都可用，见 UI-048） */
-  onInvite?: () => void;
 }) => {
   const reload = () => {
     socketEvents.getRoomDetail(room_id, (data) => {
@@ -64,9 +62,6 @@ export const PlayerList = observer(({
         <h3>
           <span>👥 玩家列表 <span onClick={() => { reload(); }}>↻</span></span>
           <span className="player-list-actions">
-            {onInvite && (
-              <button className="player-add-robot" onClick={onInvite} title="邀请好友进房">✉ 邀请</button>
-            )}
             {showAddRobot && (
               <button className="player-add-robot" onClick={onAddRobot} title="添加人机">＋ 人机</button>
             )}

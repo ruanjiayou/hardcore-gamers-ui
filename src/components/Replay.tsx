@@ -84,7 +84,7 @@ export default function ReplayModal({ match_id, onClose }: { match_id: string, o
             <div className="replay-players">
               {data.players.map(p => (
                 <span key={p._id} className={p.is_winner ? 'winner' : ''}>
-                  {p.nickname}{p.is_winner ? ' 🏆' : ''}
+                  {p.nickname || '玩家'}{p.is_winner ? ' 🏆' : ''}
                 </span>
               ))}
             </div>

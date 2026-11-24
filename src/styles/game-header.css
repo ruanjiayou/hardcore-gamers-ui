@@ -144,30 +144,3 @@
     height: 30px;
   }
 }
-
-/* ===== 游戏主页：设置按钮右下角悬浮 ===== */
-/* 顶栏只留「返回 + 游戏名 + 头像」，设置挪到右下角，单手能点到；
-   白底 + 阴影，压在紫色渐变或白色卡片上都看得清。 */
-.game-settings-fab {
-  position: fixed;
-  right: calc(env(safe-area-inset-right, 0px) + 16px);
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
-  z-index: 60;
-}
-
-.game-settings-fab .game-settings-btn {
-  width: 46px;
-  height: 46px;
-  font-size: 20px;
-  color: #4a4f6a;
-  -webkit-text-fill-color: #4a4f6a;
-  background: #fff;
-  border: 1px solid #e3e5f0;
-  box-shadow: 0 8px 22px rgba(30, 32, 60, 0.24);
-  appearance: none;
-  -webkit-appearance: none;
-}
-
-.game-settings-fab .game-settings-btn:hover {
-  background: #f4f5fb;
-}

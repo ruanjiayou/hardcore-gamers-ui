@@ -486,8 +486,10 @@ export const RoomPage = observer(() => {
   const canDisband = isOwner && !store.room.roomInfo?.official && !store.room.roomInfo?.transient;
   // 添加人机：仅多人对战、等待态、房主可见
   const canAddRobot = !isSoloGame && !isEndlessArena && store.room.status === RoomStatus.waiting && isOwner;
-  // 邀请好友：房间内玩家都能邀请（单人临时房没人可邀）
-  const canInvite = !isSoloGame && !store.room.roomInfo?.transient && !!room_id;
+  // 邀请好友：只在**房间**（等待/未开局）能邀请，对弈中不能再拉人（UI-055）
+  const canInvite = !isSoloGame && !store.room.roomInfo?.transient && !!room_id
+    && !!store.room.roomInfo?._id
+    && store.room.status !== RoomStatus.playing;
   // 设置弹框的房间配置：观战（等待态房主）+ 计时（象棋等待态）
   const settingsRoom = {
     room_id: room_id!,
@@ -607,7 +609,7 @@ export const RoomPage = observer(() => {
             </div>
             {local.showPanel && (
               <div className="hud-drawer">
-                <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} onInvite={canInvite ? () => { local.setV('inviteName', ''); local.setV('showInvite', true); } : undefined} />
+                <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} />
                 <Chat room_id={room_id!} />
               </div>
             )}
@@ -643,6 +645,13 @@ export const RoomPage = observer(() => {
               开局完全由房主点"开始游戏"控制（服务端已移除"全员准备自动开局"）。
               单人游戏一人即可开局，多人对战至少 2 人。
             */}
+            {/* 邀请好友：入口在房间操作区（玩家列表右侧的 ✉ 按钮已删）；
+                只在房间（未开局）可用，对弈中不能再拉人（UI-055） */}
+            {canInvite && (
+              <button onClick={() => { local.setV('inviteName', ''); local.setV('showInvite', true); }}>
+                ✉ 邀请好友
+              </button>
+            )}
             {/* 开始游戏 / 重新开始已移到棋盘中央覆盖层 */}
             {/*
               等待/结束态：自建非官方房的房主显示"解散房间"，其余（官方房/他人房间/临时房）显示"退出"。
@@ -670,7 +679,7 @@ export const RoomPage = observer(() => {
             )
           ) : (
             <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: '0.5rem' }}>
-              <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} onInvite={canInvite ? () => { local.setV('inviteName', ''); local.setV('showInvite', true); } : undefined} />
+              <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} />
               <Chat room_id={room_id!} />
             </div>
           )}

@@ -97,7 +97,7 @@ export const UserProfilePage = observer(() => {
                 : <span>👤</span>}
             </div>
             <div className="public-name">
-              <h1>{profile.user.nickname}</h1>
+              <h1>{profile.user.nickname || profile.user.name}</h1>
               <p>@{profile.user.name} · 加入于 {new Date(profile.user.createdAt).toLocaleDateString()}</p>
             </div>
           </div>
