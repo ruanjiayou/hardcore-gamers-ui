@@ -203,6 +203,7 @@ export const GamePage = observer(() => {
         title={game?.title || slug || '游戏'}
         subtitle={isSolo ? '单人挑战' : (variantInfo?.label || '房间对战')}
         mode="game"
+        profileGame={slug}
         onBack={() => {
           // 点返回回大厅时把当前分同步进排行榜（对局仍在房间里，不影响继续玩）
           syncRoomScore();

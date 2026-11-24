@@ -123,6 +123,20 @@
   color: #777;
 }
 
+/* 邀请弹框里的用户名输入框 */
+.invite-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  margin-bottom: 12px;
+  border: 1px solid #e0e0f0;
+  border-radius: 8px;
+  background: #f9faff;
+  color: #333;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
 .leave-actions {
   display: flex;
   flex-wrap: wrap;
@@ -696,7 +710,13 @@
   gap: 8px;
 }
 
-/* 添加人机：玩家列表标题右侧 */
+/* 添加人机 / 邀请好友：玩家列表标题右侧 */
+.player-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .player-add-robot {
   padding: 5px 10px;
   border: 1px solid #667eea;

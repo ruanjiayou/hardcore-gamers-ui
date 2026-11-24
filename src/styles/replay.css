@@ -1,0 +1,172 @@
+/* 对局回放弹框（UI-047） */
+.replay-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(17, 20, 32, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.replay-panel {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
+.replay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.replay-head h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #2d2d3a;
+}
+
+.replay-close {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  background: #f1f2f8;
+  color: #4a5384;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -webkit-text-fill-color: #4a5384;
+}
+
+.replay-players {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #5b6079;
+  margin-bottom: 10px;
+}
+
+.replay-players .winner {
+  color: #b45309;
+  font-weight: 700;
+}
+
+.replay-board {
+  display: grid;
+  gap: 0;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #e8d5ad;
+}
+
+/* 象棋棋盘是 9×10，按宽高比撑开，别压成正方形 */
+.replay-board.replay-xiangqi {
+  aspect-ratio: 9 / 10;
+}
+
+.replay-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(90, 60, 20, 0.18);
+  font-size: clamp(10px, 3.2vw, 20px);
+  line-height: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.replay-chess .replay-cell,
+.replay-othello .replay-cell {
+  border-color: rgba(40, 50, 70, 0.14);
+}
+
+.replay-chess .replay-cell:nth-child(16n + 1),
+.replay-chess .replay-cell:nth-child(16n + 3),
+.replay-chess .replay-cell:nth-child(16n + 5),
+.replay-chess .replay-cell:nth-child(16n + 7),
+.replay-chess .replay-cell:nth-child(16n + 10),
+.replay-chess .replay-cell:nth-child(16n + 12),
+.replay-chess .replay-cell:nth-child(16n + 14),
+.replay-chess .replay-cell:nth-child(16n + 16) {
+  background: #f0e2c6;
+}
+
+.replay-disc {
+  width: 72%;
+  height: 72%;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.replay-piece {
+  font-weight: 700;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.replay-chess .replay-piece {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.replay-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.replay-controls button {
+  flex: 1;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid #e2e5f2;
+  background: #f7f8fd;
+  color: #4a5384;
+  font-size: 13px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -webkit-text-fill-color: #4a5384;
+}
+
+.replay-controls button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.replay-controls .replay-play {
+  flex: 1.6;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: transparent;
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+  font-weight: 700;
+}
+
+.replay-progress {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #8d93ad;
+  text-align: center;
+}
+
+.replay-error,
+.replay-loading {
+  margin: 24px 0;
+  text-align: center;
+  color: #8d93ad;
+  font-size: 13px;
+}

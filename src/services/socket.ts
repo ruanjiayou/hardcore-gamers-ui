@@ -107,10 +107,12 @@ export const ReceiveEvent = {
   GameOver: 'room:game-over',
   Clock: 'room:clock',
   TimeControlUpdated: 'room:timecontrol-updated',
-  OfferDraw: 'room:offer-draw',
-  DecideDraw: 'room:decide-draw',
   UserChange: 'user:change',
   UserKicked: 'user:kicked',
+  // 邀请好友（替代已废弃的 lobby:join-invite-room：服务端没有该 handler）
+  InviteReceived: 'invite:received',
+  InviteResult: 'invite:result',
+  InviteAccepted: 'invite:accepted',
   // 房间事件（与服务端 emit 名称严格一致）
   RoomCreated: 'room:created',
   RoomReady: 'room:room-ready',
@@ -136,8 +138,9 @@ export const SendoutEvent = {
   GetMatchState: 'room:get-match-state',
   PlayerSurrender: 'room:player-surrender',
   UpdateTimeControl: 'room:update-timecontrol',
-  OfferDraw: 'room:offer-draw',
-  DecideDraw: 'room:decide-draw',
+  // 邀请好友进房：room:invite 由房内玩家发，invite:respond 由被邀请人回
+  Invite: 'room:invite',
+  RespondInvite: 'invite:respond',
 
   LobbyStats: 'lobby:get-stats',
   LobbyGames: 'lobby:get-games',
@@ -147,7 +150,6 @@ export const SendoutEvent = {
   CreateRoom: 'lobby:create-room',
   JoinRoom: 'lobby:join-room',
   MatchRoom: 'lobby:match',
-  JoinInviteRoom: 'lobby:join-invite-room',
   QuickStart: 'lobby:quick-start',
 } as const;
 // 定义一个通用的 ValueOf 工具类型

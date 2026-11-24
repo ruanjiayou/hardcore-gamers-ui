@@ -15,10 +15,13 @@ export const PlayerList = observer(({
   room_id,
   showAddRobot = false,
   onAddRobot,
+  onInvite,
 }: {
   room_id: string;
   showAddRobot?: boolean;
   onAddRobot?: () => void;
+  /** 邀请好友进房（房间内玩家都可用，见 UI-048） */
+  onInvite?: () => void;
 }) => {
   const reload = () => {
     socketEvents.getRoomDetail(room_id, (data) => {
@@ -60,9 +63,14 @@ export const PlayerList = observer(({
       <div className="player-list" style={{ flex: '1 0 30%' }}>
         <h3>
           <span>👥 玩家列表 <span onClick={() => { reload(); }}>↻</span></span>
-          {showAddRobot && (
-            <button className="player-add-robot" onClick={onAddRobot} title="添加人机">＋ 人机</button>
-          )}
+          <span className="player-list-actions">
+            {onInvite && (
+              <button className="player-add-robot" onClick={onInvite} title="邀请好友进房">✉ 邀请</button>
+            )}
+            {showAddRobot && (
+              <button className="player-add-robot" onClick={onAddRobot} title="添加人机">＋ 人机</button>
+            )}
+          </span>
         </h3>
         {store.room.members.map((player: any) => {
           const isViewer = player.member_type === 'viewer';

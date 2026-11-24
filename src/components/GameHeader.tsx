@@ -20,6 +20,7 @@ export const GameHeader = observer(({
   mode = 'game',
   settingsRoom,
   closeLabel,
+  profileGame,
 }: {
   title: string;
   subtitle?: string;
@@ -31,6 +32,8 @@ export const GameHeader = observer(({
   settingsRoom?: SettingsRoom;
   /** 关闭按钮的无障碍标签（按场景：退出游戏 / 退出房间 / 结束游戏） */
   closeLabel?: string;
+  /** 游戏主页传入当前 slug：右上角菜单的公开主页会锁定这个游戏 */
+  profileGame?: string;
 }) => (
   <header className={`game-header game-header-${mode}`}>
     <div className="game-header-left">
@@ -55,7 +58,8 @@ export const GameHeader = observer(({
       {extra}
       {/* 房间/对局：设置留在顶栏右上；游戏主页：设置改成右下角悬浮（game-settings-fab） */}
       {mode === 'room' && <GameSettings room={settingsRoom} />}
-      {mode === 'game' && <UserMenu />}
+      {/* 游戏主页右上角：玩家昵称 + 头像（点开是个人中心 / 公开主页，见 UI-046） */}
+      {mode === 'game' && <UserMenu showName profileGame={profileGame} />}
     </div>
 
     {/* 游戏主页的设置按钮放右下角悬浮：不占顶栏位置，拇指够得着 */}

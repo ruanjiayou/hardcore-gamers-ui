@@ -11,7 +11,6 @@ import '../styles/room.css';
 import GameCanvas from "../core/GameCanvas";
 import { gameManager } from "../core/GameManager";
 import { resolveExitIntent, resolveLeaveToast } from '../core/exitIntent';
-import { runInAction } from 'mobx';
 import { notificationManager } from '../components/Notifications'
 import { GameHeader } from '../components/GameHeader';
 import { GameSettings } from '../components/GameSettings';
@@ -25,8 +24,11 @@ export const RoomPage = observer(() => {
   const { slug, room_id } = useParams<{ slug: string, room_id: string; }>();
   const navigate = useNavigate();
   const local = useLocalObservable(() => ({
-    showAgreeDraw: false,
     showLeaveDialog: false,
+    // 邀请好友弹框（房间内玩家可邀请，见 UI-048）
+    showInvite: false,
+    inviteName: '',
+    inviting: false,
     loading: false,
     match_id: '',
     // 全屏对局中右上角抽屉（玩家列表/聊天）是否展开
@@ -43,7 +45,7 @@ export const RoomPage = observer(() => {
     endedMatch: false,
     // 单机游戏分数快照（从 gameManager.game.logic 读，随 tick 刷新到右侧面板）
     soloStats: { score: 0, best: 0, lines: 0, level: 0 },
-    setV(key: 'showAgreeDraw' | 'showLeaveDialog' | 'showPanel' | 'match_id' | 'loading' | 'tcEnabled' | 'tcStepSec' | 'tcTotalMin' | 'tcSaving' | 'tick' | 'soloOver' | 'endedMatch' | 'soloStats', v: any) {
+    setV(key: 'showLeaveDialog' | 'showPanel' | 'showInvite' | 'inviteName' | 'inviting' | 'match_id' | 'loading' | 'tcEnabled' | 'tcStepSec' | 'tcTotalMin' | 'tcSaving' | 'tick' | 'soloOver' | 'endedMatch' | 'soloStats', v: any) {
       // @ts-ignore - 动态字段赋值
       local[key] = v;
     }
@@ -183,13 +185,6 @@ export const RoomPage = observer(() => {
       notificationManager.show(data.allowSpectate ? '房间已允许观战' : '房间已禁止观战');
     }
   }
-  const onReceiveDraw = (data: any) => {
-    if (data.user_id !== store.auth.user?._id) {
-      runInAction(() => {
-        local.showAgreeDraw = true;
-      })
-    }
-  }
   const onRoomDisband = () => {
     notificationManager.show('房间已解散', 'warning');
     store.room.clear();
@@ -248,7 +243,6 @@ export const RoomPage = observer(() => {
     socket.on(ReceiveEvent.RoomMessage, onRoomMessage);
     socket.on(ReceiveEvent.RoomReady, onRoomReady);
     socket.on(ReceiveEvent.SettingsUpdated, onSettingsUpdated);
-    socket.on(ReceiveEvent.OfferDraw, onReceiveDraw);
     // 房主离开/解散房间后，房间内其他人同步退出
     socket.on(ReceiveEvent.RoomDisband, onRoomDisband);
     return () => {
@@ -270,7 +264,6 @@ export const RoomPage = observer(() => {
       socket.off(ReceiveEvent.RoomMessage, onRoomMessage);
       socket.off(ReceiveEvent.RoomReady, onRoomReady);
       socket.off(ReceiveEvent.SettingsUpdated, onSettingsUpdated);
-      socket.off(ReceiveEvent.OfferDraw, onReceiveDraw);
       socket.off(ReceiveEvent.RoomDisband, onRoomDisband);
     };
   }, [room_id, navigate]);
@@ -299,6 +292,17 @@ export const RoomPage = observer(() => {
       }
     });
   }
+
+  /** 邀请好友进房：按用户名邀请，对方右上角会收到常驻提示 */
+  const handleInvite = () => {
+    if (!room_id || !local.inviteName.trim() || local.inviting) return;
+    local.setV('inviting', true);
+    socketEvents.excute(SendoutEvent.Invite, { room_id, target: local.inviteName.trim() }, (ok: boolean, message?: string) => {
+      local.setV('inviting', false);
+      notificationManager.show(ok ? (message || '邀请已发送') : (message || '邀请失败'), ok ? 'success' : 'warning');
+      if (ok) { local.setV('showInvite', false); local.setV('inviteName', ''); }
+    });
+  };
 
   const handleStartGame = () => {
     if (!room_id) return;
@@ -408,10 +412,6 @@ export const RoomPage = observer(() => {
       console.log(success, '认输')
     })
   }
-  const handleRequestDraw = () => {
-    if (!room_id) return;
-    socketEvents.excute(SendoutEvent.OfferDraw, room_id);
-  }
   const handleSaveTimeControl = () => {
     if (!room_id || local.tcSaving) return;
     local.setV('tcSaving', true);
@@ -461,13 +461,13 @@ export const RoomPage = observer(() => {
         ? gameInfo.variants.find(v => v.mode === 'solo')?.key
         : gameInfo.variants.find(v => v.mode === 'room')?.key)
       : undefined);
-  // 单人玩法（无对手）：一人即可开局，不提供机器人/求和/认输。
+  // 单人玩法（无对手）：一人即可开局，不提供机器人/认输。
   // 优先看房间 variant（混合玩法游戏），否则按游戏 mode / 人数兜底。
   const variantInfo = gameInfo?.variants?.find(v => v.key === roomVariant);
   const isSoloGame = variantInfo
     ? variantInfo.mode === 'solo'
     : (gameInfo?.mode ?? ((gameInfo?.numbers?.max ?? 2) <= 1 ? 'solo' : 'room')) === 'solo';
-  // 实时对局（团队模式贪吃蛇）：没有求和机制，认输 = 自我淘汰
+  // 实时对局（团队模式贪吃蛇）：认输 = 自我淘汰
   const isRealtimeGame = slug === 'snake' && roomVariant === 'team';
   // 无尽挑战竞技房：进房自动开局，死了自动重生，随时可以退出（不算逃跑）
   const isEndlessArena = slug === 'snake' && roomVariant === 'endless';
@@ -486,6 +486,8 @@ export const RoomPage = observer(() => {
   const canDisband = isOwner && !store.room.roomInfo?.official && !store.room.roomInfo?.transient;
   // 添加人机：仅多人对战、等待态、房主可见
   const canAddRobot = !isSoloGame && !isEndlessArena && store.room.status === RoomStatus.waiting && isOwner;
+  // 邀请好友：房间内玩家都能邀请（单人临时房没人可邀）
+  const canInvite = !isSoloGame && !store.room.roomInfo?.transient && !!room_id;
   // 设置弹框的房间配置：观战（等待态房主）+ 计时（象棋等待态）
   const settingsRoom = {
     room_id: room_id!,
@@ -605,7 +607,7 @@ export const RoomPage = observer(() => {
             </div>
             {local.showPanel && (
               <div className="hud-drawer">
-                <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} />
+                <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} onInvite={canInvite ? () => { local.setV('inviteName', ''); local.setV('showInvite', true); } : undefined} />
                 <Chat room_id={room_id!} />
               </div>
             )}
@@ -644,11 +646,10 @@ export const RoomPage = observer(() => {
             {/* 开始游戏 / 重新开始已移到棋盘中央覆盖层 */}
             {/*
               等待/结束态：自建非官方房的房主显示"解散房间"，其余（官方房/他人房间/临时房）显示"退出"。
-              对局进行中不允许离开（只能认输/求和），单人游戏除外——离开即销毁临时房。
+              对局进行中不允许离开（只能认输），单人游戏除外——离开即销毁临时房。
             */}
             {/* 退出/解散统一由左上角返回按钮的确认弹框处理，不再单独放按钮 */}
             {store.room.status === RoomStatus.playing && !isEndlessArena && store.game.player?.member_type === 'player' && !isSoloGame && <Fragment>
-              {!isRealtimeGame && <button onClick={handleRequestDraw}>求和</button>}
               <button onClick={requestSurrender} className="danger">认输</button>
             </Fragment>}
           </div>
@@ -669,7 +670,7 @@ export const RoomPage = observer(() => {
             )
           ) : (
             <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: '0.5rem' }}>
-              <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} />
+              <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} onInvite={canInvite ? () => { local.setV('inviteName', ''); local.setV('showInvite', true); } : undefined} />
               <Chat room_id={room_id!} />
             </div>
           )}
@@ -677,6 +678,31 @@ export const RoomPage = observer(() => {
         )}
       </div>
       </div>
+
+      {/* 邀请好友：按用户名邀请，对方界面右上角会出现接受/拒绝提示 */}
+      {local.showInvite && (
+        <div className="leave-overlay" onMouseDown={() => local.setV('showInvite', false)}>
+          <div className="leave-dialog" onMouseDown={e => e.stopPropagation()} role="dialog" aria-label="邀请好友">
+            <h3>邀请好友</h3>
+            <p className="leave-hint">输入对方登录名，对方会在右上角收到邀请，接受后直接进入这个房间。</p>
+            <input
+              className="invite-input"
+              type="text"
+              placeholder="对方的登录名"
+              value={local.inviteName}
+              autoFocus
+              onChange={e => local.setV('inviteName', e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleInvite(); }}
+            />
+            <div className="leave-actions">
+              <button onClick={() => local.setV('showInvite', false)}>取消</button>
+              <button className="primary" disabled={local.inviting} onClick={handleInvite}>
+                {local.inviting ? '发送中…' : '发送邀请'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 左上角关闭按钮的确认弹框。
           语义按场景分化（见 core/exitIntent.ts）：

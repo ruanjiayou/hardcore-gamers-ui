@@ -3,11 +3,15 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { observer } from 'mobx-react-lite';
 import store from './stores'
 import { initSocket, disconnectSocket, getSocket, ReceiveEvent } from './services/socket';
+import { refreshAccessToken } from './services/api';
 import { Navbar } from './components/Navbar';
 import { LoginPage } from './pages/Login'
 import { LobbyPage } from './pages/Lobby';
 import { GamePage } from './pages/Game';
 import { RoomPage } from './pages/Room';
+import { ProfilePage } from './pages/Profile';
+import { UserProfilePage } from './pages/UserProfile';
+import { InviteToasts } from './components/InviteToast';
 import { Notifications, notificationManager } from './components/Notifications';
 import { LoginRequiredModal } from './components/LoginRequired';
 import './styles/index.css';
@@ -53,12 +57,20 @@ const AppBootstrap = observer(({ children, isReady, setIsReady }: { children: Re
       let { success, error } = await initSocket();
       if (!success) {
         const msg = String((error as any)?.message || error || '');
-        // token 失效（过期/票据错误）：降级成游客重连，别让用户卡在连不上的状态
+        // token 过期：先用 refresh_token 续期，续期成功就用新 token 重连；
+        // 续期也失败（refresh 过期/被清）才降级成游客，别让用户卡在连不上的状态。
         if (/过期|票据|验证失败/.test(msg) && store.auth.token) {
-          store.auth.logout();
-          tokenRef.current = '';
-          notificationManager.show('登录已过期，请重新登录', 'warning');
-          ({ success, error } = await initSocket());
+          const token = await refreshAccessToken();
+          if (token) {
+            disconnectSocket();
+            ({ success, error } = await initSocket());
+          }
+          if (!success) {
+            store.auth.logout();
+            tokenRef.current = '';
+            notificationManager.show('登录已过期，请重新登录', 'warning');
+            ({ success, error } = await initSocket());
+          }
         }
       }
       if (!success) throw error || new Error('连接失败');
@@ -75,6 +87,22 @@ const AppBootstrap = observer(({ children, isReady, setIsReady }: { children: Re
       getSocket()?.on(ReceiveEvent.UserKicked, () => {
         store.auth.logout();
         navigate('/lobby');
+      });
+      // 房间邀请：右上角常驻提示，接受/拒绝后才消失
+      getSocket()?.off(ReceiveEvent.InviteReceived);
+      getSocket()?.on(ReceiveEvent.InviteReceived, (data: any) => {
+        if (data?.invite_id) store.ui.addInvite(data);
+      });
+      // 我发出的邀请有结果了：给个轻提示，别让邀请人一直等
+      getSocket()?.off(ReceiveEvent.InviteResult);
+      getSocket()?.on(ReceiveEvent.InviteResult, (data: any) => {
+        if (!data?.invite_id) return;
+        notificationManager.show(
+          data.accepted
+            ? `${data.nickname || '对方'} 已接受邀请`
+            : `邀请未接受：${data.message || '对方拒绝'}`,
+          data.accepted ? 'success' : 'warning',
+        );
       });
     } catch (error) {
       console.error('❌ 应用初始化失败:', error);
@@ -101,7 +129,11 @@ const AppBootstrap = observer(({ children, isReady, setIsReady }: { children: Re
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.auth.token, isReady]);
 
-  return <Loading isLoading={isLoading}>{children}</Loading>;
+  return <Loading isLoading={isLoading}>
+    {/* 邀请提示常驻右上角，跨页面可见（大厅/游戏页/房间页都要能收到） */}
+    <InviteToasts />
+    {children}
+  </Loading>;
 });
 
 export const App = observer(() => {
@@ -125,6 +157,14 @@ export const App = observer(() => {
           </AppBootstrap>} />
           <Route path="/game/:slug/room/:room_id" element={<AppBootstrap isReady={isReady} setIsReady={setIsReady}>
             <RoomPage />
+          </AppBootstrap>} />
+          {/* 个人中心：改昵称/头像/手机/邮箱/密码 */}
+          <Route path="/me" element={<AppBootstrap isReady={isReady} setIsReady={setIsReady}>
+            <ProfilePage />
+          </AppBootstrap>} />
+          {/* 公开主页：玩过的游戏 + 战绩总览 + 对局记录（?game=slug 锁定单个游戏） */}
+          <Route path="/user/:user_id" element={<AppBootstrap isReady={isReady} setIsReady={setIsReady}>
+            <UserProfilePage />
           </AppBootstrap>} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="*" element={<Navigate to="/" />} />

@@ -11,14 +11,16 @@ import '../styles/navbar.css';
  * 连接状态不再用独立的小绿点：在线时头像带绿色辉光，断线时头像整体转黑白、
  * 沿一条**闪电形折线**竖着裂成两半（只有一条裂缝，不是多块碎片）。
  * 大厅导航栏与游戏页/房间页标题栏共用，所有页面观感一致。
+ *
+ * showName：游戏主页顶栏要在头像**左边**显示昵称（UI-046）。
  */
-export const UserMenu = observer(() => {
+export const UserMenu = observer(({ showName = false, profileGame = '' }: { showName?: boolean, profileGame?: string }) => {
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [avatarBroken, setAvatarBroken] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const connected = store.ui.socketConnected;
-  const name = store.auth.user?.name || '-';
+  const name = store.auth.displayName;
   const avatarUrl = store.auth.user?.avatar;
 
   useEffect(() => {
@@ -73,6 +75,8 @@ export const UserMenu = observer(() => {
             aria-label="用户菜单"
             aria-expanded={dropdownOpen}
           >
+            {/* 游戏主页顶栏：昵称在头像左边 */}
+            {showName && <span className="user-button-name">{name}</span>}
             {statusAvatar}
           </button>
 
@@ -83,11 +87,23 @@ export const UserMenu = observer(() => {
                 <span className="dropdown-identity-tag">玩家</span>
               </div>
               <div className="dropdown-divider"></div>
-              <div className="dropdown-item">
-                <span>👤 个人资料</span>
+              {/* 个人资料升级为「个人中心」：可改昵称/头像/手机/邮箱/密码 */}
+              <div
+                className="dropdown-item"
+                onClick={() => { setDropdownOpen(false); navigate('/me'); }}
+              >
+                <span>👤 个人中心</span>
               </div>
-              <div className="dropdown-item">
-                <span>📊 游戏统计</span>
+              {/* 公开主页：在某个游戏主页点开时锁定该游戏（只显示这个游戏的战绩/记录） */}
+              <div
+                className="dropdown-item"
+                onClick={() => {
+                  setDropdownOpen(false);
+                  const id = store.auth.user?._id;
+                  if (id) navigate(`/user/${id}${profileGame ? `?game=${profileGame}` : ''}`);
+                }}
+              >
+                <span>📊 {profileGame ? '本游戏战绩' : '公开主页'}</span>
               </div>
               {/* 语音包/背景音乐已收进游戏右上角的设置弹框，用户菜单不再重复入口 */}
               <div
