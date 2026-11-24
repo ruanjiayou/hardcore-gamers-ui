@@ -9,7 +9,7 @@
 import EventEmitter from 'eventemitter3';
 import type SocketTransport from '../../core/GameTransport';
 
-export type Variant = 'endless' | 'multi';
+export type Variant = 'endless' | 'team';
 
 /** 与服务端保持一致的物理参数（像素/秒、弧度/秒） */
 export const SNAKE_SPEED = 170;
@@ -21,10 +21,34 @@ export const SNAKE_TURN_RATE = SNAKE_SPEED / SNAKE_MIN_TURN_RADIUS;
 export const SNAKE_BOOST_TURN_RATE = (SNAKE_SPEED * SNAKE_BOOST_MULT) / SNAKE_BOOST_MIN_TURN_RADIUS;
 export const SNAKE_RADIUS = 12;
 export const SNAKE_HEAD_RADIUS = 13;
-export const SNAKE_FOOD_RADIUS = 7;
 /** 3s 冲刺，1 分钟一次（与服务端一致） */
 export const SNAKE_BOOST_MS = 3000;
 export const SNAKE_BOOST_CD_MS = 60_000;
+/** 闪电道具：持续期间小幅加速（与服务端一致） */
+export const SNAKE_LIGHTNING_MULT = 1.35;
+/** 磁铁道具的吸附半径（与服务端一致，用于画范围提示圈） */
+export const SNAKE_MAGNET_RADIUS = 180;
+
+/**
+ * 场上可拾取物类型（与服务端 rules.ts 一一对应）：
+ * 普通食物（分三档）/ 尸体残骸 / 磁铁 / 闪电。
+ */
+export const SNAKE_KIND_FOOD = 0;
+export const SNAKE_KIND_CORPSE = 1;
+export const SNAKE_KIND_MAGNET = 2;
+export const SNAKE_KIND_LIGHTNING = 3;
+
+/** 一个可拾取物（服务端权威下发：坐标 + 半径 + 分值 + 类型） */
+export interface SnakeFoodItem {
+  x: number;
+  y: number;
+  /** 半径（像素）：决定碰撞判定与绘制大小 */
+  r: number;
+  /** 分值（道具为 0） */
+  v: number;
+  /** 类型：SNAKE_KIND_* */
+  k: number;
+}
 
 const TAU = Math.PI * 2;
 /** 上报定时器周期（ms）：30Hz，与渲染/服务端 tick 对得上，且完全独立于 UI 输入 */
@@ -71,10 +95,16 @@ export interface SnakeEntry {
   boosting: boolean;
   /** 加速冷却剩余（ms） */
   boostCd: number;
+  /** 磁铁效果剩余（ms），0 表示没有 */
+  magnet: number;
+  /** 闪电加速剩余（ms），0 表示没有 */
+  lightning: number;
   /** 距离重生（ms） */
   respawnIn: number;
   /** 已重生次数（无尽），用于检测"整条蛇瞬移" */
   respawns: number;
+  /** 所属队伍（团队模式）；空串表示无队伍 */
+  team: string;
 }
 
 export interface SnakeView {
@@ -83,9 +113,9 @@ export interface SnakeView {
   w: number;
   h: number;
   radius: number;
-  food: [number, number][];
+  food: SnakeFoodItem[];
   snakes: SnakeEntry[];
-  players: { id: string; nickname: string }[];
+  players: { id: string; nickname: string; team: string }[];
   myId: string;
   score: number;
   best: number;
@@ -100,10 +130,13 @@ export interface SnakeView {
   respawns: number;
   status: 'waiting' | 'playing' | 'over';
   winner: string;
+  /** 团队模式下各队总积分：team -> 分数 */
+  teamScores: Record<string, number>;
 }
 
 interface SnapshotSnake {
   id: string;
+  team?: string;
   x: number;
   y: number;
   angle: number;
@@ -115,6 +148,8 @@ interface SnapshotSnake {
   invincible?: number;
   boosting?: number;
   boostCd?: number;
+  magnet?: number;
+  lightning?: number;
   respawnIn?: number;
   awaiting?: boolean;
   respawns?: number;
@@ -126,12 +161,14 @@ interface Snapshot {
   radius?: number;
   tick: number;
   variant?: string;
-  food: [number, number][];
+  food: SnakeFoodItem[];
   /** 座位表：局中有人加入时也会随快照刷新 */
-  players?: { id: string; nickname: string }[];
+  players?: { id: string; nickname: string; team?: string }[];
   snakes: SnapshotSnake[];
   status: 'playing' | 'over';
   winner?: string;
+  /** 团队模式各队总积分 */
+  teamScores?: Record<string, number>;
 }
 
 export default class LogicSnake extends EventEmitter {
@@ -144,9 +181,11 @@ export default class LogicSnake extends EventEmitter {
   w = 3600;
   h = 2600;
   radius = SNAKE_RADIUS;
-  food: [number, number][] = [];
+  food: SnakeFoodItem[] = [];
   snakes: SnakeEntry[] = [];
-  players: { id: string; nickname: string }[] = [];
+  players: { id: string; nickname: string; team: string }[] = [];
+  /** 团队模式各队总积分 */
+  teamScores: Record<string, number> = {};
   status: 'waiting' | 'playing' | 'over' = 'waiting';
   winner = '';
   tick = 0;
@@ -160,6 +199,8 @@ export default class LogicSnake extends EventEmitter {
   /** 上报完全独立：固定 33ms 定时器只在角度变化时发包，aim() 不碰网络 */
   private reportTimer: ReturnType<typeof setInterval> | null = null;
   private lastSentAngle = Number.NaN;
+  /** 连续被服务端拒绝的次数（用于节流重发，防止 30Hz 上报被放大成倍流量） */
+  private retryCount = 0;
   /** 玩家还没给过方向时不要上报：否则会拿默认 0 覆盖服务端"朝地图中心"的出生角度 */
   private hasAim = false;
   /** 渲染校正量（像素 / 弧度）：新快照把蛇头往回拉时，用它把跳变摊平 */
@@ -174,6 +215,10 @@ export default class LogicSnake extends EventEmitter {
   // ===== 本地展示的加速状态（乐观 + 快照纠正） =====
   private localBoostUntil = 0;
   private localBoostReadyAt = 0;
+  /** 闪电道具的本地截止时间（预测速度用） */
+  private localLightningUntil = 0;
+  /** 磁铁道具的本地截止时间（渲染用） */
+  private localMagnetUntil = 0;
   private invincibleUntil = 0;
   private awaiting = false;
   private respawnAt = 0;
@@ -189,7 +234,7 @@ export default class LogicSnake extends EventEmitter {
     this.player = player;
     this.roomMembers = room?.members || [];
     this.roomId = room?._id || player?.room_id || '';
-    this.variant = variant === 'multi' ? 'multi' : 'endless';
+    this.variant = variant === 'team' ? 'team' : 'endless';
     this.socket?.socket?.on('room:player-action', this.onRemoteAction);
     // 上报与 UI 分开：UI 只调用 aim()，这里按固定节奏把最新角度送出去
     this.reportTimer = setInterval(() => this.reportAim(), AIM_INTERVAL);
@@ -228,10 +273,11 @@ export default class LogicSnake extends EventEmitter {
           nickname: p.nickname
             || this.roomMembers.find((m: any) => m._id === p._id)?.nickname
             || '玩家',
+          team: p.team || '',
         }));
     }
     const variant = state.variant as string | undefined;
-    if (variant === 'multi' || variant === 'endless') this.variant = variant;
+    if (variant === 'team' || variant === 'endless') this.variant = variant;
     this.status = state.snake ? 'playing' : 'waiting';
     if (state.snake) this.applySnapshot(state.snake as Snapshot);
     else this.emitView();
@@ -308,12 +354,39 @@ export default class LogicSnake extends EventEmitter {
     this.send({ angle: this.targetAngle });
   }
 
+  /**
+   * 发指令并等服务端确认。
+   *
+   * 服务端会回 { success, message }：success=false 表示这条指令被拒
+   * （最典型的是"不在局中"——刚进房时运行时还没把这个玩家加进去）。
+   * 带 ack 是为了能感知失败并重发，而不是像以前那样静默丢弃 ——
+   * 静默丢弃的表现就是"进了房间却完全控制不了方向"。
+   *
+   * 重试是节流的：转向指令 30Hz 上报，若每条都重试会成倍放大流量。
+   * 只有"准入失败"才补发（最多补 2 次、每次间隔 220ms），
+   * 补发的是当前目标角 —— 玩家按住不放时，补一条就够了。
+   */
   private send(payload: Record<string, unknown>) {
     if (!this.match_id || !this.myId) return;
-    this.socket?.socket?.emit('room:player-action', this.match_id, {
-      player_id: this.myId,
-      ...payload,
-    });
+    this.socket?.socket?.emit(
+      'room:player-action',
+      this.match_id,
+      { player_id: this.myId, ...payload },
+      (res: any) => {
+        if (res?.success) {
+          this.retryCount = 0;
+          return;
+        }
+        // 其它失败原因（超时、参数非法等）重试也没意义
+        if (this.retryCount >= 2) return;
+        this.retryCount++;
+        setTimeout(() => {
+          if (this.status === 'playing' && this.predAlive && this.hasAim) {
+            this.send({ angle: this.targetAngle });
+          }
+        }, 220);
+      },
+    );
   }
 
   // ===== 快照 =====
@@ -322,12 +395,13 @@ export default class LogicSnake extends EventEmitter {
     this.h = snap.h || this.h;
     this.radius = snap.radius || this.radius;
     this.tick = snap.tick || 0;
-    this.food = snap.food.map(([x, y]) => [x, y] as [number, number]);
-    if (snap.variant === 'multi' || snap.variant === 'endless') this.variant = snap.variant;
+    this.food = (snap.food || []).map(f => ({ x: f.x, y: f.y, r: f.r, v: f.v, k: f.k }));
+    if (snap.variant === 'team' || snap.variant === 'endless') this.variant = snap.variant;
     if (Array.isArray(snap.players) && snap.players.length) {
       // 以快照里的座位表为准：局中进来的人也能立刻显示昵称
-      this.players = snap.players.map(p => ({ id: p.id, nickname: p.nickname || '玩家' }));
+      this.players = snap.players.map(p => ({ id: p.id, nickname: p.nickname || '玩家', team: p.team || '' }));
     }
+    if (snap.teamScores) this.teamScores = snap.teamScores;
 
     const myId = this.myId;
     const now = Date.now();
@@ -355,8 +429,11 @@ export default class LogicSnake extends EventEmitter {
       invincible: s.invincible || 0,
       boosting: (s.boosting || 0) > 0,
       boostCd: s.boostCd || 0,
+      magnet: s.magnet || 0,
+      lightning: s.lightning || 0,
       respawnIn: s.respawnIn || 0,
       respawns: s.respawns || 0,
+      team: s.team || '',
     }));
     this.awaiting = snap.snakes.find(x => x.id === myId)?.awaiting === true;
     this.winner = snap.winner || '';
@@ -371,6 +448,10 @@ export default class LogicSnake extends EventEmitter {
       // 服务端冷却为准，只往"更晚"的方向纠正，避免本地乐观值被旧快照覆盖
       this.localBoostReadyAt = Math.max(this.localBoostReadyAt, now + mine.boostCd);
       if (mine.boosting) this.localBoostUntil = Math.max(this.localBoostUntil, now + 60);
+      // 道具效果：服务端给的是剩余毫秒数，本地记下截止点
+      // （闪电用于预测速度，磁铁用于渲染提示圈）
+      if (mine.lightning) this.localLightningUntil = Math.max(this.localLightningUntil, now + mine.lightning);
+      if (mine.magnet) this.localMagnetUntil = Math.max(this.localMagnetUntil, now + mine.magnet);
       this.snap = {
         x: mine.x,
         y: mine.y,
@@ -427,7 +508,10 @@ export default class LogicSnake extends EventEmitter {
     if (elapsed < 8) return { x: snap.x, y: snap.y, angle: snap.angle, pts: snap.pts };
 
     const boosting = now < this.localBoostUntil;
-    const speed = SNAKE_SPEED * (boosting ? SNAKE_BOOST_MULT : 1);
+    // 主动加速优先于闪电道具（与服务端一致，两者不叠加）
+    const lightning = now < this.localLightningUntil;
+    const mult = boosting ? SNAKE_BOOST_MULT : (lightning ? SNAKE_LIGHTNING_MULT : 1);
+    const speed = SNAKE_SPEED * mult;
     // 与服务端同一条公式：角速度 = 速度 / 最小转弯半径
     const rate = speed / (boosting ? SNAKE_BOOST_MIN_TURN_RADIUS : SNAKE_MIN_TURN_RADIUS);
 
@@ -499,20 +583,24 @@ export default class LogicSnake extends EventEmitter {
     });
 
     // 预测已经吃到的食物先本地隐藏，避免"蛇头压过食物却还在"的穿模观感。
+    // 每颗食物半径不同（分三档），判定要按各自的 r 算。
     // 先做一次 O(n) 扫描判断附近有没有食物：绝大多数帧没有，就直接把原数组交出去，
-    // 省掉每帧一次 70 元素的数组复制（渲染循环每秒要跑 60 次）。
+    // 省掉每帧一次数组复制（渲染循环每秒要跑 60 次）。
     let food = this.food;
     if (pred && mySnake?.alive) {
-      const limit = SNAKE_HEAD_RADIUS + SNAKE_FOOD_RADIUS;
-      const limit2 = limit * limit;
       let near = false;
       for (let i = 0; i < this.food.length; i++) {
-        const dx = this.food[i][0] - headX;
-        const dy = this.food[i][1] - headY;
-        if (dx * dx + dy * dy <= limit2) { near = true; break; }
+        const f = this.food[i];
+        const dx = f.x - headX;
+        const dy = f.y - headY;
+        const limit = SNAKE_HEAD_RADIUS + f.r;
+        if (dx * dx + dy * dy <= limit * limit) { near = true; break; }
       }
       if (near) {
-        food = this.food.filter(([fx, fy]) => Math.hypot(fx - headX, fy - headY) > limit);
+        food = this.food.filter(f => {
+          const limit = SNAKE_HEAD_RADIUS + f.r;
+          return Math.hypot(f.x - headX, f.y - headY) > limit;
+        });
       }
     }
 
@@ -536,6 +624,7 @@ export default class LogicSnake extends EventEmitter {
       respawns: this.respawns,
       status: this.status,
       winner: this.winner,
+      teamScores: this.teamScores,
     };
   }
 

@@ -11,6 +11,8 @@ export interface NotificationMessage {
 class NotificationManager {
   private listeners: Array<(notifications: NotificationMessage[]) => void> = [];
   private notifications: NotificationMessage[] = [];
+  /** 同一条消息的重复出现时间戳：message+type → 上次出现时刻 */
+  private lastShown = new Map<string, number>();
 
   subscribe(listener: (notifications: NotificationMessage[]) => void) {
     this.listeners.push(listener);
@@ -24,6 +26,22 @@ class NotificationManager {
   }
 
   show(message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info', duration = 3000) {
+    // 同一条消息短时间内重复出现时不叠加：
+    // 页面反复触发同一个提示（如"已离开房间"）时，堆一屏相同的提示既吵又挡视线。
+    // 3 秒内的重复只把已有那条的过期时间往后延。
+    const key = `${type}|${message}`;
+    const now = Date.now();
+    const last = this.lastShown.get(key) || 0;
+    if (now - last < 3000) {
+      const existing = this.notifications.find(n => n.message === message && n.type === type);
+      if (existing) {
+        existing.duration = duration;
+        this.notify();
+        return existing.id;
+      }
+    }
+    this.lastShown.set(key, now);
+
     const id = `${Date.now()}-${Math.random()}`;
     const notification: NotificationMessage = { id, message, type, duration };
 

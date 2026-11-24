@@ -434,8 +434,8 @@ export const RoomPage = observer(() => {
   const isSoloGame = variantInfo
     ? variantInfo.mode === 'solo'
     : (gameInfo?.mode ?? ((gameInfo?.numbers?.max ?? 2) <= 1 ? 'solo' : 'room')) === 'solo';
-  // 实时对局（多人贪吃蛇）：没有求和机制，认输 = 自我淘汰
-  const isRealtimeGame = slug === 'snake' && roomVariant === 'multi';
+  // 实时对局（团队模式贪吃蛇）：没有求和机制，认输 = 自我淘汰
+  const isRealtimeGame = slug === 'snake' && roomVariant === 'team';
   // 无尽挑战竞技房：进房自动开局，死了自动重生，随时可以退出（不算逃跑）
   const isEndlessArena = slug === 'snake' && roomVariant === 'endless';
   // 官方无尽桌没有"开始游戏"：进房即开局

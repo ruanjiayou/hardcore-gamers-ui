@@ -2,7 +2,7 @@ import GameTransport from '../../core/GameTransport'
 import Logic from './Logic'
 import Scene from './Scene2D'
 
-/** 游戏入口：variant 由房间设置传入（endless=无尽挑战 / multi=多人对战） */
+/** 游戏入口：variant 由房间设置传入（endless=无尽挑战 / team=团队模式） */
 export default class GameSnake {
   logic: Logic;
   scene: Scene;

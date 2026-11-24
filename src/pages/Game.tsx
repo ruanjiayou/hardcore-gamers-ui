@@ -1,6 +1,7 @@
 import React, { useEffect, useState, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { observer, useLocalObservable } from 'mobx-react-lite';
+import { toJS } from 'mobx';
 import store from '../stores'
 import { getSocket, ReceiveEvent, SendoutEvent, socketEvents, syncRoomScore } from '../services/socket';
 import { Leaderboard } from '../components/Leaderboard';
@@ -137,8 +138,21 @@ export const GamePage = observer(() => {
       socketEvents.getGamePlayer(slug, (player) => {
         store.game.setPlayer(player);
         // 已在游戏中（如掉线/刷新回来、单人快开的临时房未退出）→ 回到对局
-        if (player.room_id && !skipResume) {
-          navigate(`/game/${slug}/room/${player.room_id}`);
+        //
+        // 自动回房前必须确认房间还在：player.room_id 可能是历史遗留的脏指针
+        // （房间已解散 / 玩家早已不在成员表里）。直接跳过去会进一个死房间，
+        // 房间页再把玩家弹回来，形成"进游戏页 → 弹回房间 → 再弹回游戏页"的循环，
+        // 表现为反复弹出"已离开房间"。
+        const roomId = player?.room_id;
+        if (roomId && !skipResume) {
+          socketEvents.getRoomDetail(roomId, (detail: any) => {
+            if (detail?.room) {
+              navigate(`/game/${slug}/room/${roomId}`);
+            } else {
+              // 房间没了：清掉本地指针，别再往死房间里跳
+              store.game.setPlayer({ ...toJS(player), room_id: '', state: 'online' });
+            }
+          });
         }
       })
     }

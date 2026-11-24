@@ -9,7 +9,11 @@
 //   等 UI 是 DOM，在同一个 rAF 里按变化更新（transform/text），不再有 UI 节流。
 import LogicSnake, {
   SNAKE_BOOST_CD_MS,
-  SNAKE_FOOD_RADIUS,
+  SNAKE_KIND_CORPSE,
+  SNAKE_KIND_FOOD,
+  SNAKE_KIND_LIGHTNING,
+  SNAKE_KIND_MAGNET,
+  SNAKE_MAGNET_RADIUS,
   type SnakeView,
   normalizeAngle,
 } from './Logic';
@@ -19,8 +23,50 @@ const OUTSIDE = '#06060b';
 const GRID = 'rgba(104,116,170,0.10)';
 const GRID_STRONG = 'rgba(120,136,205,0.18)';
 const BORDER = 'rgba(120,140,220,0.55)';
-const FOOD_COLOR = '#ff5d5d';
+/** 普通食物：三档（小的多、大的少），越值钱越大越亮 */
+const FOOD_COLORS = ['#ff7a7a', '#ff5d5d', '#ff3b3b'];
+/** 尸体残骸：暗灰红 */
+const CORPSE_COLOR = '#9b6b6b';
+/** 道具配色：磁铁（蓝）、闪电（黄） */
+const ITEM_COLORS: Record<number, string> = {
+  [SNAKE_KIND_MAGNET]: '#60a5fa',
+  [SNAKE_KIND_LIGHTNING]: '#fbbf24',
+};
 const SNAKE_COLORS = ['#4ade80', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#34d399'];
+/**
+ * 团队模式的队伍配色：同一队伍所有蛇用同一个颜色，方便一眼分清敌我。
+ * 队伍名与服务端 games/snake/teams.ts 保持一致（红/蓝/黄/绿/紫/橙）。
+ */
+const TEAM_COLORS: Record<string, string> = {
+  红队: '#ef4444',
+  蓝队: '#3b82f6',
+  黄队: '#eab308',
+  绿队: '#22c55e',
+  紫队: '#a855f7',
+  橙队: '#f97316',
+};
+/** 队伍配色回退：服务端出现未知队名时按顺序取色 */
+const TEAM_FALLBACK_COLORS = Object.values(TEAM_COLORS);
+
+/** 未知队名的稳定序号（同名永远同色） */
+function teamColorIndex(team: string): number {
+  let h = 0;
+  for (let i = 0; i < team.length; i++) h = (h * 31 + team.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/** 食物档位（按半径）：与服务端 rules.ts 的三档一一对应，越大越亮 */
+function foodTierIndex(radius: number): number {
+  if (radius >= 10) return 2;
+  if (radius >= 7) return 1;
+  return 0;
+}
+
+/** #rrggbb → rgba(r,g,b,a) */
+function withAlpha(hex: string, alpha: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
 
 /** 相机缩放：按屏幕尺寸自适应，保证不同设备看到的"世界范围"接近 */
 const ZOOM_MIN = 0.7;
@@ -288,9 +334,8 @@ export default class Scene2DSnake {
   private startedAt = 0;
   /** 远端蛇的平滑显示状态 */
   private disp = new Map<string, DispSnake>();
-  /** 食物预渲染精灵：避免每帧为每颗食物画三层圆 */
-  private foodSprite: HTMLCanvasElement | null = null;
-  private foodSpriteSize = 0;
+  /** 食物/道具预渲染精灵：按 (类型, 半径) 缓存，避免每帧为每颗画多层圆 */
+  private foodSprites = new Map<string, { canvas: HTMLCanvasElement; size: number }>();
   /** 指针坐标缓存：pointermove 不再每次读 getBoundingClientRect 触发强制布局 */
   private rectCache: { left: number; top: number } | null = null;
   /** DOM UI 层 */
@@ -391,7 +436,7 @@ export default class Scene2DSnake {
     this.raf = 0;
     this.ui?.root.remove();
     this.ui = null;
-    this.foodSprite = null;
+    this.foodSprites.clear();
     this.rectCache = null;
     this.inited = false;
     this.joyPointerId = null;
@@ -504,7 +549,7 @@ export default class Scene2DSnake {
     this.dpr = Math.min(this.renderScale, window.devicePixelRatio || 1);
     this.canvas.width = Math.round(this.cssW * this.dpr);
     this.canvas.height = Math.round(this.cssH * this.dpr);
-    this.foodSprite = null;
+    this.foodSprites.clear();
     this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(this.cssW / 900, this.cssH / 720)));
     this.layoutUi();
   }
@@ -846,44 +891,91 @@ export default class Scene2DSnake {
   }
 
   /** 食物三层圆只画一次到精灵，之后每帧一次 drawImage */
-  private buildFoodSprite() {
-    if (typeof document === 'undefined') return;
-    const r = SNAKE_FOOD_RADIUS * this.zoom;
+  private getFoodSprite(kind: number, radius: number): { canvas: HTMLCanvasElement; size: number } | null {
+    if (typeof document === 'undefined') return null;
+    const key = `${kind}:${radius}`;
+    let s = this.foodSprites.get(key);
+    if (!s) {
+      const built = this.buildFoodSprite(kind, radius);
+      if (!built) return null;
+      s = built;
+      this.foodSprites.set(key, s);
+    }
+    return s;
+  }
+
+  /** 按类型与半径生成精灵：普通食物分三档（越小越暗）、残骸暗红、磁铁/闪电画图标 */
+  private buildFoodSprite(kind: number, radius: number): { canvas: HTMLCanvasElement; size: number } | null {
+    if (typeof document === 'undefined') return null;
+    const r = radius * this.zoom;
     const size = Math.ceil(r * 5.2);
     const c = document.createElement('canvas');
     c.width = c.height = Math.ceil(size * this.dpr);
     const g = c.getContext('2d');
-    if (!g) return;
+    if (!g) return null;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     const mid = size / 2;
+    const color = kind === SNAKE_KIND_CORPSE
+      ? CORPSE_COLOR
+      : (kind === SNAKE_KIND_FOOD ? FOOD_COLORS[foodTierIndex(radius)] : (ITEM_COLORS[kind] || FOOD_COLORS[0]));
+
+    // 光晕
     g.beginPath();
     g.arc(mid, mid, r * 2.1, 0, TAU);
-    g.fillStyle = 'rgba(255,93,93,0.10)';
+    g.fillStyle = withAlpha(color, 0.12);
     g.fill();
+    // 主体
     g.beginPath();
     g.arc(mid, mid, r, 0, TAU);
-    g.fillStyle = FOOD_COLOR;
+    g.fillStyle = color;
     g.fill();
-    g.beginPath();
-    g.arc(mid - r * 0.28, mid - r * 0.28, r * 0.32, 0, TAU);
-    g.fillStyle = 'rgba(255,255,255,0.55)';
-    g.fill();
-    this.foodSprite = c;
-    this.foodSpriteSize = size;
+
+    if (kind === SNAKE_KIND_MAGNET) {
+      // 马蹄形磁铁：白色 U 形 + 两个极
+      g.strokeStyle = '#e2e8f0';
+      g.lineWidth = Math.max(1.5, r * 0.26);
+      g.beginPath();
+      g.arc(mid, mid + r * 0.12, r * 0.6, Math.PI, 0);
+      g.stroke();
+      g.fillStyle = '#e2e8f0';
+      g.fillRect(mid - r * 0.6, mid + r * 0.12, r * 0.24, r * 0.4);
+      g.fillRect(mid + r * 0.36, mid + r * 0.12, r * 0.24, r * 0.4);
+    } else if (kind === SNAKE_KIND_LIGHTNING) {
+      // 闪电符号
+      g.fillStyle = '#1f2937';
+      g.beginPath();
+      g.moveTo(mid + r * 0.16, mid - r * 0.72);
+      g.lineTo(mid - r * 0.34, mid + r * 0.06);
+      g.lineTo(mid - r * 0.02, mid + r * 0.06);
+      g.lineTo(mid - r * 0.2, mid + r * 0.76);
+      g.lineTo(mid + r * 0.34, mid - r * 0.1);
+      g.lineTo(mid + r * 0.02, mid - r * 0.1);
+      g.closePath();
+      g.fill();
+    } else {
+      // 食物 / 残骸：高光
+      g.beginPath();
+      g.arc(mid - r * 0.28, mid - r * 0.28, r * 0.32, 0, TAU);
+      g.fillStyle = 'rgba(255,255,255,0.55)';
+      g.fill();
+    }
+    return { canvas: c, size };
   }
 
   private drawFood(now: number, view: WorldRect) {
-    if (!this.foodSprite) this.buildFoodSprite();
-    const sprite = this.foodSprite;
-    if (!sprite) return;
     const ctx = this.ctx;
-    const r = SNAKE_FOOD_RADIUS * this.zoom;
-    const pulse = 1 + 0.05 * (0.5 + 0.5 * Math.sin(now / 300));
-    const size = this.foodSpriteSize * pulse;
-    const half = size / 2;
-    for (const [fx, fy] of this.state.food) {
-      if (fx < view.x0 - r || fx > view.x1 + r || fy < view.y0 - r || fy > view.y1 + r) continue;
-      ctx.drawImage(sprite, this.sx(fx) - half, this.sy(fy) - half, size, size);
+    // 普通食物轻微脉动，道具脉动更明显（要一眼看见）
+    const foodPulse = 1 + 0.05 * (0.5 + 0.5 * Math.sin(now / 300));
+    const itemPulse = 1 + 0.12 * (0.5 + 0.5 * Math.sin(now / 220));
+    for (const f of this.state.food) {
+      const sprite = this.getFoodSprite(f.k, f.r);
+      if (!sprite) continue;
+      const rr = f.r * this.zoom;
+      if (f.x < view.x0 - rr || f.x > view.x1 + rr || f.y < view.y0 - rr || f.y > view.y1 + rr) continue;
+      const isItem = f.k === SNAKE_KIND_MAGNET || f.k === SNAKE_KIND_LIGHTNING;
+      const size = sprite.size * (isItem ? itemPulse : foodPulse);
+      const half = size / 2;
+      ctx.drawImage(sprite.canvas, this.sx(f.x) - half, this.sy(f.y) - half, size, size);
     }
   }
 
@@ -897,7 +989,10 @@ export default class Scene2DSnake {
     for (const p of this.state.players) this.nameMap.set(p.id, p.nickname);
 
     this.state.snakes.forEach((snake, idx) => {
-      const color = SNAKE_COLORS[idx % SNAKE_COLORS.length];
+      // 团队模式按队伍取色（队友同色），无尽模式按加入顺序轮转取色
+      const color = snake.team
+        ? (TEAM_COLORS[snake.team] || TEAM_FALLBACK_COLORS[teamColorIndex(snake.team) % TEAM_FALLBACK_COLORS.length])
+        : SNAKE_COLORS[idx % SNAKE_COLORS.length];
       const disp = snake.mine ? null : this.disp.get(snake.id);
       const pts = disp ? disp.pts : snake.pts;
       if (!pts.length) return;
@@ -952,6 +1047,26 @@ export default class Scene2DSnake {
         ctx.stroke();
       }
 
+      // 磁铁：蛇头外圈画吸附范围提示
+      if (headVisible && snake.magnet > 0 && snake.alive) {
+        ctx.beginPath();
+        ctx.arc(hx, hy, SNAKE_MAGNET_RADIUS * this.zoom, 0, TAU);
+        ctx.strokeStyle = 'rgba(96,165,250,0.30)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      // 闪电：黄色加速拖尾
+      if (headVisible && snake.lightning > 0 && snake.alive) {
+        ctx.beginPath();
+        ctx.moveTo(hx, hy);
+        for (let i = 1; i < Math.min(pts.length, 6); i++) ctx.lineTo(this.sx(pts[i][0]), this.sy(pts[i][1]));
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(251,191,36,0.32)';
+        ctx.lineWidth = radius * 2.4;
+        ctx.stroke();
+      }
+
       if (headVisible) {
         const angle = disp ? disp.angle : snake.angle;
         ctx.beginPath();
@@ -991,13 +1106,15 @@ export default class Scene2DSnake {
         if (!snake.mine) {
           const name = this.nameMap.get(snake.id);
           if (name) {
+            // 团队模式：名字前面挂队伍标签，方便一眼分清敌我
+            const label = snake.team ? `[${snake.team}] ${name}` : name;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             ctx.font = '11px system-ui, sans-serif';
             ctx.fillStyle = 'rgba(10,10,18,0.55)';
-            ctx.fillText(name, hx, hy - radius * 1.5 + 1);
-            ctx.fillStyle = 'rgba(226,232,248,0.75)';
-            ctx.fillText(name, hx, hy - radius * 1.5);
+            ctx.fillText(label, hx, hy - radius * 1.5 + 1);
+            ctx.fillStyle = snake.team ? color : 'rgba(226,232,248,0.75)';
+            ctx.fillText(label, hx, hy - radius * 1.5);
             ctx.textAlign = 'left';
           }
         }
@@ -1130,11 +1247,16 @@ export default class Scene2DSnake {
       row.className = 'snake-player-row' + (snake.alive ? '' : ' dead');
       const dot = document.createElement('span');
       dot.className = 'snake-player-dot';
-      dot.style.background = SNAKE_COLORS[i % SNAKE_COLORS.length];
+      dot.style.background = snake.team
+        ? (TEAM_COLORS[snake.team] || TEAM_FALLBACK_COLORS[teamColorIndex(snake.team) % TEAM_FALLBACK_COLORS.length])
+        : SNAKE_COLORS[i % SNAKE_COLORS.length];
       const name = document.createElement('span');
       name.className = 'snake-player-name' + (snake.mine ? ' me' : '');
       const raw = s.players.find(p => p.id === snake.id)?.nickname || `玩家${i + 1}`;
-      name.textContent = raw.length > 9 ? `${raw.slice(0, 9)}…` : raw;
+      // 团队模式：名字前挂队伍标签
+      name.textContent = snake.team
+        ? `${snake.team}·${raw.length > 9 ? `${raw.slice(0, 9)}…` : raw}`
+        : (raw.length > 9 ? `${raw.slice(0, 9)}…` : raw);
       const score = document.createElement('span');
       score.className = 'snake-player-score';
       score.textContent = snake.alive ? String(snake.score) : '等待重生';
@@ -1157,10 +1279,11 @@ export default class Scene2DSnake {
       }
     } else if (s.status === 'over') {
       kind = 'notice';
-      if (s.variant === 'multi') {
+      if (s.variant === 'team') {
         const winner = s.snakes.find(x => x.id === s.winner);
         const name = winner ? (s.players.find(p => p.id === winner.id)?.nickname || '玩家') : '';
-        title = name ? `${name} 获胜` : '平局';
+        const team = winner?.team || '';
+        title = name ? `${team ? team + ' ' : ''}${name} 获胜` : '平局';
       } else {
         title = '本局结束';
       }

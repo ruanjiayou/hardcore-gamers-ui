@@ -755,6 +755,13 @@
   font-weight: 700;
 }
 
+/* 队伍标签：团队模式（贪吃蛇）按队伍配色，和蛇身上的颜色一致 */
+.player-item .badge.team {
+  background: rgba(99, 102, 241, 0.85);
+  margin-right: 4px;
+  margin-left: 0;
+}
+
 .chat {
   flex: 1;
   display: flex;

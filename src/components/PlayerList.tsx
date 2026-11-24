@@ -69,10 +69,13 @@ export const PlayerList = observer(({
           const isMe = store.game.player_id === player._id;
           // 观战优先：观战者一律显示「观」，不再叠加你/机
           const tag = isViewer ? '观' : isRobot ? '机' : isMe ? '你' : '';
+          // 团队模式：座位上带队伍名，展示在昵称前（红队/蓝队…）
+          const team = player.team as string | undefined;
           return (
             <div key={player._id} className="player-item">
               <span className="avatar">👤</span>
               <span className="name">
+                {team && <span className="badge team">{team}</span>}
                 {player.nickname || '玩家'}
                 {tag && <span className="badge">{tag}</span>}
               </span>

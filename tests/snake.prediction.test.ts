@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import LogicSnake, {
+  SNAKE_LIGHTNING_MULT,
   SNAKE_SPEED,
   SNAKE_TURN_RATE,
 } from '../src/games/snake/Logic';
@@ -29,10 +30,11 @@ function snake(id: string, x = 300, y = 300, angle = 0, length = 110) {
     id, x, y, angle, pts, length,
     alive: true, score: 0, best: 0,
     invincible: 0, boosting: 0, boostCd: 0, respawnIn: 0, respawns: 0,
+    magnet: 0, lightning: 0,
   };
 }
 
-function makeState(food: [number, number][] = [], extra: any[] = [], headX = 300) {
+function makeState(food: { x: number; y: number; r?: number; v?: number; k?: number }[] = [], extra: any[] = [], headX = 300) {
   return {
     match_id: 'm1',
     players: [{ _id: 'p1', member_type: 'player', nickname: 'tester' }],
@@ -51,7 +53,7 @@ function makeState(food: [number, number][] = [], extra: any[] = [], headX = 300
   };
 }
 
-function makeLogic(food: [number, number][] = [], extra: any[] = []) {
+function makeLogic(food: { x: number; y: number; r?: number; v?: number; k?: number }[] = [], extra: any[] = []) {
   const { socket, sent } = makeSocket();
   const logic = new LogicSnake(socket, { _id: 'p1', nickname: 'tester', room_id: 'r1' });
   logic.setState(makeState(food, extra));
@@ -82,7 +84,7 @@ describe('贪吃蛇本地预测（连续像素）', () => {
 
   test('预测吃掉的食物会先从本地画面隐藏', async () => {
     // 食物在蛇头正前方 25px：落地瞬间还在，前推 100ms 后应被隐藏
-    const { logic } = makeLogic([[325, 300]]);
+    const { logic } = makeLogic([{ x: 325, y: 300, r: 5, v: 5, k: 0 }]);
     expect(logic.view().food.length).toBe(1);
     await sleep(120);
     expect(logic.view().food.length).toBe(0);
@@ -150,6 +152,68 @@ describe('贪吃蛇本地预测（连续像素）', () => {
     expect(after.x - before.x).toBeGreaterThan(SNAKE_SPEED * 0.2);
     expect(after.x).toBeGreaterThan(headX);
     logic.destroy();
+  });
+
+  test('分档食物：快照里的半径/分值/类型原样保留', () => {
+    const { logic } = makeLogic([
+      { x: 400, y: 300, r: 5, v: 5, k: 0 },
+      { x: 500, y: 300, r: 8, v: 12, k: 0 },
+      { x: 600, y: 300, r: 11, v: 30, k: 0 },
+      { x: 700, y: 300, r: 9, v: 0, k: 2 },
+      { x: 800, y: 300, r: 8, v: 7, k: 1 },
+    ]);
+    const food = logic.view().food;
+    expect(food.length).toBe(5);
+    expect(food.map(f => f.r)).toEqual([5, 8, 11, 9, 8]);
+    expect(food.map(f => f.v)).toEqual([5, 12, 30, 0, 7]);
+    expect(food.map(f => f.k)).toEqual([0, 0, 0, 2, 1]);
+  });
+
+  test('道具效果状态透传到渲染层（磁铁 / 闪电）', () => {
+    const { logic } = makeLogic([], []);
+    logic.setState({
+      ...makeState([], []),
+      snake: {
+        ...makeState([], []).snake,
+        snakes: [{ ...snake('p1', 300), magnet: 500, lightning: 800 }],
+      },
+    });
+    const mine = logic.view().snakes.find(s => s.mine)!;
+    expect(mine.magnet).toBeGreaterThan(0);
+    expect(mine.lightning).toBeGreaterThan(0);
+  });
+
+  test('闪电道具期间本地预测速度 ×1.35（与服务端一致）', async () => {
+    const build = (lightning: boolean) => {
+      const { logic } = makeLogic();
+      const st = makeState([], []);
+      st.snake.snakes = [{ ...snake('p1', 300), lightning: lightning ? 4000 : 0 }];
+      logic.setState(st);
+      return logic;
+    };
+    const normal = build(false);
+    const zapped = build(true);
+    await sleep(200);
+    const dNormal = me(normal).x - 300;
+    const dZapped = me(zapped).x - 300;
+    expect(dZapped / dNormal).toBeCloseTo(SNAKE_LIGHTNING_MULT, 1);
+    normal.destroy();
+    zapped.destroy();
+  });
+
+  test('预测隐藏食物按各自半径判定：只吃掉正前方那颗，远处的不受影响', async () => {
+    // 小食物在正前方 20px（判定半径 13+5=18，会吃到）；
+    // 大食物在 100px 外（判定半径 13+11=24，够不着）
+    const { logic } = makeLogic([
+      { x: 320, y: 300, r: 5, v: 5, k: 0 },
+      { x: 400, y: 300, r: 11, v: 30, k: 0 },
+    ]);
+    expect(logic.view().food.length).toBe(2);
+    await sleep(120);
+    const food = logic.view().food;
+    // 小的（判定半径 18）被吃到隐藏，大的（判定半径 24）还在
+    expect(food.length).toBe(1);
+    expect(food[0].r).toBe(11);
   });
 
   test('关闭/离开时发独立的分数同步事件（客户端不带分数）', () => {
