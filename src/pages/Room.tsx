@@ -585,25 +585,23 @@ export const RoomPage = observer(() => {
           )}
         </div>
         {immersive ? (
-          /* 全屏对局：左上关闭、右上设置，顶部中间不放游戏名，也不占棋盘空间 */
+          /* 全屏对局 HUD：左上让给排行榜，右上是一排「玩家与聊天 / 设置 / 关闭」，
+             小地图右对齐压在关闭键正下方（位置由 Scene2D 的 snakeMinimapLayout 算）。 */
           <div className="immersion-hud">
-            <div className="hud-corner hud-top-left">
-              <button
-                className="hud-btn hud-close"
-                title="关闭 / 退出"
-                aria-label="关闭"
-                onClick={() => local.setV('showLeaveDialog', true)}
-              >×</button>
+            <div className="hud-corner hud-top-right">
               <button
                 className="hud-btn hud-panel-toggle"
                 title="玩家与聊天"
                 aria-label="玩家与聊天"
                 onClick={() => local.setV('showPanel', !local.showPanel)}
               >☰</button>
-            </div>
-            <div className="hud-corner hud-bottom-right">
-              {/* 设置放在加速按钮正上方：右上角整块让给排行榜，小地图挪到左上关闭键下方 */}
               <GameSettings className="hud-btn" room={settingsRoom} />
+              <button
+                className="hud-btn hud-close"
+                title="关闭 / 退出"
+                aria-label="关闭"
+                onClick={() => local.setV('showLeaveDialog', true)}
+              >×</button>
             </div>
             {local.showPanel && (
               <div className="hud-drawer">

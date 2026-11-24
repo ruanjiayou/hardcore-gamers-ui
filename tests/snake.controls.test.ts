@@ -8,6 +8,7 @@ import {
   snakeViewport,
   clipSnakeSegments,
   joystickKnobOffset,
+  rankTopSnakes,
 } from '../src/games/snake/Scene2D';
 
 describe('贪吃蛇控件：固定屏幕布局，与场景/镜头无关', () => {
@@ -64,14 +65,14 @@ describe('贪吃蛇控件：固定屏幕布局，与场景/镜头无关', () => 
 });
 
 describe('贪吃蛇微缩地图与局部绘制', () => {
-  test('小地图在左上角关闭键下方，自己的世界坐标映射为地图上的相对位置', () => {
+  test('小地图在右上角关闭键下方，自己的世界坐标映射为地图上的相对位置', () => {
     for (const [w, h] of [[1280, 800], [375, 667]]) {
       const m = snakeMinimapLayout(w, h);
-      // 左上角、且在 42px 的关闭键（top 10 + 42）之下，两者不重叠
-      expect(m.x).toBeLessThan(w / 2);
+      // 右上角、且在 42px 按钮行（top 10 + 42）之下，两者不重叠
+      expect(m.x).toBeGreaterThan(w / 2);
+      expect(m.x + m.w).toBeLessThanOrEqual(w - 11);
       expect(m.y).toBeGreaterThanOrEqual(52);
       expect(m.y).toBeLessThan(h / 2);
-      expect(m.x + m.w).toBeLessThanOrEqual(w);
       expect(m.y + m.h).toBeLessThan(h);
       const [topLeft] = minimapPoint(m, 3600, 2600, 0, 0);
       expect(topLeft).toBeCloseTo(m.x, 6);
@@ -130,5 +131,37 @@ describe('贪吃蛇微缩地图与局部绘制', () => {
     expect(segs.length).toBe(2);
     expect(segs[0]).toEqual([[0, 0], [100, 100], [200, 200], [900, 900]]);
     expect(segs[1]).toEqual([[1000, 1000], [200, 210], [100, 110]]);
+  });
+});
+
+describe('贪吃蛇排行榜', () => {
+  const mk = (id: string, score: number, extra: Record<string, unknown> = {}) => ({ id, score, ...extra });
+
+  test('按分数降序，最多 10 条，名次按完整排序算', () => {
+    const snakes = Array.from({ length: 12 }, (_, i) => mk(`p${i}`, i * 10));
+    const top = rankTopSnakes(snakes, 10);
+    expect(top.length).toBe(10);
+    expect(top[0].snake.id).toBe('p11');
+    expect(top[0].rank).toBe(1);
+    expect(top[9].snake.id).toBe('p2');
+    expect(top[9].rank).toBe(10);
+  });
+
+  test('自己掉出前 10 时占据最后一行，名次仍是真实排名', () => {
+    const snakes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => mk(`p${i}`, i * 10));
+    snakes.push(mk('me', 0, { mine: true }));
+    const top = rankTopSnakes(snakes, 10);
+    expect(top.length).toBe(10);
+    expect(top[9].snake.id).toBe('me');
+    expect(top[9].rank).toBeGreaterThan(10);
+    // 自己没掉出时不会被重复插入
+    const inTop = rankTopSnakes([mk('me', 999, { mine: true }), mk('a', 1)], 10);
+    expect(inTop.map(x => x.snake.id)).toEqual(['me', 'a']);
+  });
+
+  test('死人/离场的人不参与时榜单不会留空壳（纯函数只吃入参，不读全局状态）', () => {
+    const top = rankTopSnakes([mk('a', 5), mk('b', 9)], 10);
+    expect(top.map(x => x.snake.id)).toEqual(['b', 'a']);
+    expect(rankTopSnakes([], 10)).toEqual([]);
   });
 });

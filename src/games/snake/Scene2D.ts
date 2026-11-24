@@ -22,7 +22,10 @@ const BG = '#0b0b14';
 const OUTSIDE = '#06060b';
 const GRID = 'rgba(104,116,170,0.10)';
 const GRID_STRONG = 'rgba(120,136,205,0.18)';
-const BORDER = 'rgba(120,140,220,0.55)';
+/** 边界：墙线本身偏红，配合内侧辉光提示"这是死区" */
+const BORDER = 'rgba(248,113,113,0.55)';
+/** 边界内辉光：靠墙最亮、向场内渐隐 */
+const BORDER_GLOW_RGB = '248,113,113';
 /** 普通食物：三档（小的多、大的少），越值钱越大越亮 */
 const FOOD_COLORS = ['#ff7a7a', '#ff5d5d', '#ff3b3b'];
 /** 尸体残骸：暗灰红 */
@@ -125,13 +128,15 @@ export interface WorldRect {
 }
 
 /**
- * 微缩地图放在**左上角关闭键下方**（右上角整块让给排行榜）。
+ * 微缩地图放在**右上角关闭键下方**（左上角让给排行榜）。
+ * 顶端一行按钮是「玩家与聊天 / 设置 / 关闭」，地图右对齐压在关闭键正下方。
  * topInset 是刘海屏的安全区高度：全屏对局时画布顶边 = 屏幕顶边，必须让开。
  */
 export function snakeMinimapLayout(cssW: number, cssH: number, topInset = 0) {
   const w = Math.max(88, Math.min(150, Math.round(cssW * 0.26)));
   const h = Math.round(w * 0.72);
-  return { x: 12, y: topInset + 62, w, h };
+  // 按钮行：top = 安全区 + 10、高 42，地图与它留 8px 间隙
+  return { x: Math.max(12, cssW - w - 12), y: topInset + 60, w, h };
 }
 
 /** 世界坐标 → 微缩地图坐标（纯函数，便于校验"自己的位置"） */
@@ -143,6 +148,24 @@ export function minimapPoint(layout: { x: number; y: number; w: number; h: numbe
 export function snakeMinimapSelfPoint(cssW: number, cssH: number, worldW: number, worldH: number, x: number, y: number, topInset = 0) {
   const m = snakeMinimapLayout(cssW, cssH, topInset);
   return minimapPoint({ x: m.x + 6, y: m.y + 6, w: m.w - 12, h: m.h - 12 }, worldW, worldH, x, y);
+}
+
+/**
+ * 排行榜取前 N 名（纯函数）。自己一定在列表里 —— 否则掉出前 10 就看不到自己的名次。
+ * 名次按完整排序算，所以替换进末尾的那条也能显示真实排名。
+ */
+export function rankTopSnakes<T extends { score: number; mine?: boolean }>(
+  snakes: readonly T[],
+  limit = 10,
+): { snake: T; rank: number }[] {
+  if (limit <= 0) return [];
+  const ranked = [...snakes].sort((a, b) => (b.score || 0) - (a.score || 0));
+  const top = ranked.slice(0, limit);
+  if (ranked.length > limit) {
+    const meIdx = ranked.findIndex(x => x.mine);
+    if (meIdx >= limit) top[limit - 1] = ranked[meIdx];
+  }
+  return top.map(snake => ({ snake, rank: ranked.indexOf(snake) + 1 }));
 }
 
 /**
@@ -339,6 +362,8 @@ export default class Scene2DSnake {
   private disp = new Map<string, DispSnake>();
   /** 食物/道具预渲染精灵：按 (类型, 半径) 缓存，避免每帧为每颗画多层圆 */
   private foodSprites = new Map<string, { canvas: HTMLCanvasElement; size: number }>();
+  /** 边界内辉光的四条渐变条：null=还没建，undefined=当前环境建不了（无 document） */
+  private glowSprites: Record<'left' | 'right' | 'top' | 'bottom', HTMLCanvasElement> | null | undefined = null;
   /** 指针坐标缓存：pointermove 不再每次读 getBoundingClientRect 触发强制布局 */
   private rectCache: { left: number; top: number } | null = null;
   /** DOM UI 层 */
@@ -604,6 +629,8 @@ export default class Scene2DSnake {
     Object.assign(ui.minimap.style, {
       left: `${m.x}px`, top: `${m.y}px`, width: `${m.w}px`, height: `${m.h}px`,
     });
+    // 玩家/聊天抽屉要落在小地图下方：把地图底边暴露成 CSS 变量（只在 resize 时写一次）
+    document.documentElement.style.setProperty('--snake-minimap-bottom', `${m.y + m.h}px`);
   }
 
   /**
@@ -905,9 +932,65 @@ export default class Scene2DSnake {
     }
     ctx.stroke();
 
+    // 边界内辉光：四面各贴一条"靠墙最亮、向场内渐隐"的渐变条，
+    // 让玩家在远处就能看出墙在哪（撞墙即死，得有个明显的危险区提示）。
+    // 渐变做成 64px 的小 sprite 一次性缓存，每帧只是 4 次 drawImage，不建 gradient 对象。
+    const glow = this.edgeGlowSprites();
+    if (glow) {
+      const t = Math.max(12, Math.min(30, Math.round(Math.min(this.cssW, this.cssH) * 0.045)));
+      const gx0 = Math.max(0, x0);
+      const gy0 = Math.max(0, y0);
+      const gx1 = Math.min(this.cssW, x1);
+      const gy1 = Math.min(this.cssH, y1);
+      if (gx1 > gx0 && gy1 > gy0) {
+        if (x0 > -t && x0 < this.cssW) ctx.drawImage(glow.left, x0, gy0, t, gy1 - gy0);
+        if (x1 > 0 && x1 < this.cssW + t) ctx.drawImage(glow.right, x1 - t, gy0, t, gy1 - gy0);
+        if (y0 > -t && y0 < this.cssH) ctx.drawImage(glow.top, gx0, y0, gx1 - gx0, t);
+        if (y1 > 0 && y1 < this.cssH + t) ctx.drawImage(glow.bottom, gx0, y1 - t, gx1 - gx0, t);
+      }
+    }
+
     ctx.strokeStyle = BORDER;
     ctx.lineWidth = 2;
     ctx.strokeRect(x0 + 1, y0 + 1, x1 - x0 - 2, y1 - y0 - 2);
+  }
+
+  /**
+   * 边界内辉光用的四条渐变条（左/右/上/下），只在首次绘制时建一次。
+   * 每条都是 64px 的单向渐变再按需拉伸：alpha 沿墙的法线方向线性衰减，
+   * 拉伸后依然是同一条渐变，与边界长度/厚度无关。
+   */
+  private edgeGlowSprites() {
+    if (this.glowSprites !== null) return this.glowSprites || undefined;
+    if (typeof document === 'undefined') {
+      this.glowSprites = undefined;
+      return undefined;
+    }
+    const build = (horizontal: boolean, fromOuter: boolean) => {
+      const n = 64;
+      const c = document.createElement('canvas');
+      c.width = horizontal ? n : 1;
+      c.height = horizontal ? 1 : n;
+      const g = c.getContext('2d');
+      if (!g) return c;
+      const grad = horizontal ? g.createLinearGradient(0, 0, n, 0) : g.createLinearGradient(0, 0, 0, n);
+      const stops: [number, string][] = [
+        [0, `rgba(${BORDER_GLOW_RGB},${fromOuter ? 0.52 : 0})`],
+        [0.35, `rgba(${BORDER_GLOW_RGB},${fromOuter ? 0.18 : 0.18})`],
+        [1, `rgba(${BORDER_GLOW_RGB},${fromOuter ? 0 : 0.52})`],
+      ];
+      for (const [at, color] of stops) grad.addColorStop(at, color);
+      g.fillStyle = grad;
+      g.fillRect(0, 0, c.width, c.height);
+      return c;
+    };
+    this.glowSprites = {
+      left: build(true, true),
+      right: build(true, false),
+      top: build(false, true),
+      bottom: build(false, false),
+    };
+    return this.glowSprites;
   }
 
   /** 食物三层圆只画一次到精灵，之后每帧一次 drawImage */
@@ -1009,6 +1092,9 @@ export default class Scene2DSnake {
     for (const p of this.state.players) this.nameMap.set(p.id, p.nickname);
 
     this.state.snakes.forEach((snake, idx) => {
+      // 死掉的蛇直接不画：死亡瞬间身体已经沿路径变成了残骸食物，
+      // 再叠一层半透明的旧蛇身就是"残影"（残骸和尸体两条形状重叠，看着像没死透）。
+      if (!snake.alive) return;
       // 团队模式按队伍取色（队友同色），无尽模式按加入顺序轮转取色
       const color = snake.team
         ? (TEAM_COLORS[snake.team] || TEAM_FALLBACK_COLORS[teamColorIndex(snake.team) % TEAM_FALLBACK_COLORS.length])
@@ -1030,9 +1116,6 @@ export default class Scene2DSnake {
         && head[1] >= view.y0 - margin && head[1] <= view.y1 + margin
         && hx > -radius * 3 && hx < this.cssW + radius * 3
         && hy > -radius * 3 && hy < this.cssH + radius * 3;
-
-      const alpha = snake.alive ? 1 : 0.22;
-      ctx.globalAlpha = alpha;
 
       ctx.beginPath();
       for (let s = 0; s < segCount; s++) {
@@ -1160,13 +1243,12 @@ export default class Scene2DSnake {
       this.hudSig = hudSig;
     }
     // 排行榜签名：按分数排序后取前 10（分数/生死/名字任一变化才重建 DOM）
-    const ranked = [...s.snakes].sort((a, b) => b.score - a.score);
-    const playersSig = s.snakes.length > 1
-      ? ranked.slice(0, 10).map(snake => {
+    const top = s.snakes.length > 1 ? rankTopSnakes(s.snakes, 10) : [];
+    const playersSig = top
+      .map(({ snake }) => {
         const name = s.players.find(p => p.id === snake.id)?.nickname || '';
         return `${snake.id}:${name}:${snake.score}:${snake.alive ? 1 : 0}`;
-      }).join('|')
-      : '';
+      }).join('|');
     if (playersSig !== this.hudPlayersSig) {
       this.renderPlayers(ui.hudPlayers, s);
       this.hudPlayersSig = playersSig;
@@ -1265,12 +1347,8 @@ export default class Scene2DSnake {
     container.replaceChildren();
     if (s.snakes.length <= 1) return;
     // 排行榜：按分数从高到低取前 10 名（自己一定在里面 —— 否则看不到自己的名次）
-    const ranked = [...s.snakes].sort((a, b) => b.score - a.score);
-    const top = ranked.slice(0, 10);
-    const me = ranked.find(x => x.mine);
-    if (me && !top.includes(me)) top[top.length - 1] = me;
-    top.forEach((snake, i) => {
-      const rank = ranked.indexOf(snake) + 1;
+    const top = rankTopSnakes(s.snakes, 10);
+    top.forEach(({ snake, rank }, i) => {
       const row = document.createElement('div');
       row.className = 'snake-player-row'
         + (snake.mine ? ' me' : '')
@@ -1292,7 +1370,9 @@ export default class Scene2DSnake {
         : (raw.length > 8 ? `${raw.slice(0, 8)}…` : raw);
       const score = document.createElement('span');
       score.className = 'snake-player-score';
-      score.textContent = snake.alive ? String(snake.score) : '等待重生';
+      // 死掉的蛇照样显示分数（死亡瞬间已结算上榜），不再写"等待重生"：
+      // 那样一旦有人/人机离场后没被清掉，榜单上会永远挂一行等待重生的僵尸条目。
+      score.textContent = String(snake.score);
       row.append(rankEl, dot, name, score);
       container.appendChild(row);
     });

@@ -189,14 +189,14 @@
   white-space: nowrap;
 }
 
-/* 右上角排行榜：对局中取代原来左上角的"分数 + 4 人小列表"。
+/* 左上角排行榜：对局中显示"分数 + 前 10 名"。
    底色刻意压得很淡（0.38），可读性靠 text-shadow 兜住，尽量不挡战场。 */
 .snake-hud {
   position: absolute;
-  right: calc(env(safe-area-inset-right, 0px) + 12px);
+  left: calc(env(safe-area-inset-left, 0px) + 12px);
   top: calc(env(safe-area-inset-top, 0px) + 10px);
-  /* 左边要给左上角的 × / ☰ 让位，窄屏时自动收窄 */
-  width: min(196px, calc(100vw - 124px));
+  /* 右上角让给一整排按钮，榜单自己收窄，窄屏时也不越界 */
+  width: min(196px, calc(100vw - 24px));
   padding: 7px 10px 9px;
   border-radius: 12px;
   background: rgba(14, 16, 28, 0.38);
@@ -282,7 +282,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 左上角微缩地图（关闭键下方）：只画轮廓和一个代表自己的白点，底色同样压淡 */
+/* 右上角微缩地图（关闭键下方）：只画轮廓和一个代表自己的白点，底色同样压淡。
+   位置由 Scene2D 的 snakeMinimapLayout() 算好后写成 inline left/top。 */
 .snake-minimap {
   position: absolute;
   border-radius: 10px;
@@ -1047,23 +1048,11 @@ body.immersive-mode .navbar {
   gap: 8px;
 }
 
-.hud-top-left {
-  left: calc(env(safe-area-inset-left, 0px) + 12px);
-}
-
+/* 右上角一排按钮：玩家与聊天 → 设置 → 关闭（关闭在最右，小地图压在它正下方） */
 .hud-top-right {
   right: calc(env(safe-area-inset-right, 0px) + 12px);
-  flex-direction: column;
-  align-items: flex-end;
-}
-
-/* 右下角：设置按钮压在加速钮正上方（加速钮直径 68~88px，底边距画布 22px） */
-.hud-bottom-right {
-  top: auto;
-  right: calc(env(safe-area-inset-right, 0px) + 22px);
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 118px);
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: center;
 }
 
 .hud-corner > * {
@@ -1112,11 +1101,15 @@ body.immersive-mode .navbar {
 
 .hud-drawer {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  /* 落在小地图下方：--snake-minimap-bottom 由 Scene2D 在 resize 时写入 */
+  top: calc(var(--snake-minimap-bottom, 150px) + 8px);
   right: calc(env(safe-area-inset-right, 0px) + 12px);
   width: min(320px, calc(100vw - 24px));
+  /* 高度够用就好，但不能被小地图挤到出屏 */
   height: min(56vh, 460px);
   height: min(56dvh, 460px);
+  max-height: calc(100vh - var(--snake-minimap-bottom, 150px) - 20px);
+  max-height: calc(100dvh - var(--snake-minimap-bottom, 150px) - 20px);
   display: flex;
   flex-direction: column;
   gap: 8px;
