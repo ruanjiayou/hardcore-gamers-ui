@@ -31,7 +31,7 @@ function mySnakeSnap(id: string, x: number, y: number, length = 160) {
 }
 
 describe('蛇身连续性 · 尾巴不跳跃', () => {
-  test('自己的蛇：预测推进时尾巴每帧都移动（不出现静止帧）', () => {
+  test('自己的蛇：本地路径每帧推进，尾巴连续滑动（不出现静止帧）', () => {
     const logic = makeLogic() as any;
     logic.predAlive = true;
     logic.snap = {
@@ -41,14 +41,23 @@ describe('蛇身连续性 · 尾巴不跳跃', () => {
       at: Date.now(),
     };
     logic.targetAngle = 0;
+    // 本地连续路径（服务端快照的 spine 建路径，之后每帧自己往前推）
+    logic.myPath = {
+      path: mySnakeSnap('me', 600, 600).pts.map((p: any) => [p[0], p[1]] as [number, number]),
+      length: 160,
+      at: Date.now(),
+    };
 
-    // 连续取若干帧的预测尾巴位置
+    // 连续取若干帧的尾巴位置
     const tails: [number, number][] = [];
-    let t = logic.snap.at + 20;
+    let t = logic.myPath.at + 16;
     for (let i = 0; i < 8; i++) {
       const pred = logic.predict(t);
       expect(pred).toBeTruthy();
-      tails.push(pred.pts[pred.pts.length - 1]);
+      logic.myPath.at = t - 16;
+      logic.advanceMyPath(t, pred);
+      const p = logic.myPath.path;
+      tails.push(p[p.length - 1]);
       t += 16;
     }
 

@@ -113,16 +113,24 @@ const VIEW_MARGIN = 0.2;
 /** 高分屏上限：手机 3x DPI 下 2x 全屏填充很贵，1.5x 对高速运动画面足够清晰 */
 const DPR_MAX = 1.5;
 /**
- * 自适应分辨率下限：掉帧时允许降到 1.0 / 0.75 再渲染，
- * 保证低端机 / 大屏设备至少能维持稳定帧率。
+ * 自适应分辨率下限：**不能低于 1.0**。
+ *
+ * 之前是 0.75：canvas 位图只有 CSS 显示尺寸的 0.75 倍，浏览器只能拉伸插值
+ * → 画面被拉糊。而自适应是"只降不升"的（掉帧 45 帧降 0.25，升档要 180 帧），
+ * 于是一局玩下来画质一路掉到 0.75，手机端就**越玩越糊**。
+ * 下限锁到 1.0 = 位图永远不小于显示尺寸，最差也只是"不够锐"，不会"糊"。
  */
-const DPR_MIN = 0.75;
+const DPR_MIN = 1;
 /** 帧间隔超过这个值算"掉帧"（60fps 预算 16.7ms，留 20% 余量） */
 const FRAME_BUDGET_MS = 20;
 /** 连续掉帧多少帧才降档（避免偶发抖动就降画质） */
 const DOWNGRADE_FRAMES = 45;
-/** 连续流畅多少帧才升档（升档比降档保守，防止来回抖） */
-const UPGRADE_FRAMES = 180;
+/**
+ * 连续流畅多少帧才升档。
+ * 之前是 180（3 秒）—— 降档快、升档慢，越玩越糊。
+ * 现在 60 帧（1 秒）就升回去，掉一次档很快能恢复。
+ */
+const UPGRADE_FRAMES = 60;
 /**
  * 目标渲染帧间隔（ms）：约 60fps。
  * 120Hz 屏幕上按这个间隔只画一半的帧 —— 游戏本身是 60fps 节奏，
@@ -130,6 +138,18 @@ const UPGRADE_FRAMES = 180;
  */
 const TARGET_FRAME_MS = 15.5;
 const TAU = Math.PI * 2;
+
+/**
+ * 画质档位（纯函数）：掉帧降一档、流畅升一档。
+ *
+ * 关键约束：**永远不低于 1.0**。低于 1.0 时 canvas 位图比 CSS 显示尺寸小，
+ * 浏览器只能拉伸插值 → 画面变糊（手机上尤其明显）。
+ */
+export function snakeRenderScale(scale: number, slowFrames: number, fastFrames: number): number {
+  if (slowFrames >= DOWNGRADE_FRAMES && scale > DPR_MIN) return Math.max(DPR_MIN, scale - 0.25);
+  if (fastFrames >= UPGRADE_FRAMES && scale < DPR_MAX) return Math.min(DPR_MAX, scale + 0.25);
+  return scale;
+}
 
 /**
  * 控件布局（纯函数）：只吃画布尺寸，不吃镜头/蛇头/世界坐标 —— 控制与场景彻底解耦。
@@ -658,8 +678,10 @@ export default class Scene2DSnake {
 
   /**
    * 自适应分辨率：低端机 / 大屏设备上全屏 canvas 的光栅化是主要开销，
-   * 掉帧时把渲染缩放降一档（DPR_MAX → 1.25 → 1.0 → 0.75），
+   * 掉帧时把渲染缩放降一档（DPR_MAX 1.5 → 1.25 → 1.0），
    * 帧率恢复后再逐步升回去。迟滞计数避免来回抖动。
+   *
+   * 下限是 1.0：位图永远不小于 CSS 显示尺寸（不然就是拉伸插值的"糊"）。
    */
   private checkQuality() {
     const gap = this.lastFrameGap;
@@ -670,15 +692,11 @@ export default class Scene2DSnake {
       this.fastFrames++;
       this.slowFrames = 0;
     }
-    if (this.slowFrames >= DOWNGRADE_FRAMES && this.renderScale > DPR_MIN) {
-      this.renderScale = Math.max(DPR_MIN, this.renderScale - 0.25);
+    const next = snakeRenderScale(this.renderScale, this.slowFrames, this.fastFrames);
+    if (next !== this.renderScale) {
+      this.renderScale = next;
       this.slowFrames = 0;
       this.fastFrames = 0;
-      this.resize();
-    } else if (this.fastFrames >= UPGRADE_FRAMES && this.renderScale < DPR_MAX) {
-      this.renderScale = Math.min(DPR_MAX, this.renderScale + 0.25);
-      this.fastFrames = 0;
-      this.slowFrames = 0;
       this.resize();
     }
   }
@@ -1334,16 +1352,6 @@ export default class Scene2DSnake {
         ctx.stroke();
       }
 
-      // 星星（无敌）：金色外圈，和重生盾的蓝白圈区分开
-      if (headVisible && snake.star > 0 && snake.alive) {
-        const a = 0.45 + 0.3 * Math.sin(now / 180);
-        ctx.beginPath();
-        ctx.arc(hx, hy, radius * (1.9 + 0.14 * Math.sin(now / 220)), 0, TAU);
-        ctx.strokeStyle = `rgba(251,191,36,${a.toFixed(2)})`;
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
-      }
-
       if (headVisible) {
         const angle = disp ? disp.angle : snake.angle;
         ctx.beginPath();
@@ -1375,13 +1383,23 @@ export default class Scene2DSnake {
           ctx.fill();
         }
 
-        // 无敌蓝圈：只在"非星星"时画。星星期间 invincible 也 >0，
-        // 两圈叠加会糊成一团，金圈单独表达"星星无敌"更清楚
-        if (snake.invincible > 0 && snake.star <= 0 && snake.alive) {
-          const a = 0.3 + 0.35 * Math.sin(now / 150);
+        // 无敌：半透明遮罩圆（罩在头上），不再在画面上方弹文字提示。
+        // 星星道具 = 金罩，重生护盾 = 蓝罩；星星期间 invincible 也 >0，
+        // 两者同时只画金色，避免两层叠在一起看不清。
+        if (snake.alive && (snake.star > 0 || snake.invincible > 0)) {
+          const rgb = snake.star > 0 ? '251,191,36' : '96,165,250';
+          const pulse = 0.5 + 0.5 * Math.sin(now / 220);
+          const r = radius * (2.05 + 0.12 * pulse);
+          const g = ctx.createRadialGradient(hx, hy, radius * 0.5, hx, hy, r);
+          g.addColorStop(0, `rgba(${rgb},0.06)`);
+          g.addColorStop(1, `rgba(${rgb},${(0.16 + 0.14 * pulse).toFixed(2)})`);
           ctx.beginPath();
-          ctx.arc(hx, hy, radius * (1.8 + 0.12 * Math.sin(now / 220)), 0, Math.PI * 2);
-          ctx.strokeStyle = `rgba(96,165,250,${a.toFixed(2)})`;
+          ctx.arc(hx, hy, r, 0, TAU);
+          ctx.fillStyle = g;
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(hx, hy, r, 0, TAU);
+          ctx.strokeStyle = `rgba(${rgb},${(0.35 + 0.25 * pulse).toFixed(2)})`;
           ctx.lineWidth = 2;
           ctx.stroke();
         }
@@ -1597,10 +1615,8 @@ export default class Scene2DSnake {
       } else {
         kind = 'notice'; title = '已出局'; sub = '对局已结束';
       }
-    } else if (s.invincible > 0 && s.variant === 'endless') {
-      kind = 'invincible';
-      sub = `无敌 ${(s.invincible / 1000).toFixed(1)}s`;
     }
+    // 无敌不再用顶部文字提示：蛇头的半透明遮罩圆已经表达了（GM-snake-36）
 
     const sig = `${kind}|${title}|${sub}`;
     if (sig === this.overlaySig) return;
@@ -1612,14 +1628,6 @@ export default class Scene2DSnake {
     ui.death.style.display = kind === 'death' ? '' : 'none';
     if (kind === 'death') {
       ui.deathScore.textContent = `本局得分 ${s.score} · 最高 ${s.best}`;
-    } else if (kind === 'invincible') {
-      ui.overlay.classList.add('snake-invincible');
-      // 文字必须写在胶囊元素里：原来是裸文本节点（flex item 落在 y=0），
-      // 胶囊却是 top:16px 的伪元素 → 文字在框外（GM-snake-22）
-      const tip = document.createElement('div');
-      tip.className = 'snake-invincible-tip';
-      tip.textContent = sub;
-      ui.overlay.appendChild(tip);
     } else if (kind === 'notice') {
       const card = document.createElement('div');
       card.className = 'snake-notice-card';

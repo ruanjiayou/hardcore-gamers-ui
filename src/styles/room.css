@@ -442,7 +442,7 @@
   transition: opacity 0.15s;
 }
 
-/* 中央提示（等待 / 结束 / 无敌） */
+/* 中央提示（等待 / 结束） */
 .snake-overlay {
   position: absolute;
   inset: 0;
@@ -470,26 +470,8 @@
   font-size: 13px;
   color: #8b8ba7;
 }
-.snake-overlay.snake-invincible {
-  align-items: flex-start;
-}
-/* 无敌提示：胶囊是真实元素，文字写在元素里（不再用 ::before 画框，
-   否则裸文本节点落在 y=0、比框高 16px，看着在框外）。 */
-.snake-invincible-tip {
-  margin-top: 16px;
-  min-width: 70px;
-  height: 28px;
-  padding: 0 13px;
-  border-radius: 14px;
-  background: rgba(56, 189, 248, 0.22);
-  border: 1px solid rgba(96, 165, 250, 0.55);
-  color: #bfe3ff;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 28px;
-  text-align: center;
-  text-indent: 0;
-}
+/* 无敌不再有顶部文字提示：改成蛇头的半透明遮罩圆（画在 Canvas 里），
+   这里对应的 .snake-invincible-tip / .snake-overlay.snake-invincible 已删除。 */
 
 /* 死亡卡片：重生 / 退出，按钮可点 */
 .snake-death {

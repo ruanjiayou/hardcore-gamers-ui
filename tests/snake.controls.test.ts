@@ -11,6 +11,7 @@ import {
   rankTopSnakes,
   snakeColorSlots,
 } from '../src/games/snake/Scene2D';
+import { advanceLocalPath } from '../src/games/snake/Logic';
 
 describe('贪吃蛇控件：固定屏幕布局，与场景/镜头无关', () => {
   test('桌面与手机都是左下摇杆、右下加速，且都在下半屏', () => {
@@ -194,5 +195,38 @@ describe('贪吃蛇配色：按玩家固定色槽，别人离场不变色', () =
     expect(slots.get('a')).toBe(0);
     expect(slots.get('b')).toBe(1);
     expect(slots.size).toBe(2);
+  });
+});
+
+describe('贪吃蛇本地路径：尾巴连续推进（不跳格）', () => {
+  test('本地路径每帧推进：尾巴沿身体连续滑动，不会每帧瞬移', () => {
+    // 初始：蛇头在 (300,300)，朝右，身长 160
+    const path: [number, number][] = [];
+    for (let d = 0; d <= 160; d += 20) path.push([300 - d, 300]);
+    const rp = { path, length: 160, at: 0 };
+    const before = rp.path[rp.path.length - 1];
+    // 推进 16ms，速度 100px/s
+    advanceLocalPath(rp, 0, 100, 0.016, false);
+    const after = rp.path[rp.path.length - 1];
+    // 尾巴应该前移一小段（速度 × 时间），而不是原地不动或瞬移
+    // 蛇朝 +x 走 → 尾巴的 x 也要变大
+    const moved = after[0] - before[0];
+    expect(moved).toBeGreaterThan(0.5);
+    expect(moved).toBeLessThan(5);
+    // 头应该前进了同样的量
+    expect(rp.path[0][0] - 300).toBeGreaterThan(0.5);
+  });
+
+  test('本地路径推进：路径总弧长守恒在身长附近（不无限增长）', () => {
+    const path: [number, number][] = [];
+    for (let d = 0; d <= 160; d += 20) path.push([300 - d, 300]);
+    const rp = { path, length: 160, at: 0 };
+    for (let i = 0; i < 200; i++) advanceLocalPath(rp, 0, 100, 0.016, false);
+    let acc = 0;
+    for (let i = 1; i < rp.path.length; i++) {
+      acc += Math.hypot(rp.path[i][0] - rp.path[i - 1][0], rp.path[i][1] - rp.path[i - 1][1]);
+    }
+    expect(acc).toBeGreaterThan(150);
+    expect(acc).toBeLessThan(170);
   });
 });

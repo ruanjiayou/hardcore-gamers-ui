@@ -374,6 +374,22 @@ export default class LogicSnake extends EventEmitter {
    */
   private remotePaths = new Map<string, RemotePath>();
 
+  /**
+   * 自己那条蛇的本地连续身体（渲染用）。
+   *
+   * 为什么不能直接用快照里的 pts：服务端 20Hz 推一帧，pts 是沿密集路径
+   * 每 22px 采一个点的**稀疏**折线（服务端 snakeSpine）。这些采样点之间的
+   * 弦长比真实弧长短（弯道越弯短得越多），客户端再按身长截断时根本
+   * 截不到底 —— 尾巴只能停在最后一个采样点上。而服务端的尾巴本身是
+   * 每 tick 往前走的，所以客户端看到的尾巴就是"每 50ms 跳一格"。
+   *
+   * 正确做法（与远端蛇同一套机制）：本地维护一条**密集**路径，
+   * 每帧把蛇头推进、尾巴按身长连续收缩。路径连续 → 尾巴贴着身体滑动。
+   */
+  private myPath: RemotePath | null = null;
+  /** 上一次同步本地路径时的重生次数（变了说明蛇瞬移过，路径要重建） */
+  private myRespawns = -1;
+
   // ===== 本地预测（只针对自己） =====
   /** 最新快照里自己的蛇（预测基准，不随预测改动） */
   private snap: { x: number; y: number; angle: number; pts: [number, number][]; length: number; at: number } | null = null;
@@ -472,6 +488,9 @@ export default class LogicSnake extends EventEmitter {
       this.match_id = state.match_id;
       // 换局了：清掉「见过自己的蛇」标记，新局里我可能还没进快照
       this.mySnakeSeen = false;
+      // 本地身体路径也是上一局的：清掉，新局第一帧重建（否则身体从旧位置滑过来）
+      this.myPath = null;
+      this.myRespawns = -1;
     }
     // 本局参数：服务端在建局时冻结进对局状态（match.curr_state.params）。
     // 重连时从这里拿，不必等第一帧快照；之后每帧快照也会带同一份。
@@ -708,6 +727,25 @@ export default class LogicSnake extends EventEmitter {
       };
       // 首次拿到快照 / 重生后：本地目标角对齐当前朝向，避免"刚出生就往回拐"
       if (this.lastSnapshotAt === 0 || !this.predAliveWasAlive) this.targetAngle = mine.angle;
+      // 自己这条蛇的本地连续路径：
+      // 快照里的 pts 是**稀疏采样**（服务端沿密集路径每 22px 采一点 + 补精确尾点），
+      // 直接拿它当身体 → 客户端按身长截断时根本截不到底，尾巴只能停在
+      // 最后一个采样点上 → 每 50ms 跳一格（尾部一顿一顿的根源）。
+      // 这里用快照 pts 建一条本地路径，之后每帧自己往前推 → 尾巴贴着身体连续滑动。
+      // 后续快照**不整体替换路径**（那会把本地推进出来的连续性抹掉），只更新身长。
+      const respawned = this.myRespawns !== -1 && this.myRespawns !== mine.respawns;
+      if (!mine.alive) {
+        this.myPath = null;
+      } else if (!this.myPath || respawned) {
+        this.myPath = {
+          path: mine.pts.map(([x, y]) => [x, y] as [number, number]),
+          length: mine.length || 0,
+          at: now,
+        };
+      } else {
+        this.myPath.length = mine.length || this.myPath.length;
+      }
+      this.myRespawns = mine.respawns || 0;
     } else {
       this.predAlive = false;
       this.snap = null;
@@ -789,11 +827,11 @@ export default class LogicSnake extends EventEmitter {
    * 从最新快照前推到"现在"：用与服务端相同的角速度/速度模型跑若干子步。
    * 因为每帧都从快照重算，时间越长预测越超前但绝不累积漂移。
    */
-  private predict(now: number): { x: number; y: number; angle: number; pts: [number, number][] } | null {
+  private predict(now: number): { x: number; y: number; angle: number } | null {
     const snap = this.snap;
     if (!snap || !this.predAlive) return null;
     const elapsed = Math.min(this.predictMaxMs(), Math.max(0, now - snap.at));
-    if (elapsed < 8) return { x: snap.x, y: snap.y, angle: snap.angle, pts: snap.pts };
+    if (elapsed < 8) return { x: snap.x, y: snap.y, angle: snap.angle };
 
     // 按住加速且身长够才生效（与服务端同一条判定，用同一份参数）
     const boosting = this.boostHeld && snap.length > this.params.boostMinLen;
@@ -810,17 +848,14 @@ export default class LogicSnake extends EventEmitter {
     let x = snap.x;
     let y = snap.y;
     let angle = snap.angle;
-    const head: [number, number][] = [];
     for (let i = 0; i < steps; i++) {
       angle = turnToward(angle, this.targetAngle, rate * sub);
       x += Math.cos(angle) * speed * sub;
       y += Math.sin(angle) * speed * sub;
-      head.push([x, y]);
     }
-
-    // 新轨迹倒序接在快照路径前（索引 0 = 蛇头），再按身长截断
-    const pts: [number, number][] = head.reverse().concat(snap.pts);
-    return { x, y, angle, pts: truncatePath(pts, snap.length) };
+    // 只预测**蛇头**：身体交给本地连续路径（myPath），
+    // 不再把服务端 20Hz 的稀疏 spine 拼进来 —— 那正是尾巴一顿一顿的根源。
+    return { x, y, angle };
   }
 
   /**
@@ -874,7 +909,7 @@ export default class LogicSnake extends EventEmitter {
       if (dt <= 0) continue;
       // 头沿权威朝向推进；速度用与服务端相同的公式（按身长递减）
       const speed = snakeMoveSpeed(rp.length, s.boosting, this.params);
-      advanceRemotePath(rp, s.angle, speed, dt, s.boosting);
+      advanceLocalPath(rp, s.angle, speed, dt, s.boosting);
       rp.at = now;
     }
   }
@@ -906,6 +941,44 @@ export default class LogicSnake extends EventEmitter {
       const k = 0.25;
       rp.path[0] = [rp.path[0][0] + dx * k, rp.path[0][1] + dy * k];
     }
+  }
+
+  /**
+   * 推进自己那条蛇的本地路径，返回渲染用的身体折线。
+   *
+   * 与远端蛇同一套机制：每帧把蛇头沿**本地预测的朝向**往前推，
+   * 尾巴按身长连续收缩 → 路径连续，尾巴贴着身体滑动（而不是每 50ms 跳一格）。
+   *
+   * 推完把头**吸附**到本地预测位置（pred.x/pred.y）：预测是每帧从最新快照
+   * 重算的，比本地路径更准；渲染时整体还会叠加 corr 平移，
+   * 所以吸附之后头与身体严丝合缝，不会错位。
+   */
+  private advanceMyPath(
+    now: number,
+    pred: { x: number; y: number; angle: number } | null,
+  ): [number, number][] | null {
+    const mp = this.myPath;
+    if (!mp || !pred || mp.path.length < 2) return null;
+    const dt = Math.min(0.2, Math.max(0, (now - mp.at) / 1000));
+    if (dt > 0) {
+      const boosting = this.boostHeld && mp.length > this.params.boostMinLen;
+      const speed = snakeMoveSpeed(mp.length, boosting, this.params);
+      advanceLocalPath(mp, pred.angle, speed, dt, boosting);
+      mp.at = now;
+    }
+    const dx = pred.x - mp.path[0][0];
+    const dy = pred.y - mp.path[0][1];
+    if (Math.hypot(dx, dy) > 60) {
+      // 差太远（重生 / 长时间挂起）：整体重建，别让身体从旧位置"滑"过来
+      const src = this.snakes.find(x => x.mine);
+      if (src && src.pts.length >= 2) {
+        mp.path = src.pts.map(([x, y]) => [x, y] as [number, number]);
+        mp.length = src.length || mp.length;
+      }
+    }
+    // 头吸附到预测位置（预测本身已被 corr 平滑过，吸附不会造成抖动）
+    mp.path[0] = [pred.x, pred.y];
+    return mp.path;
   }
 
   // ===== 渲染数据 =====
@@ -940,9 +1013,13 @@ export default class LogicSnake extends EventEmitter {
     // 远端蛇：先把本地路径往前推（尾巴连续滑动），再把头纠偏到权威位置，最后用它渲染
     this.advanceRemotePaths(now);
     this.correctRemotePaths();
+    // 自己那条蛇：同样用本地连续路径渲染身体（尾巴不再随快照跳格）
+    const myBody = this.advanceMyPath(now, pred);
     const snakes = this.snakes.map(s => {
       if (s.mine) {
         if (!pred) return s;
+        // 本地路径还没有（刚进场/刚重生）时退回快照里的身体
+        const body = myBody && myBody.length >= 2 ? myBody : s.pts;
         return {
           ...s,
           x: headX,
@@ -950,8 +1027,8 @@ export default class LogicSnake extends EventEmitter {
           angle: normalizeAngle(pred.angle + this.corr.a),
           // 身体整条跟着平移，头与身子不会错位
           pts: (shiftX || shiftY)
-            ? pred.pts.map(([x, y]) => [x + shiftX, y + shiftY] as [number, number])
-            : pred.pts,
+            ? body.map(([x, y]) => [x + shiftX, y + shiftY] as [number, number])
+            : body,
           invincible: Math.max(0, this.invincibleUntil - now),
           // 星星金圈按本地截止点连续衰减；服务端快照每 50ms 才刷新一次，
           // 直接用快照值会让金圈随快照节奏一格一格地消失
@@ -1026,35 +1103,8 @@ export default class LogicSnake extends EventEmitter {
   }
 }
 
-/** 按身长截断折线（最后一个点插值到精确长度） */
-function truncatePath(pts: [number, number][], length: number): [number, number][] {
-  if (pts.length < 2) return pts;
-  let acc = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const dx = pts[i][0] - pts[i - 1][0];
-    const dy = pts[i][1] - pts[i - 1][1];
-    const seg = Math.hypot(dx, dy);
-    if (acc + seg >= length) {
-      const t = seg > 1e-6 ? (length - acc) / seg : 0;
-      const tail: [number, number] = [pts[i - 1][0] + dx * t, pts[i - 1][1] + dy * t];
-      return pts.slice(0, i).concat([tail]);
-    }
-    acc += seg;
-  }
-  return pts;
-}
-
-/** 折线总弧长 */
-function pathLength(pts: [number, number][]): number {
-  let acc = 0;
-  for (let i = 1; i < pts.length; i++) {
-    acc += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-  }
-  return acc;
-}
-
 /**
- * 把远端蛇的本地路径往前推 dt 秒（与服务端 stepSnake 的同一套模型）。
+ * 把一条蛇的本地路径往前推 dt 秒（与服务端 stepSnake 的同一套模型）。
  *
  * - 头沿当前朝向前进 `speed * dt`；
  * - 路径头部插入新位置；
@@ -1062,7 +1112,7 @@ function pathLength(pts: [number, number][]): number {
  *
  * 路径连续 → 尾巴连续。这是"尾部不跳"的关键。
  */
-function advanceRemotePath(
+export function advanceLocalPath(
   rp: RemotePath,
   angle: number,
   speed: number,
@@ -1094,7 +1144,7 @@ function advanceRemotePath(
 }
 
 /** 就地截断折线到指定弧长（末尾插值到精确点） */
-function truncatePathInPlace(pts: [number, number][], length: number): void {
+export function truncatePathInPlace(pts: [number, number][], length: number): void {
   let acc = 0;
   for (let i = 1; i < pts.length; i++) {
     const dx = pts[i][0] - pts[i - 1][0];
