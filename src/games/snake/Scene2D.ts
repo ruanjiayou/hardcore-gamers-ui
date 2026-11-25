@@ -8,15 +8,17 @@
 // - 动画统一走 requestAnimationFrame：世界层逐帧画蛇/食物；HUD/小地图/摇杆/按钮
 //   等 UI 是 DOM，在同一个 rAF 里按变化更新（transform/text），不再有 UI 节流。
 import LogicSnake, {
-  SNAKE_BOOST_CD_MS,
+  SNAKE_BOOST_MIN_LEN,
   SNAKE_KIND_CORPSE,
   SNAKE_KIND_FOOD,
-  SNAKE_KIND_LIGHTNING,
   SNAKE_KIND_MAGNET,
+  SNAKE_KIND_STAR,
+  SNAKE_ITEM_KEYS,
   SNAKE_MAGNET_RADIUS,
   type SnakeView,
   normalizeAngle,
 } from './Logic';
+import { assetImage, defaultSkinAsset, foodAssetId, itemAssetId } from '../../services/assets';
 
 const BG = '#0b0b14';
 const OUTSIDE = '#06060b';
@@ -30,12 +32,23 @@ const BORDER_GLOW_RGB = '248,113,113';
 const FOOD_COLORS = ['#ff7a7a', '#ff5d5d', '#ff3b3b'];
 /** 尸体残骸：暗灰红 */
 const CORPSE_COLOR = '#9b6b6b';
-/** 道具配色：磁铁（蓝）、闪电（黄） */
+/** 道具配色：磁铁（蓝）、星星（黄） */
 const ITEM_COLORS: Record<number, string> = {
   [SNAKE_KIND_MAGNET]: '#60a5fa',
-  [SNAKE_KIND_LIGHTNING]: '#fbbf24',
+  [SNAKE_KIND_STAR]: '#fbbf24',
 };
 const SNAKE_COLORS = ['#4ade80', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#34d399'];
+/**
+ * 皮肤资源查找：manifest 里 `food` / `items` 是「档位/道具 key → asset_id」，
+ * 拿到 asset_id 再取已预解码的图。**不是**用 `food.small` 这种字符串，
+ * 因为同一个 key 在不同资源包里指向不同资源，只有 id 唯一。
+ * 取不到图就回退矢量绘制，画面不会缺口。
+ */
+const GAME_SLUG = 'snake';
+const FOOD_TIERS = ['small', 'mid', 'big'] as const;
+function foodTierOf(radius: number): string {
+  return FOOD_TIERS[foodTierIndex(radius)] || 'small';
+}
 /**
  * 团队模式的队伍配色：同一队伍所有蛇用同一个颜色，方便一眼分清敌我。
  * 队伍名与服务端 games/snake/teams.ts 保持一致（红/蓝/黄/绿/紫/橙）。
@@ -84,6 +97,15 @@ const TOUCH_DEAD_ZONE = 4;
 const JOY_MARGIN = 38;
 const JOY_R_MIN = 54;
 const JOY_R_MAX = 78;
+/**
+ * 贴边时允许镜头越过世界边界的余量（世界像素）。
+ *
+ * 需求：「靠近边界时，边界不要紧贴屏幕，允许边界离屏幕有一定距离」——
+ * 之前 clampCam 把视野死死钳在世界内，蛇贴墙时墙线正好压在屏幕边缘，
+ * 加上小地图/排行榜都盖在屏幕角上，墙的死亡区几乎看不见。
+ * 现在允许镜头多探出去一段，墙线就落在屏幕内侧，危险区可见。
+ */
+const CAM_EDGE_OVERSCAN = 220;
 /** 局部绘制窗口相对视口的外扩比例：留出提前量，镜头滚动时不会露出突兀的断头 */
 const VIEW_MARGIN = 0.2;
 /** 高分屏上限：手机 3x DPI 下 2x 全屏填充很贵，1.5x 对高速运动画面足够清晰 */
@@ -337,7 +359,8 @@ interface SnakeUi {
   minimapDot: HTMLDivElement;
   boost: HTMLDivElement;
   boostRing: HTMLDivElement;
-  boostLabel: HTMLSpanElement;
+  /** 闪电图标（SVG）：按钮上不显示文字 */
+  boostIcon: SVGSVGElement;
   joystick: HTMLDivElement;
   joyBase: HTMLDivElement;
   joyKnob: HTMLDivElement;
@@ -377,6 +400,8 @@ export default class Scene2DSnake {
   private colorSlots = new Map<string, number>();
   /** 食物/道具预渲染精灵：按 (类型, 半径) 缓存，避免每帧为每颗画多层圆 */
   private foodSprites = new Map<string, { canvas: HTMLCanvasElement; size: number }>();
+  /** 蛇皮肤图案（按皮肤 key 缓存；图像不存在时缓存 null，避免每帧重试） */
+  private skinPatterns = new Map<string, CanvasPattern | null>();
   /** 边界内辉光的四条渐变条：null=还没建，undefined=当前环境建不了（无 document） */
   private glowSprites: Record<'left' | 'right' | 'top' | 'bottom', HTMLCanvasElement> | null | undefined = null;
   /** 指针坐标缓存：pointermove 不再每次读 getBoundingClientRect 触发强制布局 */
@@ -387,6 +412,8 @@ export default class Scene2DSnake {
   private hudSig = '';
   private overlaySig = '';
   private boostLabelSig = '';
+  /** 按住加速的 pointerId（松手/取消时收到同一个 id 才停） */
+  private boostPointerId: number | null = null;
   private hudPlayersSig = '';
   /** DOM 写入去重器 */
   private dom = new DomWriter();
@@ -419,7 +446,10 @@ export default class Scene2DSnake {
   private touchStart: { x: number; y: number } | null = null;
   private touchLocked = false;
 
-  private onKey = (e: KeyboardEvent) => this.handleKey(e);
+  private onKey = (e: KeyboardEvent) => {
+    if (e.code === 'Space' || e.key === 'Shift') this.logic.setBoost(false);
+    this.handleKey(e);
+  };
   private onResize = () => this.resize();
   private onCanvasDown = (e: PointerEvent) => this.handleCanvasDown(e);
   private onCanvasMove = (e: PointerEvent) => this.handleCanvasMove(e);
@@ -429,6 +459,7 @@ export default class Scene2DSnake {
   private onJoyMove = (e: PointerEvent) => this.handleJoyMove(e);
   private onJoyUp = (e: PointerEvent) => this.handleJoyUp(e);
   private onBoostDown = (e: PointerEvent) => this.handleBoostDown(e);
+  private onBoostUp = (e: PointerEvent) => this.handleBoostUp(e);
 
   constructor(canvas: HTMLCanvasElement, logic: LogicSnake) {
     this.canvas = canvas;
@@ -482,6 +513,7 @@ export default class Scene2DSnake {
     this.ui?.root.remove();
     this.ui = null;
     this.foodSprites.clear();
+    this.skinPatterns.clear();
     this.rectCache = null;
     this.inited = false;
     this.joyPointerId = null;
@@ -514,8 +546,16 @@ export default class Scene2DSnake {
 
     const boost = el('div', 'snake-boost');
     const boostRing = el('div', 'snake-boost-ring');
-    const boostLabel = el('span', 'snake-boost-label');
-    boost.append(boostRing, boostLabel);
+    const boostIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    boostIcon.setAttribute('viewBox', '0 0 24 24');
+    boostIcon.setAttribute('class', 'snake-boost-icon');
+    boostIcon.setAttribute('aria-hidden', 'true');
+    // 闪电：上尖下宽的折线形，填充用 currentColor 跟随按钮状态色
+    const bolt = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    bolt.setAttribute('d', 'M13.4 2 5.6 13.1h4.3L9.4 22l8.2-11.4h-4.6L13.4 2Z');
+    bolt.setAttribute('fill', 'currentColor');
+    boostIcon.appendChild(bolt);
+    boost.append(boostRing, boostIcon);
 
     const joystick = el('div', 'snake-joystick');
     const joyBase = el('div', 'snake-joy-base');
@@ -555,7 +595,7 @@ export default class Scene2DSnake {
     parent.appendChild(root);
     this.ui = {
       root, hud, hudMode, hudScore, hudPlayers,
-      minimap, minimapDot, boost, boostRing, boostLabel,
+      minimap, minimapDot, boost, boostRing, boostIcon,
       joystick, joyBase, joyKnob, hint, overlay,
       death, deathScore, deathRespawn, deathExit, fps,
     };
@@ -566,6 +606,8 @@ export default class Scene2DSnake {
     joystick.addEventListener('pointercancel', this.onJoyUp);
     joystick.addEventListener('pointerleave', this.onJoyUp);
     boost.addEventListener('pointerdown', this.onBoostDown);
+    boost.addEventListener('pointerup', this.onBoostUp);
+    boost.addEventListener('pointercancel', this.onBoostUp);
     deathRespawn.addEventListener('click', () => {
       this.deathReset();
       this.logic.respawn();
@@ -594,6 +636,7 @@ export default class Scene2DSnake {
     this.canvas.width = Math.round(this.cssW * this.dpr);
     this.canvas.height = Math.round(this.cssH * this.dpr);
     this.foodSprites.clear();
+    this.skinPatterns.clear();
     this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(this.cssW / 900, this.cssH / 720)));
     this.layoutUi();
   }
@@ -687,7 +730,8 @@ export default class Scene2DSnake {
 
     if (e.code === 'Space' || e.key === 'Shift') {
       e.preventDefault();
-      if (this.state.boostCd <= 0) this.logic.boost();
+      // 按住生效（keydown 重复触发由 Logic.setBoost 内部去重）
+      this.logic.setBoost(true);
       return;
     }
     const map: Record<string, 'up' | 'down' | 'left' | 'right'> = {
@@ -785,10 +829,19 @@ export default class Scene2DSnake {
     this.touchLocked = false;
   }
 
+  /** 加速键：按下即加速，松开（或指针离开/取消）立即停 —— 无 CD */
   private handleBoostDown(e: PointerEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (this.state.boostCd <= 0) this.logic.boost();
+    this.boostPointerId = e.pointerId;
+    (e.currentTarget as HTMLElement)?.setPointerCapture?.(e.pointerId);
+    this.logic.setBoost(true);
+  }
+
+  private handleBoostUp(e: PointerEvent) {
+    if (this.boostPointerId !== null && e.pointerId !== this.boostPointerId) return;
+    this.boostPointerId = null;
+    this.logic.setBoost(false);
   }
 
   // ===== 坐标换算（世界 → 屏幕） =====
@@ -831,14 +884,25 @@ export default class Scene2DSnake {
   }
 
   /**
-   * 把镜头中心钳在"视野不越出世界"的范围内，避免贴边时露出大片世界外空底色。
+   * 把镜头中心钳在"视野不越出世界太多"的范围内。
+   *
+   * 与旧版的区别：允许越过边界 CAM_EDGE_OVERSCAN 个世界像素。
+   * 蛇贴墙时墙线会落在屏幕内侧而不是压在屏幕边缘上，
+   * 小地图和排行榜盖住的部分就少了，红色死亡区也看得见。
    */
   private clampCam(p: Camera): Camera {
     const halfW = this.cssW / (2 * this.zoom);
     const halfH = this.cssH / (2 * this.zoom);
     const { w, h } = this.state;
-    const x = w <= halfW * 2 ? w / 2 : Math.min(Math.max(p.x, halfW), w - halfW);
-    const y = h <= halfH * 2 ? h / 2 : Math.min(Math.max(p.y, halfH), h - halfH);
+    // 余量按视野比例封顶：小屏上不能探太多出去，否则蛇离墙太远反而不直观
+    const over = Math.min(CAM_EDGE_OVERSCAN, halfW * 0.4, halfH * 0.4);
+    const minX = halfW - over;
+    const maxX = w - halfW + over;
+    const minY = halfH - over;
+    const maxY = h - halfH + over;
+    // 世界比视野（含余量）还小的时候居中，不做钳制
+    const x = minX >= maxX ? w / 2 : Math.min(Math.max(p.x, minX), maxX);
+    const y = minY >= maxY ? h / 2 : Math.min(Math.max(p.y, minY), maxY);
     return { x, y };
   }
 
@@ -1010,10 +1074,12 @@ export default class Scene2DSnake {
   /** 食物三层圆只画一次到精灵，之后每帧一次 drawImage */
   private getFoodSprite(kind: number, radius: number): { canvas: HTMLCanvasElement; size: number } | null {
     if (typeof document === 'undefined') return null;
-    const key = `${kind}:${radius}`;
+    const assetId = this.foodAssetOf(kind, radius);
+    // 换主题（asset_id 变）后缓存键跟着变，不用手动清缓存
+    const key = `${kind}:${radius}:${assetId || '-'}`;
     let s = this.foodSprites.get(key);
     if (!s) {
-      const built = this.buildFoodSprite(kind, radius);
+      const built = this.buildFoodSprite(kind, radius, assetId);
       if (!built) return null;
       s = built;
       this.foodSprites.set(key, s);
@@ -1021,8 +1087,23 @@ export default class Scene2DSnake {
     return s;
   }
 
-  /** 按类型与半径生成精灵：普通食物分三档（越小越暗）、残骸暗红、磁铁/闪电画图标 */
-  private buildFoodSprite(kind: number, radius: number): { canvas: HTMLCanvasElement; size: number } | null {
+  /** 该拾取物对应的皮肤资源 id；没有配图返回 ''（走矢量绘制） */
+  private foodAssetOf(kind: number, radius: number): string {
+    if (kind === SNAKE_KIND_FOOD) return foodAssetId(GAME_SLUG, foodTierOf(radius));
+    const key = SNAKE_ITEM_KEYS[kind];
+    return key ? itemAssetId(GAME_SLUG, key) : '';
+  }
+
+  /** 皮肤图（已预加载）；未加载/不存在时返回 null */
+  private skinImage(assetId: string | null | undefined): HTMLImageElement | null {
+    return assetId ? assetImage(GAME_SLUG, assetId) : null;
+  }
+
+  /**
+   * 按类型与半径生成精灵：普通食物分三档（越小越暗）、残骸暗红、磁铁/星星画图标。
+   * 资源包给了皮肤图就直接贴图（光晕仍按配色画，保证大小/脉动/占位一致）。
+   */
+  private buildFoodSprite(kind: number, radius: number, assetId: string | null = null): { canvas: HTMLCanvasElement; size: number } | null {
     if (typeof document === 'undefined') return null;
     const r = radius * this.zoom;
     const size = Math.ceil(r * 5.2);
@@ -1047,6 +1128,14 @@ export default class Scene2DSnake {
     g.fillStyle = color;
     g.fill();
 
+    const img = this.skinImage(assetId);
+    if (img) {
+      // 皮肤图画满主体圆（留一圈光晕），比矢量图标更有主题感
+      const d = r * 2.05;
+      g.drawImage(img, mid - d / 2, mid - d / 2, d, d);
+      return { canvas: c, size };
+    }
+
     if (kind === SNAKE_KIND_MAGNET) {
       // 马蹄形磁铁：白色 U 形 + 两个极
       g.strokeStyle = '#e2e8f0';
@@ -1057,16 +1146,17 @@ export default class Scene2DSnake {
       g.fillStyle = '#e2e8f0';
       g.fillRect(mid - r * 0.6, mid + r * 0.12, r * 0.24, r * 0.4);
       g.fillRect(mid + r * 0.36, mid + r * 0.12, r * 0.24, r * 0.4);
-    } else if (kind === SNAKE_KIND_LIGHTNING) {
-      // 闪电符号
-      g.fillStyle = '#1f2937';
+    } else if (kind === SNAKE_KIND_STAR) {
+      // 五角星（无敌）
+      g.fillStyle = '#fffbeb';
       g.beginPath();
-      g.moveTo(mid + r * 0.16, mid - r * 0.72);
-      g.lineTo(mid - r * 0.34, mid + r * 0.06);
-      g.lineTo(mid - r * 0.02, mid + r * 0.06);
-      g.lineTo(mid - r * 0.2, mid + r * 0.76);
-      g.lineTo(mid + r * 0.34, mid - r * 0.1);
-      g.lineTo(mid + r * 0.02, mid - r * 0.1);
+      for (let i = 0; i < 10; i++) {
+        const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+        const rad = i % 2 === 0 ? r * 0.86 : r * 0.36;
+        const px = mid + Math.cos(ang) * rad;
+        const py = mid + Math.sin(ang) * rad;
+        if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+      }
       g.closePath();
       g.fill();
     } else {
@@ -1089,11 +1179,31 @@ export default class Scene2DSnake {
       if (!sprite) continue;
       const rr = f.r * this.zoom;
       if (f.x < view.x0 - rr || f.x > view.x1 + rr || f.y < view.y0 - rr || f.y > view.y1 + rr) continue;
-      const isItem = f.k === SNAKE_KIND_MAGNET || f.k === SNAKE_KIND_LIGHTNING;
+      const isItem = f.k === SNAKE_KIND_MAGNET || f.k === SNAKE_KIND_STAR;
       const size = sprite.size * (isItem ? itemPulse : foodPulse);
       const half = size / 2;
       ctx.drawImage(sprite.canvas, this.sx(f.x) - half, this.sy(f.y) - half, size, size);
     }
+  }
+
+  /**
+   * 蛇皮肤图案：资源包给的是一张可平铺贴图，直接拿来做描边填充。
+   * 图案坐标系是屏幕的，所以每帧按镜头位置平移一次，贴图才会"贴在世界"上随场景滚动。
+   */
+  private skinPattern(assetId: string): CanvasPattern | null {
+    // 没装备皮肤（空串）用默认皮肤资源，保证「有主题就统一画风」
+    const key = assetId || defaultSkinAsset(GAME_SLUG);
+    if (!key) return null;
+    if (this.skinPatterns.has(key)) {
+      const cached = this.skinPatterns.get(key) || null;
+      if (cached) cached.setTransform(new DOMMatrix([1, 0, 0, 1, this.sx(0) % 96, this.sy(0) % 96]));
+      return cached;
+    }
+    const img = this.skinImage(key);
+    const pattern = img ? this.ctx.createPattern(img, 'repeat') : null;
+    this.skinPatterns.set(key, pattern);
+    if (pattern) pattern.setTransform(new DOMMatrix([1, 0, 0, 1, this.sx(0) % 96, this.sy(0) % 96]));
+    return pattern;
   }
 
   /** 刷新配色槽位：按玩家 id 首次出现顺序分配，已有 id 保留原槽位（GM-snake-23） */
@@ -1160,7 +1270,9 @@ export default class Scene2DSnake {
       ctx.strokeStyle = 'rgba(0,0,0,0.38)';
       ctx.lineWidth = radius * 2 + Math.max(2, radius * 0.32);
       ctx.stroke();
-      ctx.strokeStyle = color;
+      // 有皮肤贴图就用图案描边（画风随资源包），没有就用单色
+      const skinPattern = this.skinPattern(snake.skin);
+      ctx.strokeStyle = skinPattern || color;
       ctx.lineWidth = radius * 2;
       ctx.stroke();
       // 高光只给玩家自己那条：远端蛇省掉一整遍宽描边（多人局里这是笔不小的光栅开销）
@@ -1189,14 +1301,12 @@ export default class Scene2DSnake {
         ctx.stroke();
       }
 
-      // 闪电：黄色加速拖尾
-      if (headVisible && snake.lightning > 0 && snake.alive) {
+      // 星星（无敌）：金色外圈，和重生盾的蓝白圈区分开
+      if (headVisible && snake.star > 0 && snake.alive) {
         ctx.beginPath();
-        ctx.moveTo(hx, hy);
-        for (let i = 1; i < Math.min(pts.length, 6); i++) ctx.lineTo(this.sx(pts[i][0]), this.sy(pts[i][1]));
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = 'rgba(251,191,36,0.32)';
-        ctx.lineWidth = radius * 2.4;
+        ctx.arc(hx, hy, radius * 1.9, 0, TAU);
+        ctx.strokeStyle = 'rgba(251,191,36,0.55)';
+        ctx.lineWidth = 2.5;
         ctx.stroke();
       }
 
@@ -1206,6 +1316,11 @@ export default class Scene2DSnake {
         ctx.arc(hx, hy, radius * 1.06, 0, Math.PI * 2);
         ctx.fillStyle = color;
         ctx.fill();
+        // 贴图皮肤：蛇头再盖一层图案，否则头是纯色、身体有花纹，接缝很突兀
+        if (skinPattern) {
+          ctx.fillStyle = skinPattern;
+          ctx.fill();
+        }
         if (snake.mine) {
           ctx.strokeStyle = 'rgba(255,255,255,0.8)';
           ctx.lineWidth = 1.5;
@@ -1264,10 +1379,14 @@ export default class Scene2DSnake {
     const showControls = s.status === 'playing' && !s.awaiting && s.alive;
 
     // --- HUD 文本：脏检查 ---
-    // 标题只留「排行榜」（不再拼玩法名），也不显示本玩家最高分（GM-snake-21）
-    const hudSig = String(s.score);
+    // 标题只留「排行榜」，团队模式追加剩余时间（按秒量化，只在秒变化时写 DOM）
+    const left = s.endsIn > 0 ? Math.ceil(s.endsIn / 1000) : 0;
+    const clock = left > 0
+      ? ` · ${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`
+      : '';
+    const hudSig = `${s.score}|${clock}`;
     if (hudSig !== this.hudSig) {
-      ui.hudMode.textContent = '🏆 排行榜';
+      ui.hudMode.textContent = `🏆 排行榜${clock}`;
       ui.hudScore.textContent = String(s.score);
       this.hudSig = hudSig;
     }
@@ -1302,22 +1421,27 @@ export default class Scene2DSnake {
       }
     }
 
-    // --- 加速按钮：冷却环用 conic-gradient，量化到 2° 且只在变化时写 ---
+    // --- 加速按钮：按住即加速（无 CD），手指还按着就一直亮着，不会被身长扣到下限搞灰 ---
     this.dom.style(ui.boost, 'display', showControls ? '' : 'none');
     if (showControls) {
-      const cd = s.boostCd;
-      const ready = cd <= 0;
-      const ratio = ready ? 0 : Math.max(0, Math.min(1, cd / SNAKE_BOOST_CD_MS));
-      this.dom.cls(ui.boost, 'ready', ready);
-      this.dom.cls(ui.boost, 'boosting', !!s.boosting);
-      // conic-gradient 字符串每帧重写会触发一次样式重算 + 重绘，量化到 2° 再去重
-      const deg = ready ? 0 : Math.round((1 - ratio) * 360 / 2) * 2;
-      this.dom.style(ui.boostRing, 'background', ready
-        ? 'rgba(56,189,248,0.22)'
-        : `conic-gradient(rgba(56,189,248,0.55) ${deg}deg, rgba(24,24,36,0.82) 0deg)`);
-      const label = ready ? '加速' : (cd >= 10_000 ? String(Math.ceil(cd / 1000)) : (cd / 1000).toFixed(1));
+      // 「按住」= 本地手指意图（boostHeld）；「生效」= 服务端物理判定（boosting）。
+      // 两个都要有：按住中但身长不足时加速不生效，按钮却仍然是亮的（不能变灰）。
+      const held = !!s.boostHeld;
+      const enough = (s.length || 0) > SNAKE_BOOST_MIN_LEN;
+      const effective = !!s.boosting;
+      this.dom.cls(ui.boost, 'ready', held || enough);
+      this.dom.cls(ui.boost, 'held', held);
+      this.dom.cls(ui.boost, 'boosting', effective);
+      this.dom.style(ui.boostRing, 'background', effective
+        ? 'rgba(56,189,248,0.55)'
+        : (held ? 'rgba(56,189,248,0.38)' : (enough ? 'rgba(56,189,248,0.22)' : 'rgba(148,163,184,0.15)')));
+      // 按钮上不显示文字，只有闪电图标；状态文案放到 title 里（悬停可见 + 读屏可读）
+      const label = held
+        ? (effective ? '松开停止加速' : '按住中 · 身长不足，暂不加速')
+        : (enough ? '按住加速' : '按住加速 · 身长不足时不加速');
       if (label !== this.boostLabelSig) {
-        ui.boostLabel.textContent = label;
+        ui.boost.title = label;
+        ui.boost.setAttribute('aria-label', label);
         this.boostLabelSig = label;
       }
     }

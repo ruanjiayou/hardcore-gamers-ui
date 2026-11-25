@@ -331,11 +331,13 @@
   color: #eef0f8;
   box-shadow: 0 0 18px rgba(56, 189, 248, 0.25);
 }
-.snake-boost.boosting {
-  transform: scale(1.04);
+/* 按住中：手指还按着就一直保持点亮 —— 不因身长被扣到下限而变灰 */
+.snake-boost.held {
+  transform: scale(1.03);
+  border-color: #7dd3fc;
 }
-.snake-boost:active {
-  transform: scale(0.96);
+.snake-boost.boosting {
+  transform: scale(1.06);
 }
 .snake-boost-ring {
   position: absolute;
@@ -343,12 +345,27 @@
   border-radius: 50%;
   background: rgba(24, 24, 36, 0.82);
 }
-.snake-boost-label {
+/* 加速按钮上的闪电图标：按钮上不显示文字 */
+.snake-boost-icon {
   position: relative;
   z-index: 1;
-  font-size: 15px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
+  width: 32%;
+  height: 32%;
+  color: #8b8ba7;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0));
+  transition: color 0.15s, filter 0.15s;
+  pointer-events: none;
+}
+.snake-boost.ready .snake-boost-icon {
+  color: #eef0f8;
+}
+.snake-boost.held .snake-boost-icon {
+  color: #7dd3fc;
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.75));
+}
+.snake-boost.boosting .snake-boost-icon {
+  color: #bae6fd;
+  filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.95));
 }
 
 /* 左下角虚拟摇杆：外圈 + 手柄，手柄用 transform 定位（松手回中，CSS 过渡） */

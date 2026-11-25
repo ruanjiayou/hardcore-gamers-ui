@@ -1,14 +1,21 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import { getVoicePacks, selectVoicePack, type GameAudio, type VoicePack } from '../services/api';
 import audioPlayer, { resolveGameAudio, type SfxKey } from '../services/audio';
+import { loadGameAssets } from '../services/assets';
 
 const SETTINGS_KEY = 'gameAudioSettings';
 const AUDIO_GAME_IDS = ['gomoku', 'xiangqi', 'othello', 'chess', '2048', 'tetris', 'snake'];
 
-/** 服务端不可用时至少保留默认包，游戏仍有基础音效（含各游戏专属操作音） */
+/**
+ * 服务端不可用时至少保留默认包，游戏仍有基础音效。
+ *
+ * **按游戏拆**：每个游戏有自己的 BGM 与操作音 URL，不共用一份配置；
+ * 包级只留 UI 通用音（click/win/lose）。
+ * 兜底曲目指向默认包素材（每个游戏各一行配置，运营可在后台换成各自的曲子）。
+ */
 const fallbackGames: Record<string, GameAudio> = Object.fromEntries(
   AUDIO_GAME_IDS.map(game => [game, {
-    bgm: [],
+    bgm: [{ url: '/audio/classic/common/bgm.mp3', label: '经典主题' }],
     sfx: {
       move: `/audio/classic/${game}/move.mp3`,
       collect: `/audio/classic/${game}/collect.mp3`,
@@ -24,7 +31,8 @@ export const FALLBACK_PACK: VoicePack = {
   isDefault: true,
   requirePermission: false,
   hasPermission: true,
-  bgm: [{ url: '/audio/classic/common/bgm.mp3', label: '经典主题' }],
+  // 包级只留 UI 通用音；BGM 与游戏操作音都在 games 里按游戏各一份
+  bgm: [],
   sfx: {
     click: '/audio/classic/common/click.mp3',
     win: '/audio/classic/common/win.mp3',
@@ -118,17 +126,33 @@ export default class AudioStore {
         this.hasPermission = data.data?.hasPermission === true;
       });
       audioPlayer.applyPack(this.currentPack);
+      // 换包 = 换整套资源，音频也要按新包的 assets 重新取
+      if (this.currentGame) void this.syncGameAudio(this.currentGame);
       return { success: true };
     } catch (err: any) {
       return { success: false, message: err?.message || '网络异常，请重试' };
     }
   }
 
-  /** 进入游戏页时调用：切到该游戏专属的 BGM 与音效 */
+  /**
+   * 进入游戏页时调用：切到该游戏专属的 BGM 与音效。
+   *
+   * 先按包元信息 + 内置兜底切一次（保证立刻有声音），再用 `manifest.audio`
+   * 覆盖成服务端 `assets` 表里真实的配置——资源的唯一事实来源是 resources 表，
+   * 包接口已不再携带 bgm/sfx。
+   */
   setGame(gameId: string) {
     if (!gameId || this.currentGame === gameId) return;
     this.currentGame = gameId;
     audioPlayer.setGame(gameId);
+    void this.syncGameAudio(gameId);
+  }
+
+  /** 用资源清单里的音频覆盖当前播放器配置（清单没到/加载失败就保持兜底） */
+  private async syncGameAudio(gameId: string) {
+    const manifest = await loadGameAssets(gameId);
+    if (!manifest || this.currentGame !== gameId) return;
+    audioPlayer.applyAudio(manifest.audio);
   }
 
   setMuted(muted: boolean) {

@@ -90,10 +90,11 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '' }: { scope
                 <span className="dropdown-identity-tag">玩家</span>
               </div>
               <div className="dropdown-divider"></div>
-              {/* 单个游戏里叫「玩家中心」，大厅里叫「个人中心」（UI-050） */}
+              {/* 单个游戏里叫「玩家中心」，大厅里叫「个人中心」（UI-050）。
+                  从某个游戏进去时带上 game 参数：玩家中心里的「公开主页」要锁到本游戏。 */}
               <div
                 className="dropdown-item"
-                onClick={() => { setDropdownOpen(false); navigate('/me'); }}
+                onClick={() => { setDropdownOpen(false); navigate(profileGame ? `/me?game=${profileGame}` : '/me'); }}
               >
                 <span>{scope === 'game' ? '👤 玩家中心' : '👤 个人中心'}</span>
               </div>
@@ -127,13 +128,14 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '' }: { scope
             </div>
           )}
 
-          {/* 设置弹框与顶栏齿轮共用同一个组件（UI-050） */}
-          <GameSettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+          {/* 设置弹框与顶栏齿轮共用同一个组件（UI-050）；外观分区按当前游戏走 */}
+          <GameSettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} game={profileGame} />
         </div>
       ) : (
-        /* 游客：同样的状态头像，登录入口留给用户主动点击 */
+        /* 游客：只显示登录按钮。
+           裂缝头像是「已登录但 ws 没连上」的状态提示，游客本来就没登录，
+           显示一个裂开的头像只会让人误以为自己掉线了。 */
         <div className="guest-area">
-          {statusAvatar}
           <button className="login-entry" onClick={() => navigate(loginUrl('/lobby'))}>登录</button>
         </div>
       )}

@@ -57,7 +57,7 @@ export const GameHeader = observer(({
     <div className="game-header-right">
       {extra}
       {/* 房间/对局：设置留在顶栏右上；游戏主页：设置在头像下拉菜单里（UI-050） */}
-      {mode === 'room' && <GameSettings room={settingsRoom} />}
+      {mode === 'room' && <GameSettings room={settingsRoom} game={profileGame} />}
       {/* 游戏主页右上角：头像（点开是玩家中心 / 公开主页 / 游戏设置，见 UI-050） */}
       {mode === 'game' && <UserMenu scope="game" profileGame={profileGame} />}
     </div>

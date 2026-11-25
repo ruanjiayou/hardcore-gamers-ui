@@ -1,7 +1,8 @@
 /**
  * 语音包播放器：只依赖服务端下发的配置 URL，不内置任何音频。
  *
- * - 每套语音包下每个游戏有独立的 bgm/sfx，未配置的键回退到包级通用配置
+ * - **按游戏拆**：每个游戏有自己的 bgm 列表与 sfx 表；包级只留 UI 通用音
+ *   （click/win/lose），游戏级同名键覆盖包级
  * - 一个 BGM 元素轮播当前游戏的 bgm；切换游戏即切换曲目与音效
  * - 音效按 URL 预建 Audio，播放时 clone 一份以支持重叠
  * - 浏览器自动播放策略：首次 play 被拒时挂一次性手势监听，用户点击后再恢复 BGM
@@ -73,7 +74,18 @@ class AudioPlayer {
 
   /** 重新解析当前游戏配置，重建音效缓存，并按播放意图切换 BGM */
   private reload() {
-    this.audio = resolveGameAudio(this.pack, this.gameId);
+    this.applyAudio(resolveGameAudio(this.pack, this.gameId));
+  }
+
+  /**
+   * 直接套用一份已经解析好的音频配置（来自 `assets.manifest.json`）。
+   *
+   * 资源的唯一事实来源是 `assets` 表：包接口只下发包元信息，不再带 bgm/sfx，
+   * 所以「哪个游戏用哪首 BGM、哪个音效」一律以清单为准。清单没到之前用内置
+   * FALLBACK_PACK 兜底，保证离线/慢网也有声音。
+   */
+  applyAudio(audio: GameAudio) {
+    this.audio = { bgm: audio.bgm || [], sfx: { ...(audio.sfx || {}) } };
     this.sfxCache.clear();
     this.sfxPool.clear();
     this.sfxLastAt.clear();

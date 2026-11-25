@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { observer, useLocalObservable } from 'mobx-react-lite';
 import { toJS } from 'mobx';
 import store from '../stores';
@@ -12,9 +12,14 @@ import '../styles/profile.css';
  * 玩家中心 / 个人中心（UI-044、UI-051）：头像菜单进入。
  * 只留**头像 + 昵称 + 登录名（只读）**；手机、邮箱、密码都已按需求移除。
  * 昵称/头像由服务端同步到该用户在各游戏的 player（房间、排行榜显示的是 player）。
+ *
+ * `?game=slug` 表示「从某个游戏里进来的」：右上角的公开主页锁到本游戏，
+ * 进去只看这个游戏的战绩与对局记录，而不是跨游戏的全部数据。
  */
 export const ProfilePage = observer(() => {
   const navigate = useNavigate();
+  const [search] = useSearchParams();
+  const scopedGame = search.get('game') || '';
   const user = store.auth.user;
   const local = useLocalObservable(() => ({
     nickname: user?.nickname || user?.name || '',
@@ -79,7 +84,9 @@ export const ProfilePage = observer(() => {
       <div className="profile-head">
         <button className="profile-back" onClick={() => navigate(-1)} aria-label="返回">←</button>
         <h2>个人中心</h2>
-        <button className="profile-link" onClick={() => navigate(`/user/${user._id}`)}>公开主页 →</button>
+        <button className="profile-link" onClick={() => navigate(`/user/${user._id}${scopedGame ? `?game=${scopedGame}` : ''}`)}>
+          公开主页 →
+        </button>
       </div>
 
       <section className="profile-card">

@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import store from '../stores';
+import { getManifest, loadGameAssets, markEquipped } from '../services/assets';
+import { assetSections, type AssetSection } from '../services/assetSections';
+import { equipSkin, type AssetManifest, type AssetManifestItem } from '../services/api';
 import '../styles/game-settings.css';
 
 /**
@@ -9,9 +12,13 @@ import '../styles/game-settings.css';
  * 「⚙ 游戏设置」（UI-050），两边共用同一份弹框。
  * 把原先散落各处的配置收进一个对话框：
  * - 背景音乐（音量 / 开关 / 下一首）——只控 BGM，不影响落子等操作音
- * - 语音包选择（无权限锁定默认包）
+ * - 资源包选择（无权限锁定默认包）
+ * - **本游戏的外观分区**（按 manifest 动态渲染：分组名由资源表给，画风/音效按主题决定）
  * - 观战开关（房间等待态房主）
  * - 计时配置（象棋房间等待态）
+ *
+ * **按游戏隔离**：外观分区和音效都跟着当前游戏走 —— 黑白棋的弹框里不会出现
+ * 贪吃蛇的皮肤配置，因为服务端只下发当前游戏那一份资源。
  */
 export interface SettingsRoom {
   room_id: string;
@@ -29,11 +36,14 @@ export const GameSettingsDialog = observer(({
   open,
   onClose,
   room,
+  game: gameProp,
 }: {
   /** 受控开关：顶栏齿轮按钮与头像下拉菜单「⚙ 游戏设置」共用这一份弹框 */
   open: boolean;
   onClose: () => void;
   room?: SettingsRoom;
+  /** 当前游戏 slug：外观分区/音效按它走；不传就用音频 store 里记着的当前游戏 */
+  game?: string;
 }) => {
   const audio = store.audio;
   const [message, setMessage] = useState('');
@@ -44,9 +54,52 @@ export const GameSettingsDialog = observer(({
     totalBudgetMin: room?.timeControl?.totalBudgetMin ?? 10,
   }));
 
+  /**
+   * 当前游戏 slug。
+   * **不写死 'snake'**：没有游戏上下文就不显示任何外观分区，
+   * 免得在黑白棋的设置里冒出贪吃蛇的皮肤配置。
+   */
+  const game = gameProp || audio.currentGame || '';
+  const [manifest, setManifest] = useState<AssetManifest | null>(() => getManifest(game) || null);
+
+  // 换游戏/换资源包后清单会变（画风按主题），统一从 manifest 同步
+  useEffect(() => {
+    let alive = true;
+    setManifest(getManifest(game) || null);
+    loadGameAssets(game).then(m => { if (alive && m) setManifest(m); });
+    return () => { alive = false; };
+  }, [game, audio.selected]);
+
+  /** 当前装备的外观 asset_id（空 = 用默认外观） */
+  const equippedId = manifest?.equipped || '';
+  /** 本游戏要显示的外观分区（按清单实际内容算） */
+  const sections: AssetSection[] = manifest
+    ? assetSections(game, Object.keys(manifest.groups || {}))
+    : [];
+
   const choosePack = async (id: string) => {
     const result = await audio.select(id);
-    setMessage(result.success ? '语音包已更新' : (result.message || '设置失败'));
+    setMessage(result.success ? '资源包已更新' : (result.message || '设置失败'));
+    // 资源包换了 → 外观图也跟着换，重拉一次 manifest
+    if (result.success) setManifest(await loadGameAssets(game, { force: true }));
+  };
+
+  const chooseSkin = async (item: AssetManifestItem) => {
+    if (!store.auth.isLoggedIn) { setMessage('登录后才能更换外观'); return; }
+    if (!item.owned) { setMessage('还没有这个外观，先在后台授予或活动获取'); return; }
+    setSaving(true);
+    try {
+      const res = await equipSkin(game, item.id);
+      if (res.data?.code !== 0) { setMessage(res.data?.message || '保存失败'); return; }
+      // 本地同步 manifest：不等重新拉，缩略图选中态立刻变
+      markEquipped(game, item.id);
+      setManifest(getManifest(game) || null);
+      setMessage('外观已更新，下一局生效');
+    } catch (err: any) {
+      setMessage(err?.message || '保存失败');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const showSpectate = !!room && room.waiting && room.isOwner;
@@ -82,9 +135,9 @@ export const GameSettingsDialog = observer(({
           </label>
         </section>
 
-        {/* 语音包：权限由服务端下发，无权限只能默认包 */}
+        {/* 资源包：权限由服务端下发，无权限只能默认包 */}
         <section className="settings-section">
-          <h4>🔊 语音包</h4>
+          <h4>🔊 资源包</h4>
           <div className="settings-packs">
             {audio.packs.map(pack => {
               const active = pack.id === audio.selected;
@@ -93,7 +146,7 @@ export const GameSettingsDialog = observer(({
                 <button
                   key={pack.id}
                   className={`settings-pack${active ? ' active' : ''}${usable ? '' : ' locked'}`}
-                  onClick={() => usable ? choosePack(pack.id) : setMessage('该语音包需要权限，当前仅可使用默认包')}
+                  onClick={() => usable ? choosePack(pack.id) : setMessage('该资源包需要权限，当前仅可使用默认包')}
                 >
                   <span>{pack.cover || '🎵'}</span>
                   <span className="settings-pack-name">{pack.name}</span>
@@ -104,11 +157,55 @@ export const GameSettingsDialog = observer(({
             })}
           </div>
           <p className="settings-hint">
-            {audio.currentGame
-              ? `当前游戏：${audio.currentGame}，使用本包内该游戏的专属音效`
+            {game
+              ? `当前游戏：${game}，使用本包内该游戏的专属音效`
               : '进入游戏后自动切换到该游戏的专属音效'}
           </p>
         </section>
+
+        {/* 外观分区：按当前游戏的资源清单动态渲染（分组名由资源表给，互不串台） */}
+        {sections.map(section => {
+          const items = manifest?.groups?.[section.group]?.items || [];
+          if (!items.length) return null;
+          return (
+            <section className="settings-section" key={section.group}>
+              <h4>{section.icon} {section.title}</h4>
+              <div className="settings-packs">
+                {items.map(item => {
+                  const active = item.id === equippedId;
+                  const swatch = (
+                    <img className="settings-skin-swatch" src={item.url} alt={item.label} />
+                  );
+                  const name = <span className="settings-pack-name">{item.label}</span>;
+                  // 主题资源（食物、道具、棋盘…）随包整体生效，玩家不能单独换 → 只展示
+                  if (!item.equippable) {
+                    return (
+                      <div className="settings-pack static" key={item.id} title={`${item.label}（随资源包生效）`}>
+                        {swatch}
+                        {name}
+                      </div>
+                    );
+                  }
+                  // 玩家级外观：可装备
+                  return (
+                    <button
+                      key={item.id}
+                      className={`settings-pack${active ? ' active' : ''}${item.owned ? '' : ' locked'}`}
+                      onClick={() => chooseSkin(item)}
+                      disabled={saving}
+                      title={item.owned ? item.label : `${item.label}（未获得）`}
+                    >
+                      {swatch}
+                      {name}
+                      {active ? <em>使用中</em> : (!item.owned ? <em>未获得</em> : null)}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="settings-hint">外观存在账号的玩家档案里，换主题会换画风；没配图的主题回退矢量外观。</p>
+            </section>
+          );
+        })}
 
         {/* 观战配置：房主在等待态切换 */}
         {showSpectate && (
@@ -169,9 +266,11 @@ export const GameSettingsDialog = observer(({
 export const GameSettings = observer(({
   className = '',
   room,
+  game,
 }: {
   className?: string;
   room?: SettingsRoom;
+  game?: string;
 }) => {
   const [open, setOpen] = useState(false);
   return (
@@ -185,7 +284,7 @@ export const GameSettings = observer(({
       >
         <span aria-hidden="true">⚙️</span>
       </button>
-      <GameSettingsDialog open={open} onClose={() => setOpen(false)} room={room} />
+      <GameSettingsDialog open={open} onClose={() => setOpen(false)} room={room} game={game} />
     </>
   );
 });

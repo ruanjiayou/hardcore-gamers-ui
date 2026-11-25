@@ -54,10 +54,6 @@ export const GameList = observer(() => {
             <div className="game-content">
               <h3 className="game-name">{game.title}</h3>
               <p className="game-desc">{game.desc}</p>
-              <div className="game-stats">
-                <span>🏠 {game.rooms} 房间</span>
-                <span>👥 {game.players} 人</span>
-              </div>
             </div>
           </div>
         ))}

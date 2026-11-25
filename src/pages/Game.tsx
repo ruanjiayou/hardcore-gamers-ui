@@ -4,6 +4,7 @@ import { observer, useLocalObservable } from 'mobx-react-lite';
 import { toJS } from 'mobx';
 import store from '../stores'
 import { getSocket, ReceiveEvent, SendoutEvent, socketEvents, syncRoomScore } from '../services/socket';
+import { loadGameAssets } from '../services/assets';
 import { Leaderboard } from '../components/Leaderboard';
 import { LoginRequiredPanel } from '../components/LoginRequired';
 import { GameHeader } from '../components/GameHeader';
@@ -124,6 +125,8 @@ export const GamePage = observer(() => {
     if (!slug || !socket) return;
     // 进入游戏主页就切到该游戏的专属音效配置（早于匹配/开局，房间页会幂等再设一次）
     store.audio.setGame(slug);
+    // 图片资源（皮肤）在加载阶段一次拉完并预加载：对局内不再发图片请求
+    loadGameAssets(slug);
     // 直接打开/刷新游戏主页时 store 里还没有游戏列表，需要自己拉一次，
     // 否则拿不到 mode/variants，单人会误显示成房间对战
     if (!store.game.games.length) {
@@ -134,10 +137,14 @@ export const GamePage = observer(() => {
     // 从房间页主动点了返回：本次不要自动回房，否则返回按钮形同虚设
     const skipResume = sessionStorage.getItem('lobby:skipRoomResume') === '1';
     if (skipResume) sessionStorage.removeItem('lobby:skipRoomResume');
-    if (!store.game.player && store.auth.isLoggedIn) {
+    if (store.auth.isLoggedIn) {
+      // **每次进游戏主页都拉一次当前游戏的 player**（不能只在 store 为空时拉）：
+      // store.game.player 是全局单例、不区分游戏，玩过 A 再点 B 时它非空，
+      // 旧逻辑会直接跳过拉取 → 拿不到 B 的 room_id → 明明人在房里却停在游戏主页。
       socketEvents.getGamePlayer(slug, (player) => {
+        if (!player) return;
         store.game.setPlayer(player);
-        // 已在游戏中（如掉线/刷新回来、单人快开的临时房未退出）→ 回到对局
+        // 已在房间里（如从大厅点进游戏、或刷新后回来）→ 直接回到那个房间。
         //
         // 自动回房前必须确认房间还在：player.room_id 可能是历史遗留的脏指针
         // （房间已解散 / 玩家早已不在成员表里）。直接跳过去会进一个死房间，
@@ -239,6 +246,10 @@ export const GamePage = observer(() => {
                 {local.rooms.map((room: any) => {
                   const playing = room.status === 'playing';
                   const full = (room.members?.length || 0) >= (room.numbers?.max || 2);
+                  // 玩家已经在这个房间里：按钮是「进入」而不是「加入」。
+                  // 「加入」在这种状态下是灰的（对局中或满员），玩家看着像被挡在门外，
+                  // 实际上他自己就在这个房里 —— 应该能直接跳进去。
+                  const isMyRoom = !!store.game.player?.room_id && store.game.player.room_id === room._id;
                   return (
                     <div key={room._id} className={`room-cell${playing || full ? ' playing' : ''}`}>
                       <div>
@@ -246,8 +257,12 @@ export const GamePage = observer(() => {
                         <p>{room.members?.length || 0}/{room.numbers?.max || 2} 人{playing ? ' · 对局中' : ''}</p>
                       </div>
                       <button
-                        disabled={playing || full}
+                        disabled={!isMyRoom && (playing || full)}
                         onClick={() => {
+                          if (isMyRoom) {
+                            navigate(`/game/${slug}/room/${room._id}`);
+                            return;
+                          }
                           if (!store.auth.isLoggedIn) {
                             store.ui.openLoginPrompt('登录后才能加入房间');
                             return;
@@ -257,7 +272,7 @@ export const GamePage = observer(() => {
                             else alert('加入房间失败，请重试');
                           });
                         }}
-                      >加入</button>
+                      >{isMyRoom ? '进入' : '加入'}</button>
                     </div>
                   );
                 })}

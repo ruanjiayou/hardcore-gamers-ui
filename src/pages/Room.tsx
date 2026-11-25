@@ -4,6 +4,7 @@ import { observer, useLocalObservable } from 'mobx-react-lite';
 import { toJS } from 'mobx'
 import store from '../stores'
 import { ReceiveEvent, SendoutEvent, getSocket, socketEvents, syncRoomScore } from '../services/socket';
+import { loadGameAssets } from '../services/assets';
 import { PlayerList } from '../components/PlayerList';
 import { Chat } from '../components/Chat';
 import '../styles/index.css';
@@ -204,6 +205,8 @@ export const RoomPage = observer(() => {
     init(room_id)
     // 进入对局页加载语音包配置并切到该游戏的专属音效，再起 BGM（自动播放被拦时等首次手势恢复）
     if (slug) store.audio.setGame(slug);
+    // 直接刷新进房间时也要预加载皮肤图（正常路径是在游戏主页加载过，这里幂等）
+    if (slug) loadGameAssets(slug);
     if (!store.audio.packs.length) void store.audio.load();
     store.audio.startBgm();
     // 直接刷新进房间时 store 里可能没有游戏列表，补拉一次：
@@ -599,7 +602,7 @@ export const RoomPage = observer(() => {
                 aria-label="玩家与聊天"
                 onClick={() => local.setV('showPanel', !local.showPanel)}
               >☰</button>
-              <GameSettings className="hud-btn" room={settingsRoom} />
+              <GameSettings className="hud-btn" room={settingsRoom} game={slug} />
               <button
                 className="hud-btn hud-close"
                 title="关闭 / 退出"

@@ -175,6 +175,15 @@
   opacity: 0.6;
 }
 
+/* 主题资源（食物、道具、棋盘…）：随资源包整体生效，玩家不能单独换 → 不可点 */
+.settings-pack.static {
+  cursor: default;
+  background: #fafafd;
+}
+.settings-pack.static:hover {
+  border-color: #e0e0e0;
+}
+
 .settings-pack em {
   font-style: normal;
   font-size: 11px;
@@ -234,4 +243,20 @@
     min-width: 38px;
     border-radius: 19px;
   }
+}
+
+/* 蛇皮肤缩略图：贴图是可平铺的 96px 方块，缩略图直接当色卡看 */
+.settings-skin-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #f5f5f8;
+}
+
+/* 未获得的皮肤：占位但不可选，避免"点了没反应" */
+.settings-pack.locked {
+  opacity: 0.45;
+  cursor: not-allowed;
 }

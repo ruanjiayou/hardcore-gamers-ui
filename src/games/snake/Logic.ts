@@ -11,35 +11,66 @@ import type SocketTransport from '../../core/GameTransport';
 
 export type Variant = 'endless' | 'team';
 
-/** 与服务端保持一致的物理参数（像素/秒、弧度/秒） */
-export const SNAKE_SPEED = 170;
+/**
+ * 与服务端保持一致的物理参数（像素/秒、弧度/秒）。
+ *
+ * 速度模型：巡航速度**随身长线性递减**（贪吃蛇大作战的核心手感 —— 刚出生的小蛇快、
+ * 越肥越慢）。转弯半径固定 → 角速度 ω = v/R 随速度自动下降，长蛇又慢又难转向。
+ */
+export const SNAKE_SPEED_MAX = 110;
+export const SNAKE_SPEED_MIN = 62;
+/** 加速倍率：加速速度 = 当前巡航速度 × 本倍率 */
 export const SNAKE_BOOST_MULT = 1.85;
 /** 最小转弯半径（像素）：角速度 ω = v / R，与服务端同一套推导 */
-export const SNAKE_MIN_TURN_RADIUS = 26;
-export const SNAKE_BOOST_MIN_TURN_RADIUS = 42;
-export const SNAKE_TURN_RATE = SNAKE_SPEED / SNAKE_MIN_TURN_RADIUS;
-export const SNAKE_BOOST_TURN_RATE = (SNAKE_SPEED * SNAKE_BOOST_MULT) / SNAKE_BOOST_MIN_TURN_RADIUS;
-export const SNAKE_RADIUS = 12;
-export const SNAKE_HEAD_RADIUS = 13;
-/** 3s 冲刺，1 分钟一次（与服务端一致） */
-export const SNAKE_BOOST_MS = 3000;
-export const SNAKE_BOOST_CD_MS = 60_000;
-/** 闪电道具：持续期间小幅加速（与服务端一致） */
-export const SNAKE_LIGHTNING_MULT = 1.35;
+export const SNAKE_MIN_TURN_RADIUS = 25;
+export const SNAKE_BOOST_MIN_TURN_RADIUS = 52;
+export const SNAKE_RADIUS = 15;
+export const SNAKE_HEAD_RADIUS = 16;
+/** 身长上限与加速下限（与服务端一致） */
+export const SNAKE_BODY_LENGTH = 160;
+export const SNAKE_MAX_LENGTH = 2400;
+export const SNAKE_BOOST_MIN_LEN = 120;
 /** 磁铁道具的吸附半径（与服务端一致，用于画范围提示圈） */
-export const SNAKE_MAGNET_RADIUS = 180;
+export const SNAKE_MAGNET_RADIUS = 220;
+
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
+/** 巡航速度（像素/秒）：按身长线性插值，与服务端 snakeCruiseSpeed 完全一致 */
+export function snakeCruiseSpeed(length: number): number {
+  const t = clamp01((length - SNAKE_BODY_LENGTH) / (SNAKE_MAX_LENGTH - SNAKE_BODY_LENGTH));
+  return SNAKE_SPEED_MAX + (SNAKE_SPEED_MIN - SNAKE_SPEED_MAX) * t;
+}
+
+/** 当前身长下的实际移动速度（加速时 = 巡航 × 倍率） */
+export function snakeMoveSpeed(length: number, boosting: boolean): number {
+  return snakeCruiseSpeed(length) * (boosting ? SNAKE_BOOST_MULT : 1);
+}
+
+/** 当前身长下的转向角速度（rad/s）：ω = v / R */
+export function snakeTurnRate(length: number, boosting: boolean): number {
+  const r = boosting ? SNAKE_BOOST_MIN_TURN_RADIUS : SNAKE_MIN_TURN_RADIUS;
+  return snakeMoveSpeed(length, boosting) / r;
+}
 
 /**
  * 场上可拾取物类型（与服务端 rules.ts 一一对应）：
- * 普通食物（分三档）/ 尸体残骸 / 磁铁 / 闪电。
+ * 普通食物（分三档）/ 尸体残骸 / 道具（磁铁、星星）。
+ * 道具的 kind 由服务端注册表分配，客户端只用 kind 查皮肤、用 key 取名。
  */
 export const SNAKE_KIND_FOOD = 0;
 export const SNAKE_KIND_CORPSE = 1;
 export const SNAKE_KIND_MAGNET = 2;
-export const SNAKE_KIND_LIGHTNING = 3;
+export const SNAKE_KIND_STAR = 3;
+/** kind -> 资源包里的皮肤 key（`games[game].skins.items[key]`，GM-snake-25/26） */
+export const SNAKE_ITEM_KEYS: Record<number, string> = {
+  [SNAKE_KIND_MAGNET]: 'magnet',
+  [SNAKE_KIND_STAR]: 'star',
+};
 
-/** 一个可拾取物（服务端权威下发：坐标 + 半径 + 分值 + 类型） */
+/** 一个可拾取物（服务端权威下发：id + 坐标 + 半径 + 分值 + 类型） */
 export interface SnakeFoodItem {
+  /** 服务端稳定自增 id（老快照可能没有，按坐标兜底） */
+  id?: number;
   x: number;
   y: number;
   /** 半径（像素）：决定碰撞判定与绘制大小 */
@@ -91,20 +122,22 @@ export interface SnakeEntry {
   mine: boolean;
   /** 剩余无敌（ms） */
   invincible: number;
-  /** 加速中 */
+  /** 这一 tick 是否真的在加速（按住 + 身长够） */
   boosting: boolean;
-  /** 加速冷却剩余（ms） */
-  boostCd: number;
+  /** 加速键是否按住 */
+  boostHeld: boolean;
   /** 磁铁效果剩余（ms），0 表示没有 */
   magnet: number;
-  /** 闪电加速剩余（ms），0 表示没有 */
-  lightning: number;
+  /** 星星无敌剩余（ms），0 表示没有 */
+  star: number;
   /** 距离重生（ms） */
   respawnIn: number;
   /** 已重生次数（无尽），用于检测"整条蛇瞬移" */
   respawns: number;
   /** 所属队伍（团队模式）；空串表示无队伍 */
   team: string;
+  /** 玩家装备的蛇皮肤 **asset_id**（manifest 里按 id 取图；空 = 用默认皮肤） */
+  skin: string;
 }
 
 export interface SnakeView {
@@ -121,8 +154,10 @@ export interface SnakeView {
   best: number;
   /** 我是否活着（死亡时镜头停在原地，等待重生） */
   alive: boolean;
+  /** 自己的身长（加速代价按它判定，HUD 也用它） */
+  length: number;
   boosting: boolean;
-  boostCd: number;
+  boostHeld: boolean;
   invincible: number;
   respawnIn: number;
   /** 已出局、等玩家选「重生 / 退出」（无尽模式） */
@@ -132,6 +167,8 @@ export interface SnakeView {
   winner: string;
   /** 团队模式下各队总积分：team -> 分数 */
   teamScores: Record<string, number>;
+  /** 团队模式剩余毫秒（0 = 不限时） */
+  endsIn: number;
 }
 
 interface SnapshotSnake {
@@ -146,13 +183,15 @@ interface SnapshotSnake {
   score: number;
   best?: number;
   invincible?: number;
-  boosting?: number;
-  boostCd?: number;
+  boosting?: boolean;
+  boostHeld?: boolean;
   magnet?: number;
-  lightning?: number;
+  star?: number;
   respawnIn?: number;
   awaiting?: boolean;
   respawns?: number;
+  /** 玩家级蛇皮肤 key（资源包决定画风，缺省 default） */
+  skin?: string;
 }
 
 interface Snapshot {
@@ -161,7 +200,16 @@ interface Snapshot {
   radius?: number;
   tick: number;
   variant?: string;
-  food: SnakeFoodItem[];
+  /**
+   * 拾取物：只有 `foodFull=true` 时才有全量，平时走 `foodAdd` / `foodDel` 增量。
+   * 100 个食物每 50ms 全量推一遍太浪费，增量帧通常只有 0~2 个元素。
+   */
+  food?: SnakeFoodItem[];
+  foodAdd?: SnakeFoodItem[];
+  foodDel?: number[];
+  /** 坐标变化的拾取物（磁铁吸附会把食物往蛇头拉，不发这个客户端就看不到吸附） */
+  foodMove?: { id: number; x: number; y: number }[];
+  foodFull?: boolean;
   /** 座位表：局中有人加入时也会随快照刷新 */
   players?: { id: string; nickname: string; team?: string }[];
   snakes: SnapshotSnake[];
@@ -169,6 +217,8 @@ interface Snapshot {
   winner?: string;
   /** 团队模式各队总积分 */
   teamScores?: Record<string, number>;
+  /** 团队模式剩余毫秒；0 = 不限时 */
+  endsIn?: number;
 }
 
 export default class LogicSnake extends EventEmitter {
@@ -212,17 +262,35 @@ export default class LogicSnake extends EventEmitter {
   private avgGap = 0;
   private roomId = '';
 
-  // ===== 本地展示的加速状态（乐观 + 快照纠正） =====
-  private localBoostUntil = 0;
-  private localBoostReadyAt = 0;
-  /** 闪电道具的本地截止时间（预测速度用） */
-  private localLightningUntil = 0;
+  // ===== 本地展示的道具状态（快照驱动） =====
+  /** 加速键是否按住（按住即生效，代价是扣身长，无 CD） */
+  private boostHeld = false;
   /** 磁铁道具的本地截止时间（渲染用） */
   private localMagnetUntil = 0;
+  /** 团队模式结束时间戳（ms），0 = 不限时 */
+  private endsAt = 0;
   private invincibleUntil = 0;
   private awaiting = false;
   private respawnAt = 0;
   private respawns = 0;
+  /**
+   * 本局是否已经见过自己的蛇（SB-053）。
+   * 用来识别"外来帧"：同一房间同时存在两个运行时时，僵尸那局的快照里没有我，
+   * 照单全收就会在两个对局的画面之间来回跳（已出局提示狂闪）。
+   */
+  private mySnakeSeen = false;
+
+  /**
+   * 我是这个房间的对战玩家吗？
+   * 观战者（member_type=viewer）本来就没有蛇，不能按"快照里没有我"判成出局。
+   * 拿不到成员信息时按玩家处理（对战才是主场景）。
+   */
+  private get isPlayerMember(): boolean {
+    if (!this.roomMembers.length) return true;
+    const me = this.roomMembers.find((m: any) => String(m._id) === String(this.myId));
+    if (!me) return true;
+    return me.member_type !== 'viewer';
+  }
 
   private onRemoteAction = (data: any) => {
     if (data?.snake) this.applySnapshot(data.snake as Snapshot);
@@ -264,7 +332,11 @@ export default class LogicSnake extends EventEmitter {
   /** 对局状态（开局/重连都会调用） */
   setState(state: any) {
     if (!state) return;
-    if (state.match_id) this.match_id = state.match_id;
+    if (state.match_id && state.match_id !== this.match_id) {
+      this.match_id = state.match_id;
+      // 换局了：清掉「见过自己的蛇」标记，新局里我可能还没进快照
+      this.mySnakeSeen = false;
+    }
     if (Array.isArray(state.players)) {
       this.players = state.players
         .filter((p: any) => p.member_type === 'player' || p.role === 'player' || p.role === 'snake')
@@ -305,14 +377,16 @@ export default class LogicSnake extends EventEmitter {
     this.aim(angle);
   }
 
-  /** 加速：有冷却，服务端权威；本地先乐观置灰给出即时反馈 */
-  boost() {
+  /**
+   * 加速键按住状态（按下 / 松开各调一次）。
+   * 无冷却、无时长上限：按住就一直加速，代价是每隔一段时间从尾部扣身长。
+   * 本地先乐观生效，服务端下一帧快照会带 `boosting` 纠正（被拒也只是不加速而已）。
+   */
+  setBoost(held: boolean) {
+    if (this.boostHeld === held) return;
+    this.boostHeld = held;
     if (this.status !== 'playing' || !this.predAlive) return;
-    const now = Date.now();
-    if (now < this.localBoostReadyAt) return;
-    this.localBoostUntil = now + SNAKE_BOOST_MS;
-    this.localBoostReadyAt = now + SNAKE_BOOST_CD_MS;
-    this.send({ boost: true });
+    this.send({ boostHeld: held });
     this.emitView();
   }
 
@@ -323,6 +397,7 @@ export default class LogicSnake extends EventEmitter {
   respawn() {
     if (this.variant !== 'endless' || !this.awaiting) return;
     this.awaiting = false;
+    this.boostHeld = false;
     this.send({ respawn: true });
     this.emitView();
   }
@@ -391,19 +466,39 @@ export default class LogicSnake extends EventEmitter {
 
   // ===== 快照 =====
   private applySnapshot(snap: Snapshot) {
+    // 外来的帧要挡掉（SB-053）：
+    // 同一个房间如果同时存在两个运行时（僵尸对局没停干净），它们会往同一个频道
+    // 交替广播快照 —— 僵尸那局里没有我的蛇，客户端就会在两个对局的画面之间来回跳，
+    // 「已出局」提示每 50ms 闪一次。这里按「快照里有没有我」判定帧的归属：
+    // · 见过自己的蛇、这帧却没有 → 外来帧，整帧丢弃；
+    // · 从没见过自己的蛇、我是对战玩家 → 我还没进这一局，保持等待态（别报出局）；
+    // · 观战者本来就没有蛇 → 正常渲染。
+    const myId = this.myId;
+    const mineInSnap = snap.snakes.find(x => x.id === myId);
+    if (!mineInSnap) {
+      if (this.mySnakeSeen) return;
+      if (this.isPlayerMember) {
+        this.status = 'waiting';
+        this.emitView();
+        return;
+      }
+    } else {
+      this.mySnakeSeen = true;
+    }
+
     this.w = snap.w || this.w;
     this.h = snap.h || this.h;
     this.radius = snap.radius || this.radius;
     this.tick = snap.tick || 0;
-    this.food = (snap.food || []).map(f => ({ x: f.x, y: f.y, r: f.r, v: f.v, k: f.k }));
+    this.applyFoodDelta(snap);
     if (snap.variant === 'team' || snap.variant === 'endless') this.variant = snap.variant;
     if (Array.isArray(snap.players) && snap.players.length) {
       // 以快照里的座位表为准：局中进来的人也能立刻显示昵称
       this.players = snap.players.map(p => ({ id: p.id, nickname: p.nickname || '玩家', team: p.team || '' }));
     }
     if (snap.teamScores) this.teamScores = snap.teamScores;
+    this.endsAt = typeof snap.endsIn === 'number' ? Date.now() + snap.endsIn : 0;
 
-    const myId = this.myId;
     const now = Date.now();
     // 慢网识别：记录最近几次快照的真实间隔（排除首次与 >5s 的异常值）
     const prevGap = this.lastSnapshotAt ? now - this.lastSnapshotAt : 0;
@@ -427,13 +522,14 @@ export default class LogicSnake extends EventEmitter {
       best: Math.max(s.score || 0, s.best || 0),
       mine: s.id === myId,
       invincible: s.invincible || 0,
-      boosting: (s.boosting || 0) > 0,
-      boostCd: s.boostCd || 0,
+      boosting: s.boosting === true,
+      boostHeld: s.boostHeld === true,
       magnet: s.magnet || 0,
-      lightning: s.lightning || 0,
+      star: s.star || 0,
       respawnIn: s.respawnIn || 0,
       respawns: s.respawns || 0,
       team: s.team || '',
+      skin: s.skin || '',
     }));
     this.awaiting = snap.snakes.find(x => x.id === myId)?.awaiting === true;
     this.winner = snap.winner || '';
@@ -445,12 +541,12 @@ export default class LogicSnake extends EventEmitter {
       this.invincibleUntil = now + mine.invincible;
       this.respawnAt = mine.alive ? 0 : now + mine.respawnIn;
       this.respawns = mine.respawns || this.respawns;
-      // 服务端冷却为准，只往"更晚"的方向纠正，避免本地乐观值被旧快照覆盖
-      this.localBoostReadyAt = Math.max(this.localBoostReadyAt, now + mine.boostCd);
-      if (mine.boosting) this.localBoostUntil = Math.max(this.localBoostUntil, now + 60);
-      // 道具效果：服务端给的是剩余毫秒数，本地记下截止点
-      // （闪电用于预测速度，磁铁用于渲染提示圈）
-      if (mine.lightning) this.localLightningUntil = Math.max(this.localLightningUntil, now + mine.lightning);
+      // 加速的「按住」以本地手指为准：**不用服务端快照回写本地按住态**。
+      // 服务端的 boostHeld 是上一帧的值 —— 玩家刚按下还没到服务端时会被它清掉，
+      // 按钮当场变灰，看起来像按键失灵。反过来服务端发 boostHeld=true 也不回写本地
+      // （玩家已经松手了），所以本地只认 pointer 事件。
+      if (!mine.alive) this.boostHeld = false;
+      // 道具效果：服务端给的是剩余毫秒数，本地记下截止点（磁铁用于渲染提示圈）
       if (mine.magnet) this.localMagnetUntil = Math.max(this.localMagnetUntil, now + mine.magnet);
       this.snap = {
         x: mine.x,
@@ -467,6 +563,7 @@ export default class LogicSnake extends EventEmitter {
     } else {
       this.predAlive = false;
       this.snap = null;
+      this.boostHeld = false;
     }
     this.predAliveWasAlive = !!mine?.alive;
     this.lastSnapshotAt = now;
@@ -488,6 +585,49 @@ export default class LogicSnake extends EventEmitter {
     this.emitView();
   }
 
+  /**
+   * 拾取物增量合并：
+   * - `foodFull` 或带了 `food` 数组 → 整表替换（开局首帧 / 中途加入 / 每 10s 对齐）；
+   * - 否则按 id 删 `foodDel`、加 `foodAdd`、按 id 改坐标 `foodMove`。
+   *
+   * `foodMove` 是磁铁吸附的通道：服务端把范围内食物往蛇头拉（改了 x/y），
+   * 增删协议只带 id → 客户端食物纹丝不动，看起来就是「吸的效果没了」。
+   *
+   * 本地预测只影响渲染时临时过滤出来的数组，不动 `this.food`，
+   * 所以「猜错了」不会把食物永久吃掉——下一帧快照里它还在。
+   */
+  private applyFoodDelta(snap: Snapshot) {
+    const full = snap.foodFull === true || Array.isArray(snap.food);
+    if (full) {
+      this.food = (snap.food || []).map(f => ({ id: f.id, x: f.x, y: f.y, r: f.r, v: f.v, k: f.k }));
+      return;
+    }
+    if (snap.foodDel?.length) {
+      const gone = new Set(snap.foodDel);
+      this.food = this.food.filter(f => f.id === undefined || !gone.has(f.id));
+    }
+    if (snap.foodAdd?.length) {
+      const known = new Set(this.food.map(f => f.id));
+      for (const f of snap.foodAdd) {
+        // 同 id 已存在就跳过：乱序/重复的增量不能让场上出现两个一样的东西
+        if (f.id !== undefined) {
+          if (known.has(f.id)) continue;
+          known.add(f.id);
+        }
+        this.food.push({ id: f.id, x: f.x, y: f.y, r: f.r, v: f.v, k: f.k });
+      }
+    }
+    if (snap.foodMove?.length) {
+      for (const m of snap.foodMove) {
+        const f = this.food.find(x => x.id === m.id);
+        // 找不到就跳过：这个 id 可能刚被吃掉（或本帧才新增），位置由 foodAdd 带
+        if (!f) continue;
+        f.x = m.x;
+        f.y = m.y;
+      }
+    }
+  }
+
   private lastSnapshotAt = 0;
   private predAliveWasAlive = true;
 
@@ -507,13 +647,12 @@ export default class LogicSnake extends EventEmitter {
     const elapsed = Math.min(this.predictMaxMs(), Math.max(0, now - snap.at));
     if (elapsed < 8) return { x: snap.x, y: snap.y, angle: snap.angle, pts: snap.pts };
 
-    const boosting = now < this.localBoostUntil;
-    // 主动加速优先于闪电道具（与服务端一致，两者不叠加）
-    const lightning = now < this.localLightningUntil;
-    const mult = boosting ? SNAKE_BOOST_MULT : (lightning ? SNAKE_LIGHTNING_MULT : 1);
-    const speed = SNAKE_SPEED * mult;
+    // 按住加速且身长够才生效（与服务端同一条判定）
+    const boosting = this.boostHeld && snap.length > SNAKE_BOOST_MIN_LEN;
+    // 速度随身长递减（与服务端同一个公式）：长蛇更慢，角速度也随之下降
+    const speed = snakeMoveSpeed(snap.length, boosting);
     // 与服务端同一条公式：角速度 = 速度 / 最小转弯半径
-    const rate = speed / (boosting ? SNAKE_BOOST_MIN_TURN_RADIUS : SNAKE_MIN_TURN_RADIUS);
+    const rate = snakeTurnRate(snap.length, boosting);
 
     const dt = elapsed / 1000;
     // 慢网时 elapsed 可达 1.5s，子步仍保持 ≤33ms 才不会把转弯算成折线
@@ -577,8 +716,8 @@ export default class LogicSnake extends EventEmitter {
           ? pred.pts.map(([x, y]) => [x + shiftX, y + shiftY] as [number, number])
           : pred.pts,
         invincible: Math.max(0, this.invincibleUntil - now),
-        boosting: now < this.localBoostUntil,
-        boostCd: Math.max(0, this.localBoostReadyAt - now),
+        boosting: this.boostHeld && s.length > SNAKE_BOOST_MIN_LEN,
+        boostHeld: this.boostHeld,
       };
     });
 
@@ -616,8 +755,9 @@ export default class LogicSnake extends EventEmitter {
       score: mySnake?.score ?? 0,
       best: mySnake?.best ?? 0,
       alive: mySnake ? mySnake.alive : false,
-      boosting: now < this.localBoostUntil,
-      boostCd: Math.max(0, this.localBoostReadyAt - now),
+      length: mySnake?.length ?? 0,
+      boosting: this.boostHeld && (mySnake?.length ?? 0) > SNAKE_BOOST_MIN_LEN,
+      boostHeld: this.boostHeld,
       invincible: Math.max(0, this.invincibleUntil - now),
       respawnIn: mySnake && !mySnake.alive ? Math.max(0, this.respawnAt - now) : 0,
       awaiting: this.awaiting,
@@ -625,6 +765,7 @@ export default class LogicSnake extends EventEmitter {
       status: this.status,
       winner: this.winner,
       teamScores: this.teamScores,
+      endsIn: this.endsAt ? Math.max(0, this.endsAt - now) : 0,
     };
   }
 
