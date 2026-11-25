@@ -22,6 +22,9 @@ export const GamePage = observer(() => {
     allowSpectate: true,
     starting: false,
     matching: false,
+    // 排队等位（竞技场满员时）：waiting=true 表示人已在服务端队列里
+    waiting: false,
+    queueSize: 0,
     // 官方房间列表（只展示官方桌，私有房不显示）
     rooms: [] as any[],
     setV(o: object) {
@@ -66,7 +69,11 @@ export const GamePage = observer(() => {
     });
   };
 
-  /** 匹配：服务端找一张还有空位的桌子（没有就开新桌），不再展示房间列表 */
+  /**
+   * 匹配：在已有的官方桌里找一张还有空位的桌子。
+   * - 找到空位 → 直接进房间；
+   * - 全部满员 → 进等待队列（服务端排队，有空位就把我拉进去）。
+   */
   const handleMatch = () => {
     if (!store.auth.isLoggedIn) {
       store.ui.openLoginPrompt('登录后才能匹配');
@@ -76,12 +83,24 @@ export const GamePage = observer(() => {
     local.setV({ matching: true });
     socketEvents.match(slug!, variantInfo?.key, (success, player, message) => {
       local.setV({ matching: false });
+      // 排队中：不是错误，是"桌子满了，等一会儿"
+      if (success && player?.waiting) {
+        local.setV({ waiting: true, queueSize: player.queue_size || 1 });
+        return;
+      }
       const room_id = player?.room_id;
       if (success && room_id) {
         navigate(`/game/${slug}/room/${room_id}`);
       } else {
         alert(message || '匹配失败，请重试');
       }
+    });
+  };
+
+  /** 取消排队 */
+  const handleCancelMatch = () => {
+    socketEvents.cancelMatch((success) => {
+      if (success) local.setV({ waiting: false, queueSize: 0 });
     });
   };
 
@@ -295,10 +314,18 @@ export const GamePage = observer(() => {
             <div className="snake-actions">
               {isEndlessVariant ? (
                 <>
-                  <button className="solo-start-btn" disabled={local.matching} onClick={handleMatch}>
-                    {local.matching ? '正在进入竞技场…' : '▶ 开始无尽挑战'}
+                  <button className="solo-start-btn" disabled={local.matching || local.waiting} onClick={handleMatch}>
+                    {local.matching ? '正在进入竞技场…' : (local.waiting ? '排队中…' : '▶ 开始无尽挑战')}
                   </button>
-                  <p className="solo-hint">进入无尽竞技房，与场上玩家、人机同图刷分</p>
+                  {local.waiting ? (
+                    /* 桌子满了：进等待队列，有人离开就把我拉进去 */
+                    <div className="match-waiting">
+                      <p>🎮 当前竞技场已满，正在排队等待空位（前面还有 {local.queueSize} 人）…</p>
+                      <button className="snake-join-btn" onClick={handleCancelMatch}>取消排队</button>
+                    </div>
+                  ) : (
+                    <p className="solo-hint">进入无尽竞技房，与场上玩家、人机同图刷分</p>
+                  )}
                 </>
               ) : (
                 <>

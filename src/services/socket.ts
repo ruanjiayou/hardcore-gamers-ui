@@ -113,6 +113,8 @@ export const ReceiveEvent = {
   InviteReceived: 'invite:received',
   InviteResult: 'invite:result',
   InviteAccepted: 'invite:accepted',
+  // 匹配队列：竞技场满员时排队等待，分配到桌后服务端推这个事件
+  MatchFound: 'lobby:match-found',
   // 房间事件（与服务端 emit 名称严格一致）
   RoomCreated: 'room:created',
   RoomReady: 'room:room-ready',
@@ -150,6 +152,7 @@ export const SendoutEvent = {
   CreateRoom: 'lobby:create-room',
   JoinRoom: 'lobby:join-room',
   MatchRoom: 'lobby:match',
+  MatchCancel: 'lobby:match-cancel',
   QuickStart: 'lobby:quick-start',
 } as const;
 // 定义一个通用的 ValueOf 工具类型
@@ -183,13 +186,23 @@ export const socketEvents = {
   joinRoom: (data: { room_id: string, type?: string, password?: string }, callback?: (success: boolean, player?: any) => void) => {
     getSocket()?.emit('lobby:join-room', data, callback);
   },
-  /** 匹配：服务端直接找一张还有空位的桌子（没有就替玩家开一张），前端不再展示房间列表 */
+  /**
+ * 匹配：服务端在**已有的官方桌**里找一张还有空位的桌子。
+ *
+ * - 找到空位 → 回调拿到 `room_id`，直接进房间；
+ * - 全部满员 → 回调拿到 `{ waiting: true, queue_size }`，进入排队等位；
+ * - 排到位置时服务端另发 `lobby:match-found`（带 room_id），由 App 全局跳转。
+ */
   match: (
     slug: string,
     variant?: string,
     callback?: (success: boolean, player?: any, message?: string) => void,
   ) => {
     getSocket()?.emit('lobby:match', { slug, variant }, callback);
+  },
+  /** 取消排队（竞技场满员时主动退出等待） */
+  cancelMatch: (callback?: (success: boolean, data?: any, message?: string) => void) => {
+    getSocket()?.emit('lobby:match-cancel', callback);
   },
   /** 单人游戏快开：一键开一局（服务端建临时房并立即开局），无需房间列表 */
   quickStart: (

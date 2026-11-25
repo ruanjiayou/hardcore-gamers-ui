@@ -45,8 +45,18 @@ const SNAKE_COLORS = ['#4ade80', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#3
  */
 const GAME_SLUG = 'snake';
 const FOOD_TIERS = ['small', 'mid', 'big'] as const;
-function foodTierOf(radius: number): string {
-  return FOOD_TIERS[foodTierIndex(radius)] || 'small';
+/**
+ * 食物档位：直接读服务端下发的 tier（0 小 / 1 中 / 2 大）。
+ * 档位由服务端判定后随快照下发 —— 客户端不再按 radius 反推，
+ * 两端各写一套阈值必然漂移（服务端半径 6/12/18，客户端曾按 10/7 反推，中档被贴成大档）。
+ */
+function foodTierIndex(tier: number | undefined): number {
+  if (tier === 1) return 1;
+  if (tier === 2) return 2;
+  return 0;
+}
+function foodTierOf(tier: number | undefined): string {
+  return FOOD_TIERS[foodTierIndex(tier)] || 'small';
 }
 /**
  * 团队模式的队伍配色：同一队伍所有蛇用同一个颜色，方便一眼分清敌我。
@@ -68,13 +78,6 @@ function teamColorIndex(team: string): number {
   let h = 0;
   for (let i = 0; i < team.length; i++) h = (h * 31 + team.charCodeAt(i)) >>> 0;
   return h;
-}
-
-/** 食物档位（按半径）：与服务端 rules.ts 的三档一一对应，越大越亮 */
-function foodTierIndex(radius: number): number {
-  if (radius >= 10) return 2;
-  if (radius >= 7) return 1;
-  return 0;
 }
 
 /** #rrggbb → rgba(r,g,b,a) */
@@ -446,9 +449,18 @@ export default class Scene2DSnake {
   private touchLocked = false;
 
   private onKey = (e: KeyboardEvent) => {
-    if (e.code === 'Space' || e.key === 'Shift') this.logic.setBoost(false);
     this.handleKey(e);
   };
+  /**
+   * 键盘松手：加速是「按住」语义，keydown 加速、keyup 必须减速。
+   * 之前只监听 keydown，松手没有任何处理 → 按下加速后就一直加速，
+   * 直到身长耗尽或死亡。
+   */
+  private onKeyUp = (e: KeyboardEvent) => {
+    if (e.code === 'Space' || e.key === 'Shift') this.logic.setBoost(false);
+  };
+  /** 切窗口 / 失焦：强制释放加速，避免回来时蛇还在全速跑 */
+  private onBlur = () => this.logic.setBoost(false);
   private onResize = () => this.resize();
   private onCanvasDown = (e: PointerEvent) => this.handleCanvasDown(e);
   private onCanvasMove = (e: PointerEvent) => this.handleCanvasMove(e);
@@ -488,6 +500,8 @@ export default class Scene2DSnake {
 
     window.addEventListener('resize', this.onResize);
     window.addEventListener('keydown', this.onKey);
+    window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', this.onBlur);
     this.canvas.addEventListener('pointerdown', this.onCanvasDown);
     this.canvas.addEventListener('pointermove', this.onCanvasMove);
     this.canvas.addEventListener('contextmenu', this.onContextMenu);
@@ -502,6 +516,8 @@ export default class Scene2DSnake {
   dispose() {
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onKey);
+    window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('blur', this.onBlur);
     this.canvas.removeEventListener('pointerdown', this.onCanvasDown);
     this.canvas.removeEventListener('pointermove', this.onCanvasMove);
     this.canvas.removeEventListener('contextmenu', this.onContextMenu);
@@ -729,7 +745,8 @@ export default class Scene2DSnake {
 
     if (e.code === 'Space' || e.key === 'Shift') {
       e.preventDefault();
-      // 按住生效（keydown 重复触发由 Logic.setBoost 内部去重）
+      // 按住生效：keydown 加速、keyup（onKeyUp）减速。
+      // 键盘自动重复会多次触发 keydown，Logic.setBoost 内部按值去重，不会重复发包。
       this.logic.setBoost(true);
       return;
     }
@@ -926,13 +943,19 @@ export default class Scene2DSnake {
     this.cam = this.clampCam(this.cam);
   }
 
-  /** 远端蛇：向最新快照缓动，把 20Hz 补成 60fps（自己的蛇走本地预测，不参与） */
+  /**
+   * 远端蛇：蛇头位置与朝向做缓动（20Hz → 60fps 更顺滑）。
+   *
+   * **身体折线不再在这里插值** —— Logic 层已经为远端蛇维护了连续的本地路径
+   * （每帧自己往前推，尾巴贴着身体连续滑动）。若这里再按点索引向快照目标
+   * 插值，会把这层连续性抹掉，尾巴又变成"每 50ms 跳一格"。
+   */
   private smoothRemote(dt: number) {
     const k = Math.min(1, dt / SMOOTH_LAG);
     for (const s of this.state.snakes) {
       if (s.mine) continue;
       const cur = this.disp.get(s.id);
-      if (!cur || cur.pts.length !== s.pts.length) {
+      if (!cur) {
         this.disp.set(s.id, { x: s.x, y: s.y, angle: s.angle, pts: s.pts.map(p => [p[0], p[1]] as [number, number]) });
         continue;
       }
@@ -940,9 +963,19 @@ export default class Scene2DSnake {
       cur.x += (s.x - cur.x) * k;
       cur.y += (s.y - cur.y) * k;
       cur.angle = cur.angle + shortestArc(cur.angle, s.angle) * k;
-      for (let i = 0; i < s.pts.length; i++) {
-        cur.pts[i][0] += (s.pts[i][0] - cur.pts[i][0]) * k;
-        cur.pts[i][1] += (s.pts[i][1] - cur.pts[i][1]) * k;
+      // 身体：直接采用 Logic 给的连续路径。
+      // 点数会随本地路径推进而变，所以按长度重建会让整条蛇每帧闪一下 ——
+      // 这里改成"就地复用数组、长度变了就补齐/截断"。
+      const pts = cur.pts;
+      const n = Math.min(pts.length, s.pts.length);
+      for (let i = 0; i < n; i++) {
+        pts[i][0] = s.pts[i][0];
+        pts[i][1] = s.pts[i][1];
+      }
+      if (pts.length < s.pts.length) {
+        for (let i = pts.length; i < s.pts.length; i++) pts.push([s.pts[i][0], s.pts[i][1]]);
+      } else if (pts.length > s.pts.length) {
+        pts.length = s.pts.length;
       }
     }
     // 回收已经离场的蛇：复用同一个 Set（clear + 重新填），避免每帧新建数组/集合
@@ -1071,14 +1104,14 @@ export default class Scene2DSnake {
   }
 
   /** 食物三层圆只画一次到精灵，之后每帧一次 drawImage */
-  private getFoodSprite(kind: number, radius: number): { canvas: HTMLCanvasElement; size: number } | null {
+  private getFoodSprite(kind: number, radius: number, tier: number): { canvas: HTMLCanvasElement; size: number } | null {
     if (typeof document === 'undefined') return null;
-    const assetId = this.foodAssetOf(kind, radius);
+    const assetId = this.foodAssetOf(kind, tier);
     // 换主题（asset_id 变）后缓存键跟着变，不用手动清缓存
-    const key = `${kind}:${radius}:${assetId || '-'}`;
+    const key = `${kind}:${radius}:${tier}:${assetId || '-'}`;
     let s = this.foodSprites.get(key);
     if (!s) {
-      const built = this.buildFoodSprite(kind, radius, assetId);
+      const built = this.buildFoodSprite(kind, radius, tier, assetId);
       if (!built) return null;
       s = built;
       this.foodSprites.set(key, s);
@@ -1087,8 +1120,8 @@ export default class Scene2DSnake {
   }
 
   /** 该拾取物对应的皮肤资源 id；没有配图返回 ''（走矢量绘制） */
-  private foodAssetOf(kind: number, radius: number): string {
-    if (kind === SNAKE_KIND_FOOD) return foodAssetId(GAME_SLUG, foodTierOf(radius));
+  private foodAssetOf(kind: number, tier: number): string {
+    if (kind === SNAKE_KIND_FOOD) return foodAssetId(GAME_SLUG, foodTierOf(tier));
     const key = SNAKE_ITEM_KEYS[kind];
     return key ? itemAssetId(GAME_SLUG, key) : '';
   }
@@ -1099,10 +1132,10 @@ export default class Scene2DSnake {
   }
 
   /**
-   * 按类型与半径生成精灵：普通食物分三档（越小越暗）、残骸暗红、磁铁/星星画图标。
+   * 按类型与档位生成精灵：普通食物分三档（越小越暗）、残骸暗红、磁铁/星星画图标。
    * 资源包给了皮肤图就直接贴图（光晕仍按配色画，保证大小/脉动/占位一致）。
    */
-  private buildFoodSprite(kind: number, radius: number, assetId: string | null = null): { canvas: HTMLCanvasElement; size: number } | null {
+  private buildFoodSprite(kind: number, radius: number, tier: number, assetId: string | null = null): { canvas: HTMLCanvasElement; size: number } | null {
     if (typeof document === 'undefined') return null;
     const r = radius * this.zoom;
     const size = Math.ceil(r * 5.2);
@@ -1114,7 +1147,7 @@ export default class Scene2DSnake {
     const mid = size / 2;
     const color = kind === SNAKE_KIND_CORPSE
       ? CORPSE_COLOR
-      : (kind === SNAKE_KIND_FOOD ? FOOD_COLORS[foodTierIndex(radius)] : (ITEM_COLORS[kind] || FOOD_COLORS[0]));
+      : (kind === SNAKE_KIND_FOOD ? FOOD_COLORS[foodTierIndex(tier)] : (ITEM_COLORS[kind] || FOOD_COLORS[0]));
 
     // 光晕
     g.beginPath();
@@ -1174,7 +1207,7 @@ export default class Scene2DSnake {
     const foodPulse = 1 + 0.05 * (0.5 + 0.5 * Math.sin(now / 300));
     const itemPulse = 1 + 0.12 * (0.5 + 0.5 * Math.sin(now / 220));
     for (const f of this.state.food) {
-      const sprite = this.getFoodSprite(f.k, f.r);
+      const sprite = this.getFoodSprite(f.k, f.r, f.t ?? 0);
       if (!sprite) continue;
       const rr = f.r * this.zoom;
       if (f.x < view.x0 - rr || f.x > view.x1 + rr || f.y < view.y0 - rr || f.y > view.y1 + rr) continue;
@@ -1291,10 +1324,11 @@ export default class Scene2DSnake {
         ctx.stroke();
       }
 
-      // 磁铁：蛇头外圈画吸附范围提示
+      // 磁铁：蛇头外圈画吸附范围提示（半径读本局参数，后台可改）
       if (headVisible && snake.magnet > 0 && snake.alive) {
+        const magnetR = this.state.params?.magnetRadius ?? SNAKE_MAGNET_RADIUS;
         ctx.beginPath();
-        ctx.arc(hx, hy, SNAKE_MAGNET_RADIUS * this.zoom, 0, TAU);
+        ctx.arc(hx, hy, magnetR * this.zoom, 0, TAU);
         ctx.strokeStyle = 'rgba(96,165,250,0.30)';
         ctx.lineWidth = 2;
         ctx.stroke();
@@ -1302,9 +1336,10 @@ export default class Scene2DSnake {
 
       // 星星（无敌）：金色外圈，和重生盾的蓝白圈区分开
       if (headVisible && snake.star > 0 && snake.alive) {
+        const a = 0.45 + 0.3 * Math.sin(now / 180);
         ctx.beginPath();
-        ctx.arc(hx, hy, radius * 1.9, 0, TAU);
-        ctx.strokeStyle = 'rgba(251,191,36,0.55)';
+        ctx.arc(hx, hy, radius * (1.9 + 0.14 * Math.sin(now / 220)), 0, TAU);
+        ctx.strokeStyle = `rgba(251,191,36,${a.toFixed(2)})`;
         ctx.lineWidth = 2.5;
         ctx.stroke();
       }
@@ -1340,7 +1375,9 @@ export default class Scene2DSnake {
           ctx.fill();
         }
 
-        if (snake.invincible > 0 && snake.alive) {
+        // 无敌蓝圈：只在"非星星"时画。星星期间 invincible 也 >0，
+        // 两圈叠加会糊成一团，金圈单独表达"星星无敌"更清楚
+        if (snake.invincible > 0 && snake.star <= 0 && snake.alive) {
           const a = 0.3 + 0.35 * Math.sin(now / 150);
           ctx.beginPath();
           ctx.arc(hx, hy, radius * (1.8 + 0.12 * Math.sin(now / 220)), 0, Math.PI * 2);

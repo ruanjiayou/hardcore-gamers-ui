@@ -472,8 +472,9 @@ export const RoomPage = observer(() => {
     : (gameInfo?.mode ?? ((gameInfo?.numbers?.max ?? 2) <= 1 ? 'solo' : 'room')) === 'solo';
   // 实时对局（团队模式贪吃蛇）：认输 = 自我淘汰
   const isRealtimeGame = slug === 'snake' && roomVariant === 'team';
-  // 无尽挑战竞技房：进房自动开局，死了自动重生，随时可以退出（不算逃跑）
-  const isEndlessArena = slug === 'snake' && roomVariant === 'endless';
+  // 常驻竞技场（贪吃蛇无尽）：进房自动开局，死了自动重生，随时可以退出（不算逃跑）。
+  // 判定看房间自己的 settings.arena 标记（建桌时按玩法属性写入），不写死玩法名。
+  const isEndlessArena = store.room.roomInfo?.settings?.arena === true;
   // 官方无尽桌没有"开始游戏"：进房即开局
   const autoStarted = isEndlessArena && !!store.room.roomInfo?.official;
   const clock = store.room.clock;

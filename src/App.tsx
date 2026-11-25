@@ -104,6 +104,14 @@ const AppBootstrap = observer(({ children, isReady, setIsReady }: { children: Re
           data.accepted ? 'success' : 'warning',
         );
       });
+      // 匹配排队：竞技场满员时排队等空位，排到了直接跳进那张桌子。
+      // 全局监听（不在游戏页）—— 玩家等位期间可能已经切到别的页面。
+      getSocket()?.off(ReceiveEvent.MatchFound);
+      getSocket()?.on(ReceiveEvent.MatchFound, (data: any) => {
+        if (!data?.room_id) return;
+        notificationManager.show('排到位置了，正在进入竞技场…', 'success');
+        navigate(`/game/${data.slug || 'snake'}/room/${data.room_id}`);
+      });
     } catch (error) {
       console.error('❌ 应用初始化失败:', error);
     } finally {

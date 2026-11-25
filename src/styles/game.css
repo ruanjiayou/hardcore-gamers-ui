@@ -501,6 +501,27 @@
   cursor: not-allowed;
 }
 
+/* ===== 匹配排队中（竞技场满员时） ===== */
+.match-waiting {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid #d8dcee;
+  border-radius: 12px;
+  background: #f6f7fc;
+}
+
+.match-waiting p {
+  margin: 0;
+  color: #5a6080;
+  font-size: 13px;
+  text-align: center;
+}
+
 /* ===== 玩法变体切换（无尽/多人） ===== */
 /* 卡片在白色容器里（.game-container 是白底），文字不能用白色，否则标题看不见 */
 .variant-tabs {
