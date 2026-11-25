@@ -12,44 +12,116 @@ import type SocketTransport from '../../core/GameTransport';
 export type Variant = 'endless' | 'team';
 
 /**
- * 与服务端保持一致的物理参数（像素/秒、弧度/秒）。
+ * 物理参数（像素/秒、弧度/秒）。
+ *
+ * ⚠️ **速度相关的参数由服务端下发**（见 `SnakeParams`）：
+ * 运营在管理端改贪吃蛇的速度/加速/转向配置后，**下一局生效，客户端不用改代码**。
+ * 客户端预测必须与服务端权威用同一份数值，否则蛇会「拉丝」——
+ * 所以这里只保留**兜底默认值**（拿不到服务端参数时用），真实值走 `this.params`。
  *
  * 速度模型：巡航速度**随身长线性递减**（贪吃蛇大作战的核心手感 —— 刚出生的小蛇快、
  * 越肥越慢）。转弯半径固定 → 角速度 ω = v/R 随速度自动下降，长蛇又慢又难转向。
  */
-export const SNAKE_SPEED_MAX = 110;
-export const SNAKE_SPEED_MIN = 62;
-/** 加速倍率：加速速度 = 当前巡航速度 × 本倍率 */
-export const SNAKE_BOOST_MULT = 1.85;
-/** 最小转弯半径（像素）：角速度 ω = v / R，与服务端同一套推导 */
-export const SNAKE_MIN_TURN_RADIUS = 25;
-export const SNAKE_BOOST_MIN_TURN_RADIUS = 52;
 export const SNAKE_RADIUS = 15;
 export const SNAKE_HEAD_RADIUS = 16;
-/** 身长上限与加速下限（与服务端一致） */
-export const SNAKE_BODY_LENGTH = 160;
-export const SNAKE_MAX_LENGTH = 2400;
-export const SNAKE_BOOST_MIN_LEN = 120;
 /** 磁铁道具的吸附半径（与服务端一致，用于画范围提示圈） */
 export const SNAKE_MAGNET_RADIUS = 220;
 
+/**
+ * 可调参数（服务端下发，建局时冻结）。
+ * 字段与语义与服务端 `games/snake/params.ts` 一一对应。
+ */
+export interface SnakeParams {
+  /** 巡航最高速度（px/s）：身长 = 初始身长时的速度 */
+  speedMax: number;
+  /** 巡航最低速度（px/s）：身长 = 上限时速度 */
+  speedMin: number;
+  /** 加速倍率：加速速度 = 当前巡航速度 × 本值 */
+  boostMult: number;
+  /** 巡航最小转弯半径（px） */
+  turnRadius: number;
+  /** 加速时最小转弯半径（px） */
+  boostTurnRadius: number;
+  /** 初始身长（px） */
+  bodyLength: number;
+  /** 身长上限（px） */
+  maxLength: number;
+  /** 加速时每秒扣除的身长（px） */
+  boostDrain: number;
+  /** 可加速的最低身长（px） */
+  boostMinLen: number;
+}
+
+/**
+ * 兜底默认值：与服务端 `DEFAULT_SNAKE_PARAMS` 一致。
+ * 只在「还没收到服务端参数」时使用（例如对局刚开始的那一帧）。
+ */
+export const DEFAULT_SNAKE_PARAMS: SnakeParams = {
+  speedMax: 110,
+  speedMin: 62,
+  boostMult: 1.85,
+  turnRadius: 25,
+  boostTurnRadius: 52,
+  bodyLength: 160,
+  maxLength: 2400,
+  boostDrain: 18,
+  boostMinLen: 120,
+};
+
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
-/** 巡航速度（像素/秒）：按身长线性插值，与服务端 snakeCruiseSpeed 完全一致 */
-export function snakeCruiseSpeed(length: number): number {
-  const t = clamp01((length - SNAKE_BODY_LENGTH) / (SNAKE_MAX_LENGTH - SNAKE_BODY_LENGTH));
-  return SNAKE_SPEED_MAX + (SNAKE_SPEED_MIN - SNAKE_SPEED_MAX) * t;
+/**
+ * 把服务端下发的参数解析成合法值（缺字段用默认值、越界裁剪）。
+ * 与服务端 `resolveSnakeParams` 同规则 —— 两端解析逻辑一致才不会出现数值漂移。
+ */
+export function resolveSnakeParams(raw: unknown): SnakeParams {
+  const out: SnakeParams = { ...DEFAULT_SNAKE_PARAMS };
+  if (!raw || typeof raw !== 'object') return out;
+  const src = raw as Record<string, unknown>;
+  const ranges: Record<keyof SnakeParams, { min: number; max: number }> = {
+    speedMax: { min: 20, max: 400 },
+    speedMin: { min: 10, max: 400 },
+    boostMult: { min: 1, max: 5 },
+    turnRadius: { min: 5, max: 200 },
+    boostTurnRadius: { min: 5, max: 300 },
+    bodyLength: { min: 20, max: 2000 },
+    maxLength: { min: 200, max: 20000 },
+    boostDrain: { min: 0, max: 200 },
+    boostMinLen: { min: 0, max: 5000 },
+  };
+  for (const key of Object.keys(DEFAULT_SNAKE_PARAMS) as (keyof SnakeParams)[]) {
+    const v = src[key];
+    if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+    const range = ranges[key];
+    out[key] = Math.min(range.max, Math.max(range.min, v));
+  }
+  if (out.speedMin > out.speedMax) out.speedMin = out.speedMax;
+  if (out.boostMinLen > out.bodyLength) out.boostMinLen = out.bodyLength;
+  if (out.maxLength < out.bodyLength) out.maxLength = out.bodyLength;
+  return out;
+}
+
+/**
+ * 巡航速度（像素/秒）：按身长线性插值，与服务端 snakeCruiseSpeed 完全一致。
+ * @param params 本局参数（服务端下发）；缺省用兜底默认值。
+ */
+export function snakeCruiseSpeed(length: number, params?: SnakeParams): number {
+  const p = params || DEFAULT_SNAKE_PARAMS;
+  const t = clamp01((length - p.bodyLength) / Math.max(1, p.maxLength - p.bodyLength));
+  return p.speedMax + (p.speedMin - p.speedMax) * t;
 }
 
 /** 当前身长下的实际移动速度（加速时 = 巡航 × 倍率） */
-export function snakeMoveSpeed(length: number, boosting: boolean): number {
-  return snakeCruiseSpeed(length) * (boosting ? SNAKE_BOOST_MULT : 1);
+export function snakeMoveSpeed(length: number, boosting: boolean, params?: SnakeParams): number {
+  const p = params || DEFAULT_SNAKE_PARAMS;
+  return snakeCruiseSpeed(length, p) * (boosting ? p.boostMult : 1);
 }
 
 /** 当前身长下的转向角速度（rad/s）：ω = v / R */
-export function snakeTurnRate(length: number, boosting: boolean): number {
-  const r = boosting ? SNAKE_BOOST_MIN_TURN_RADIUS : SNAKE_MIN_TURN_RADIUS;
-  return snakeMoveSpeed(length, boosting) / r;
+export function snakeTurnRate(length: number, boosting: boolean, params?: SnakeParams): number {
+  const p = params || DEFAULT_SNAKE_PARAMS;
+  const r = boosting ? p.boostTurnRadius : p.turnRadius;
+  return snakeMoveSpeed(length, boosting, p) / Math.max(1, r);
 }
 
 /**
@@ -169,6 +241,12 @@ export interface SnakeView {
   teamScores: Record<string, number>;
   /** 团队模式剩余毫秒（0 = 不限时） */
   endsIn: number;
+  /**
+   * 本局生效的可调参数（服务端下发）。
+   * 渲染层要用它判断「身长够不够加速」等阈值 —— 阈值同样由服务端决定，
+   * 客户端不该再硬编码一份。
+   */
+  params: SnakeParams;
 }
 
 interface SnapshotSnake {
@@ -200,6 +278,11 @@ interface Snapshot {
   radius?: number;
   tick: number;
   variant?: string;
+  /**
+   * 本局生效的可调参数（服务端下发）。
+   * 客户端用它做本地预测 —— 与服务端权威是同一份数值，否则蛇会「拉丝」。
+   */
+  params?: Partial<SnakeParams>;
   /**
    * 拾取物：只有 `foodFull=true` 时才有全量，平时走 `foodAdd` / `foodDel` 增量。
    * 100 个食物每 50ms 全量推一遍太浪费，增量帧通常只有 0~2 个元素。
@@ -239,6 +322,15 @@ export default class LogicSnake extends EventEmitter {
   status: 'waiting' | 'playing' | 'over' = 'waiting';
   winner = '';
   tick = 0;
+
+  /**
+   * 本局生效的可调参数（服务端下发，建局时冻结）。
+   *
+   * 客户端**不再硬编码**速度/加速/转向数值 —— 运营在管理端改配置后，
+   * 下一局开始客户端自动用新参数，无需改前端代码、无需重新构建。
+   * 收到快照时更新；还没收到时用兜底默认值。
+   */
+  params: SnakeParams = { ...DEFAULT_SNAKE_PARAMS };
 
   // ===== 本地预测（只针对自己） =====
   /** 最新快照里自己的蛇（预测基准，不随预测改动） */
@@ -337,6 +429,9 @@ export default class LogicSnake extends EventEmitter {
       // 换局了：清掉「见过自己的蛇」标记，新局里我可能还没进快照
       this.mySnakeSeen = false;
     }
+    // 本局参数：服务端在建局时冻结进对局状态（match.curr_state.params）。
+    // 重连时从这里拿，不必等第一帧快照；之后每帧快照也会带同一份。
+    if (state.params) this.params = resolveSnakeParams(state.params);
     if (Array.isArray(state.players)) {
       this.players = state.players
         .filter((p: any) => p.member_type === 'player' || p.role === 'player' || p.role === 'snake')
@@ -490,6 +585,8 @@ export default class LogicSnake extends EventEmitter {
     this.h = snap.h || this.h;
     this.radius = snap.radius || this.radius;
     this.tick = snap.tick || 0;
+    // 本局参数（服务端下发）：预测公式必须与服务端权威用同一份数值
+    if (snap.params) this.params = resolveSnakeParams(snap.params);
     this.applyFoodDelta(snap);
     if (snap.variant === 'team' || snap.variant === 'endless') this.variant = snap.variant;
     if (Array.isArray(snap.players) && snap.players.length) {
@@ -647,12 +744,12 @@ export default class LogicSnake extends EventEmitter {
     const elapsed = Math.min(this.predictMaxMs(), Math.max(0, now - snap.at));
     if (elapsed < 8) return { x: snap.x, y: snap.y, angle: snap.angle, pts: snap.pts };
 
-    // 按住加速且身长够才生效（与服务端同一条判定）
-    const boosting = this.boostHeld && snap.length > SNAKE_BOOST_MIN_LEN;
+    // 按住加速且身长够才生效（与服务端同一条判定，用同一份参数）
+    const boosting = this.boostHeld && snap.length > this.params.boostMinLen;
     // 速度随身长递减（与服务端同一个公式）：长蛇更慢，角速度也随之下降
-    const speed = snakeMoveSpeed(snap.length, boosting);
+    const speed = snakeMoveSpeed(snap.length, boosting, this.params);
     // 与服务端同一条公式：角速度 = 速度 / 最小转弯半径
-    const rate = snakeTurnRate(snap.length, boosting);
+    const rate = snakeTurnRate(snap.length, boosting, this.params);
 
     const dt = elapsed / 1000;
     // 慢网时 elapsed 可达 1.5s，子步仍保持 ≤33ms 才不会把转弯算成折线
@@ -716,7 +813,7 @@ export default class LogicSnake extends EventEmitter {
           ? pred.pts.map(([x, y]) => [x + shiftX, y + shiftY] as [number, number])
           : pred.pts,
         invincible: Math.max(0, this.invincibleUntil - now),
-        boosting: this.boostHeld && s.length > SNAKE_BOOST_MIN_LEN,
+        boosting: this.boostHeld && s.length > this.params.boostMinLen,
         boostHeld: this.boostHeld,
       };
     });
@@ -756,7 +853,7 @@ export default class LogicSnake extends EventEmitter {
       best: mySnake?.best ?? 0,
       alive: mySnake ? mySnake.alive : false,
       length: mySnake?.length ?? 0,
-      boosting: this.boostHeld && (mySnake?.length ?? 0) > SNAKE_BOOST_MIN_LEN,
+      boosting: this.boostHeld && (mySnake?.length ?? 0) > this.params.boostMinLen,
       boostHeld: this.boostHeld,
       invincible: Math.max(0, this.invincibleUntil - now),
       respawnIn: mySnake && !mySnake.alive ? Math.max(0, this.respawnAt - now) : 0,
@@ -766,6 +863,7 @@ export default class LogicSnake extends EventEmitter {
       winner: this.winner,
       teamScores: this.teamScores,
       endsIn: this.endsAt ? Math.max(0, this.endsAt - now) : 0,
+      params: this.params,
     };
   }
 

@@ -1,8 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import LogicSnake, {
-  SNAKE_BOOST_MIN_LEN,
-  SNAKE_BOOST_MULT,
-  SNAKE_BODY_LENGTH,
+  DEFAULT_SNAKE_PARAMS,
   snakeCruiseSpeed,
   snakeTurnRate,
 } from '../src/games/snake/Logic';
@@ -10,7 +8,7 @@ import LogicSnake, {
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /** 本地预测用的巡航速度（测试蛇的默认身长 = 初始身长 → 速度上限） */
-const CRUISE = snakeCruiseSpeed(SNAKE_BODY_LENGTH);
+const CRUISE = snakeCruiseSpeed(DEFAULT_SNAKE_PARAMS.bodyLength);
 
 /** 假 socket：只记录 emit，避免测试依赖真实连接 */
 function makeSocket() {
@@ -102,7 +100,7 @@ describe('贪吃蛇本地预测（连续像素）', () => {
     const s = me(logic);
     expect(s.y).toBeGreaterThan(300);
     // 150ms 最多转 0.69 弧度，不可能一步到位
-    const maxTurn = snakeTurnRate(SNAKE_BODY_LENGTH, false) * 0.15;
+    const maxTurn = snakeTurnRate(DEFAULT_SNAKE_PARAMS.bodyLength, false) * 0.15;
     expect(s.angle).toBeGreaterThan(0.3);
     expect(s.angle).toBeLessThan(maxTurn + 0.25);
   });
@@ -197,7 +195,7 @@ describe('贪吃蛇本地预测（连续像素）', () => {
     const mark = me(logic).x;
     await sleep(200);
     const normal = me(logic).x - mark;
-    expect(boosted / normal).toBeGreaterThan(SNAKE_BOOST_MULT * 0.7);
+    expect(boosted / normal).toBeGreaterThan(DEFAULT_SNAKE_PARAMS.boostMult * 0.7);
     // 松开后回到基础速度（不超过正常 200ms 前推量）
     expect(normal).toBeLessThan(CRUISE * 0.21 + 1);
     logic.destroy();
@@ -221,10 +219,45 @@ describe('贪吃蛇本地预测（连续像素）', () => {
   test('身长不足 BOOST_MIN_LEN 时按住加速不生效', () => {
     const { logic } = makeLogic();
     const st = makeState([], []);
-    st.snake.snakes = [{ ...snake('p1', 300, 300, 0, SNAKE_BOOST_MIN_LEN), length: SNAKE_BOOST_MIN_LEN }];
+    st.snake.snakes = [{ ...snake('p1', 300, 300, 0, DEFAULT_SNAKE_PARAMS.boostMinLen), length: DEFAULT_SNAKE_PARAMS.boostMinLen }];
     logic.setState(st);
     logic.setBoost(true);
     expect(logic.view().boosting).toBe(false);
+    logic.destroy();
+  });
+
+  test('参数由服务端下发：客户端不硬编码，改配置后预测速度跟着变', async () => {
+    const { logic } = makeLogic();
+    // 初始是默认参数
+    expect(logic.params.speedMax).toBe(DEFAULT_SNAKE_PARAMS.speedMax);
+
+    // 服务端下发新配置（运营在管理端改了速度）
+    const st = makeState([], []);
+    st.params = { speedMax: 40 };
+    logic.setState(st);
+    expect(logic.params.speedMax).toBe(40);
+
+    // 预测用的巡航速度也随之改变（不再用客户端写死的那份）
+    const slow = snakeCruiseSpeed(DEFAULT_SNAKE_PARAMS.bodyLength, logic.params);
+    expect(slow).toBeCloseTo(40, 5);
+    expect(slow).toBeLessThan(CRUISE);
+    logic.destroy();
+  });
+
+  test('服务端没下发参数时退回默认值（不能崩、不能是 undefined）', () => {
+    const { logic } = makeLogic();
+    expect(logic.params).toEqual(DEFAULT_SNAKE_PARAMS);
+    expect(logic.view().params.speedMax).toBe(DEFAULT_SNAKE_PARAMS.speedMax);
+    logic.destroy();
+  });
+
+  test('服务端下发的非法参数被裁剪到合法区间', () => {
+    const { logic } = makeLogic();
+    const st = makeState([], []);
+    st.params = { speedMax: 99999, boostMult: -1 };
+    logic.setState(st);
+    expect(logic.params.speedMax).toBe(400);
+    expect(logic.params.boostMult).toBe(1);
     logic.destroy();
   });
 

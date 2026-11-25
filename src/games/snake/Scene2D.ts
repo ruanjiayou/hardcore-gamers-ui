@@ -8,7 +8,6 @@
 // - 动画统一走 requestAnimationFrame：世界层逐帧画蛇/食物；HUD/小地图/摇杆/按钮
 //   等 UI 是 DOM，在同一个 rAF 里按变化更新（transform/text），不再有 UI 节流。
 import LogicSnake, {
-  SNAKE_BOOST_MIN_LEN,
   SNAKE_KIND_CORPSE,
   SNAKE_KIND_FOOD,
   SNAKE_KIND_MAGNET,
@@ -1427,7 +1426,8 @@ export default class Scene2DSnake {
       // 「按住」= 本地手指意图（boostHeld）；「生效」= 服务端物理判定（boosting）。
       // 两个都要有：按住中但身长不足时加速不生效，按钮却仍然是亮的（不能变灰）。
       const held = !!s.boostHeld;
-      const enough = (s.length || 0) > SNAKE_BOOST_MIN_LEN;
+      // 加速门槛（可加速的最低身长）由服务端下发，客户端不硬编码
+      const enough = (s.length || 0) > (s.params?.boostMinLen ?? 120);
       const effective = !!s.boosting;
       this.dom.cls(ui.boost, 'ready', held || enough);
       this.dom.cls(ui.boost, 'held', held);
