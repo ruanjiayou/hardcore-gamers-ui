@@ -7,11 +7,8 @@
   min-width: 0;
   margin: 0 auto;
   padding: 16px 16px calc(64px + env(safe-area-inset-bottom, 0px));
-  /* 全局底色是紫色主题渐变，深色正文压在上面看不清 —— 页面自己垫一层白底，
-     圆角 + 阴影让它读起来是「浮在主题上的一块面板」而不是一张裸纸。 */
+  /* 主题色渐变垫底；页面本身保持白底直角，和导航栏/其他页面连成一块（UI-078） */
   background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 8px 26px rgba(31, 41, 55, 0.16);
 }
 
 /* 顶部导航吸顶：滚动时始终能看到「返回 / 标题 / 公开主页」。 */
@@ -27,17 +24,15 @@
   margin-left: -16px;
   margin-right: -16px;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  border-bottom: 1px solid #eceef7;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .profile-head h2 {
   margin: 0;
   flex: 1;
   font-size: 18px;
-  color: #2d2d3a;
+  color: #fff;
+  -webkit-text-fill-color: #fff;
 }
 
 .profile-back {
@@ -46,28 +41,27 @@
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: #fff;
-  color: #5b46a8;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(31, 41, 55, 0.14);
   appearance: none;
   -webkit-appearance: none;
-  -webkit-text-fill-color: #5b46a8;
+  -webkit-text-fill-color: #fff;
 }
 
 .profile-link {
   padding: 6px 12px;
   border-radius: 14px;
-  border: 1px solid #dfe3f5;
-  background: #fff;
-  color: #4a5384;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
   font-size: 12px;
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
-  -webkit-text-fill-color: #4a5384;
+  -webkit-text-fill-color: #fff;
 }
 
 .profile-card {

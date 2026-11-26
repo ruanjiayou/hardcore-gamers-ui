@@ -209,6 +209,9 @@
 }
 .header-invite-go:disabled { opacity: .55; cursor: not-allowed; }
 
+/* 游戏页用户区在顶栏最左，公共下拉的 right:0 会溢出屏幕左侧（UI-078） */
+.game-header .dropdown-menu { left: 0; right: auto; }
+
 /* 主页昵称紧挨头像（UI-067），等级 badge 叠在头像右下角 */
 .game-header-game .user-button {
   display: inline-flex;

@@ -18,8 +18,9 @@ export interface RoomInvite {
 export default class UiStore {
   loginPromptOpen = false;
   loginPromptText = '登录后才能开始游戏';
-  /** WebSocket 连接状态：驱动顶栏头像的绿色辉光 / 断线裂开效果 */
-  socketConnected = false;
+  /** WebSocket 连接状态：驱动顶栏头像的绿色辉光 / 断线裂开效果。
+   *  多入口整页跳转会重建 socket，初值乐观置 true，避免连接建立前头像闪成断线态（UI-078）。 */
+  socketConnected = true;
   /** 待处理的房间邀请（可能多条） */
   invites: RoomInvite[] = [];
 
