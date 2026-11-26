@@ -4,13 +4,13 @@ import GameTransport from './GameTransport'
 /**
  * 游戏按需加载管理器。
  *
- * 关键设计：用 Vite 的 import.meta.glob 懒加载生成「slug -> 动态 import」映射，
- * 每个游戏被编译成独立 chunk，只有真正进入某个游戏房间时才会拉取对应代码。
+ * 关键设计：游戏 chunk 由各自入口通过 registerLoader(slug, loader) 注入，
+ * 管理器本身不再扫描 games 目录，因此每个入口只携带自己注册的游戏引擎：
  * - 象棋是纯 2D Canvas，chunk 极小（~10KB），不依赖 Babylon。
- * - 五子棋依赖 Babylon 引擎（~6MB），仅进入五子棋房间时才加载。
+ * - 五子棋依赖 Babylon 引擎（~6MB），仅在该入口进入房间时才加载。
  * 因此首屏只加载主包，不会把所有游戏引擎一次性拉下来。
  *
- * 新增游戏只需在 src/games/ 下建同名目录并导出默认类，无需改动本文件。
+ * 新增游戏时在对应入口调用 gameManager.registerLoader(slug, () => import(...))。
  */
 type GameCtor = new (canvas: HTMLCanvasElement, socket: GameTransport, player: any, meta?: GameMeta) => IGameModule;
 
@@ -29,29 +29,24 @@ interface IGameModule {
   destroy(): void;
 }
 
-type GameLoader = () => Promise<{ default: GameCtor }>;
-
-// 懒加载映射：glob 的 { eager: false } 是默认值，这里显式声明以表意。
-// import.meta.glob 的 key 形如 '../games/xiangqi/index.ts'。
-const gameModules = import.meta.glob<{ default: GameCtor }>('../games/*/index.ts');
-
-const loaders: Record<string, GameLoader> = {};
-for (const path in gameModules) {
-  // 从 '../games/xiangqi/index.ts' 中提取 slug 'xiangqi'
-  const match = path.match(/games\/([^/]+)\/index\.ts$/);
-  if (match) loaders[match[1]] = gameModules[path] as GameLoader;
-}
+export type GameLoader = () => Promise<{ default: GameCtor }>;
 
 class GameManager {
   game: IGameModule | null = null;
 
+  // 由各入口注入的 slug -> 动态 import 映射（公共入口不注册任何游戏）
+  private loaders = new Map<string, GameLoader>();
   // 同一 slug 的模块只 import 一次，浏览器会缓存 chunk，这里再缓存 promise 避免重复请求
   private moduleCache = new Map<string, Promise<GameCtor>>();
   // 竞态令牌：快速切换房间时，只有最后一次 load 的结果会生效
   private loadToken = 0;
 
+  registerLoader(slug: string, loader: GameLoader): void {
+    this.loaders.set(slug, loader);
+  }
+
   private getCtor(slug: string): Promise<GameCtor> {
-    const loader = loaders[slug];
+    const loader = this.loaders.get(slug);
     if (!loader) return Promise.reject(new Error(`未找到游戏模块: ${slug}`));
     let cached = this.moduleCache.get(slug);
     if (!cached) {

@@ -12,13 +12,13 @@ export async function initSocket(): Promise<{ success: boolean, error?: any }> {
     return { success };
   }
 
-  // 如果存在旧连接但已断开，清理
+  // 如果存在旧连接但已断开，清理（有旧连接才算真断线，才写断线态，UI-078）
   if (socket && socket.disconnected) {
     console.log('🧹 清理已断开的旧连接');
     socket.disconnect();
     socket = null;
+    store.ui.setSocketConnected(false);
   }
-  store.ui.setSocketConnected(false);
 
   console.log('🔌 初始化 Socket.io 连接...');
 
@@ -83,12 +83,13 @@ export function getSocket(): Socket | null {
 }
 
 export function disconnectSocket() {
+  // 没有实际连接时（新入口刚加载）不动 UI 状态，避免头像先裂一下再恢复（UI-078）
   if (socket) {
     socket.disconnect();
     socket = null;
+    store.ui.setSocketConnected(false);
+    console.log('🔌 Socket 已断开');
   }
-  store.ui.setSocketConnected(false);
-  console.log('🔌 Socket 已断开');
 }
 
 // 浏览器网络状态变化时同步头像状态（socket 尚未回调时的即时反馈）

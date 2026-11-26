@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
 import store from '../stores';
 import type { RoomInvite } from '../stores/ui';
 import { getSocket, SendoutEvent } from '../services/socket';
+import { gameUrl, go } from '../navigation';
 import { notificationManager } from './Notifications';
 import '../styles/invite.css';
 
@@ -14,7 +14,6 @@ import '../styles/invite.css';
  * 接受成功直接跳进该游戏的那个房间。
  */
 export const InviteToasts = observer(() => {
-  const navigate = useNavigate();
   const [busy, setBusy] = useState<string>('');
 
   const respond = (invite: RoomInvite, accept: boolean) => {
@@ -32,7 +31,7 @@ export const InviteToasts = observer(() => {
       if (accept && ok) {
         notificationManager.show(message || '已加入房间', 'success');
         // 服务端已把自己加入房间，直接跳进该房间
-        navigate(`/game/${invite.slug}/room/${invite.room_id}`);
+        go(gameUrl(invite.slug, '/room/' + invite.room_id));
         return;
       }
       if (accept) notificationManager.show(message || '加入失败', 'warning');

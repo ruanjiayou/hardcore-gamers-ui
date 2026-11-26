@@ -1,0 +1,45 @@
+/* 从 src/styles/room.css 迁出的 2048 房间专属样式（任务 9） */
+/* ===== 2048：画布尽量占满顶栏与地址栏之间的空间 =====
+   vh 在前、dvh 覆盖，Safari 地址栏收起时用动态视口高度 */
+.room-page.game-2048 {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.room-page.game-2048 .room-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+}
+
+.room-page.game-2048 .room-container,
+.room-page.game-2048 .game-main {
+  height: 100%;
+  min-height: 0;
+}
+
+.room-page.game-2048 .game-main {
+  flex: 1 1 auto;
+}
+
+/* 分数/最高分已画进 Canvas，页面侧栏整块收起（PC 与手机都只留棋盘） */
+.room-page.game-2048 .game-info {
+  display: none;
+}
+
+/* 终局的「重新开始 / 退出游戏」并排 */
+.board-center-buttons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.board-center-btn.secondary {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+
+.board-center-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.26);
+}

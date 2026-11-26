@@ -1,18 +1,16 @@
 import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
+import { go, lobbyUrl } from '../navigation';
 import { UserMenu } from './UserMenu';
 import '../styles/navbar.css';
 
 export const Navbar = observer(() => {
-  const navigate = useNavigate();
   const location = useLocation();
 
   const handleLogoClick = (e: any) => {
     e.preventDefault();
-    if (window.location.pathname !== '/lobby') {
-      navigate('/lobby');
-    }
+    go(lobbyUrl());
   };
 
   // 登录页自带整套视觉，不叠导航栏

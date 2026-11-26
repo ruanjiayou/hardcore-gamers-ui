@@ -1,19 +1,17 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
 import store from '../stores'
+import { gameUrl, go } from '../navigation';
 import '../styles/components.css';
 
 export const GameList = observer(() => {
-  const navigate = useNavigate();
-
   const handleGameClick = (slug: string) => {
     // 游客可以逛大厅，但进游戏要登录（弹提示而不是直接跳登录页）
     if (!store.auth.isLoggedIn) {
       store.ui.openLoginPrompt('登录后才能进入游戏');
       return;
     }
-    navigate(`/game/${slug}`);
+    go(gameUrl(slug));
   };
 
   // 只有"正在请求"才显示 spinner；请求完成但为空应显示空状态，而非无限转圈

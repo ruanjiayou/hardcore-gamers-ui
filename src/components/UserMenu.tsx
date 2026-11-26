@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
 import store from '../stores'
-import { loginUrl } from './LoginRequired';
+import { go, lobbyUrl, loginUrl, playerUrl, profileUrl, userUrl } from '../navigation';
 import { GameSettingsDialog } from './GameSettings';
 import '../styles/navbar.css';
 
@@ -21,7 +20,6 @@ import '../styles/navbar.css';
 export const UserMenu = observer(({ scope = 'lobby', profileGame = '', showName = false }: {
   scope?: 'lobby' | 'game', profileGame?: string, showName?: boolean
 }) => {
-  const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [avatarBroken, setAvatarBroken] = useState(false);
@@ -45,7 +43,7 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '', showName 
     store.auth.logout();
     setDropdownOpen(false);
     // 退出后不跳登录页：以游客身份继续浏览大厅（App 会用匿名身份重连 socket）
-    navigate('/lobby');
+    go(lobbyUrl());
   };
 
   const hasAvatar = !!avatarUrl && !avatarBroken;
@@ -102,7 +100,7 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '', showName 
                   从某个游戏进去时带上 game 参数：玩家中心里的「公开主页」要锁到本游戏。 */}
               <div
                 className="dropdown-item"
-                onClick={() => { setDropdownOpen(false); navigate(profileGame ? `/me?game=${profileGame}` : '/me'); }}
+                onClick={() => { setDropdownOpen(false); go(profileGame ? profileUrl() + '?game=' + profileGame : profileUrl()); }}
               >
                 <span>{scope === 'game' ? '👤 玩家中心' : '👤 个人中心'}</span>
               </div>
@@ -112,7 +110,7 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '', showName 
                 onClick={() => {
                   setDropdownOpen(false);
                   const id = store.auth.user?._id;
-                  if (id) navigate(`/user/${id}${profileGame ? `?game=${profileGame}` : ''}`);
+                  if (id) go(profileGame ? playerUrl(profileGame, id) : userUrl(id));
                 }}
               >
                 <span>📊 {profileGame ? '本游戏战绩' : '公开主页'}</span>
@@ -144,7 +142,7 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '', showName 
            裂缝头像是「已登录但 ws 没连上」的状态提示，游客本来就没登录，
            显示一个裂开的头像只会让人误以为自己掉线了。 */
         <div className="guest-area">
-          <button className="login-entry" onClick={() => navigate(loginUrl('/lobby'))}>登录</button>
+          <button className="login-entry" onClick={() => go(loginUrl())}>登录</button>
         </div>
       )}
     </div>

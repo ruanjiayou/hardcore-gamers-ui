@@ -1,9 +1,5 @@
 import React from 'react';
-import ReactDOM from 'react-dom/client';
 import App from './App';
+import { mountEntry } from './bootstrap/entry';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.Fragment>
-    <App />
-  </React.Fragment>
-);
+mountEntry(<App />, process.env.PUBLIC_URL as string);
