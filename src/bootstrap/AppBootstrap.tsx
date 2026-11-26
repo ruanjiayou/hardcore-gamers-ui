@@ -7,7 +7,7 @@ import { refreshAccessToken } from '../services/api';
 import { InviteToasts } from '../components/InviteToast';
 import { notificationManager } from '../components/Notifications';
 import Loading from '../components/Loading';
-import { consumeWarmNav, gameUrl, go, lobbyUrl } from '../navigation';
+import { consumeWarmNav, dismissCurtain, gameUrl, go, lobbyUrl } from '../navigation';
 
 /**
  * 应用外壳：负责建立 socket 连接。
@@ -20,6 +20,46 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
   setIsReady: Function,
   onNavigate?: (url: string) => void,
 }) => {
+  // UI-087 第 6 步：新文档 React 首屏渲染后淡出黑幕（此时内容已在，撤幕不会露空白）
+  useEffect(() => {
+    dismissCurtain();
+  }, []);
+
+  // UI-083：断网提示——浏览器 online/offline 事件 + SW 缓存兜底消息
+  const [offline, setOffline] = useState(typeof navigator !== 'undefined' && !navigator.onLine);
+  useEffect(() => {
+    let alive = true;
+    const onOnline = () => setOffline(false);
+    const onOffline = () => setOffline(true);
+    const onSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'lobby:offline-cache') setOffline(true);
+    };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    navigator.serviceWorker?.addEventListener('message', onSwMessage);
+
+    // UI-083 修订：SW 的 postMessage 在页面 JS 执行前发出会丢，navigator.onLine
+    // 也只判断网卡、不判断目标服务可达。加随机 query 主动探测：旧 SW 的缓存 key
+    // 匹配不到带 query 的请求，服务停时必然失败 → 显示离线横幅。
+    const probe = async () => {
+      try {
+        const res = await fetch(`/lobby/asset-manifest.json?lobby_probe=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error('probe failed');
+        if (alive) setOffline(false);
+      } catch {
+        if (alive) setOffline(true);
+      }
+    };
+    void probe();
+
+    return () => {
+      alive = false;
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      navigator.serviceWorker?.removeEventListener('message', onSwMessage);
+    };
+  }, []);
+
   // 热导航（跨入口跳转）不弹全屏 Loading，只在顶部显示细进度条（UI-079）
   const warmRef = useRef(consumeWarmNav());
   const bootedRef = useRef(false);
@@ -165,6 +205,9 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
   }, [store.auth.token, isReady]);
 
   return <>
+    {offline && <div className="app-offline-banner" role="status">
+      当前离线，正在使用缓存内容；部分功能暂不可用
+    </div>}
     {warmRef.current && !isReady && <div className="app-warm-progress" aria-hidden />}
     <Loading isLoading={isLoading}>
       {/* 邀请提示常驻右上角，跨页面可见（大厅/游戏页/房间页都要能收到） */}

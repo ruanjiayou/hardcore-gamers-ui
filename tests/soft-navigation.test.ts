@@ -46,7 +46,8 @@ describe('UI-080 黑幕注入', () => {
     expect(config).toContain('transformIndexHtml');
     expect(config).toContain('lobby:curtain');
     expect(config).toContain('lobby-curtain-on');
-    expect(config).toContain("addEventListener('load'");
+    // UI-086：淡出交给 React 首屏，内联脚本只保留 5s 强制移除兜底
+    expect(config).toContain('setTimeout(off, 5000)');
   });
 
   test('HTML 入口源文件不重复写内联脚本（由插件统一注入）', () => {
