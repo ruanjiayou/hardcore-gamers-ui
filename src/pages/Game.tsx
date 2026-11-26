@@ -8,6 +8,9 @@ import { loadGameAssets } from '../services/assets';
 import { Leaderboard } from '../components/Leaderboard';
 import { LoginRequiredPanel } from '../components/LoginRequired';
 import { GameHeader } from '../components/GameHeader';
+import { GameSettings } from '../components/GameSettings';
+import { notificationManager } from '../components/Notifications';
+import { getManifest } from '../services/assets';
 import '../styles/index.css';
 import '../styles/game.css';
 import '../styles/room.css';
@@ -25,6 +28,10 @@ export const GamePage = observer(() => {
     // 排队等位（竞技场满员时）：waiting=true 表示人已在服务端队列里
     waiting: false,
     queueSize: 0,
+    // 顶栏排行榜弹框（下方排行榜已移除，UI-067）
+    showBoard: false,
+    // 资源清单异步到达后触发一次重渲染，让「当前皮肤」立刻刷新（UI-069）
+    skinTick: 0,
     // 官方房间列表（只展示官方桌，私有房不显示）
     rooms: [] as any[],
     setV(o: object) {
@@ -74,14 +81,14 @@ export const GamePage = observer(() => {
    * - 找到空位 → 直接进房间；
    * - 全部满员 → 进等待队列（服务端排队，有空位就把我拉进去）。
    */
-  const handleMatch = () => {
+  const handleMatch = (variantKey?: string) => {
     if (!store.auth.isLoggedIn) {
       store.ui.openLoginPrompt('登录后才能匹配');
       return;
     }
     if (local.matching) return;
     local.setV({ matching: true });
-    socketEvents.match(slug!, variantInfo?.key, (success, player, message) => {
+    socketEvents.match(slug!, variantKey ?? variantInfo?.key, (success, player, message) => {
       local.setV({ matching: false });
       // 排队中：不是错误，是"桌子满了，等一会儿"
       if (success && player?.waiting) {
@@ -104,16 +111,17 @@ export const GamePage = observer(() => {
     });
   };
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = (variantKey?: string) => {
     if (!store.auth.isLoggedIn) {
       store.ui.openLoginPrompt('登录后才能创建房间');
       return;
     }
     socketEvents.excute(SendoutEvent.CreateRoom, {
       slug,
-      name: local.name,
+      // 玩法按钮直接建房（不再走命名弹框），给个默认名避免空房间名
+      name: local.name || `${store.auth.displayName || '玩家'} 的${variants.find(v => v.key === (variantKey ?? variantInfo?.key))?.label || '游戏'}房间`,
       allowSpectate: local.allowSpectate,
-      variant: variantInfo?.key,
+      variant: variantKey ?? variantInfo?.key,
     }, (success: boolean, room_id: string, error?: string) => {
       if (success && room_id) {
         navigate(`/game/${slug}/room/${room_id}`);
@@ -145,7 +153,7 @@ export const GamePage = observer(() => {
     // 进入游戏主页就切到该游戏的专属音效配置（早于匹配/开局，房间页会幂等再设一次）
     store.audio.setGame(slug);
     // 图片资源（皮肤）在加载阶段一次拉完并预加载：对局内不再发图片请求
-    loadGameAssets(slug);
+    loadGameAssets(slug).then(() => local.setV({ skinTick: local.skinTick + 1 }));
     // 直接打开/刷新游戏主页时 store 里还没有游戏列表，需要自己拉一次，
     // 否则拿不到 mode/variants，单人会误显示成房间对战
     if (!store.game.games.length) {
@@ -201,35 +209,90 @@ export const GamePage = observer(() => {
     return <LoginRequiredPanel title="需要登录" desc="登录后才能进入游戏、创建房间或上榜" />;
   }
 
-  const leaderboard = <Leaderboard slug={slug as string} limit={5} boards={game?.boards} />;
-  const variantTabs = variants.length > 1 && (
-    <div className="variant-tabs">
+  // 贪吃蛇主页单独排版：玩法按钮 + 当前皮肤 + 底部提示；
+  // 不再展示官方房间列表（无尽竞技房常驻 playing，列表里永远是"对局中 + 加入不可用"，纯误导）
+  const isSnakeHome = slug === 'snake';
+  // 首帧 variants 还没回填时 activeVariant 为空，退回第一个玩法，避免按钮闪成另一个玩法
+  const isEndlessVariant = (activeVariant || variants[0]?.key) === 'endless';
+  const isBusyMode = local.matching || local.starting;
+
+  /** 玩法按钮（UI-070）：贪吃蛇无尽=直接匹配、团队=直接建房；其余游戏仍是选中变体 */
+  const handleVariant = (v: any) => {
+    if (isSnakeHome) {
+      if (isBusyMode || local.waiting) return;
+      if ((activeVariant || variants[0]?.key) !== v.key) setActiveVariant(v.key);
+      if (v.arena || v.key === 'endless') handleMatch(v.key);
+      else handleCreateRoom(v.key);
+      return;
+    }
+    setActiveVariant(v.key);
+  };
+  const modeButtons = variants.length > 0 && (
+    <div className="mode-buttons">
       {variants.map(v => (
         <button
           key={v.key}
-          className={`variant-card ${activeVariant === v.key ? 'active' : ''}`}
-          onClick={() => setActiveVariant(v.key)}
+          className={`mode-btn${(activeVariant || variants[0]?.key) === v.key ? ' active' : ''}`}
+          disabled={isSnakeHome && isBusyMode}
+          onClick={() => handleVariant(v)}
         >
-          <span className="variant-label">{v.label}</span>
-          <span className="variant-desc">{v.desc || (v.mode === 'solo' ? '单人挑战' : '房间对战')}</span>
+          <span className="mode-label">{v.label}</span>
         </button>
       ))}
     </div>
   );
-  // 贪吃蛇主页单独排版：榜单在上、玩法卡片在下、底部固定大按钮；
-  // 不再展示官方房间列表（无尽竞技房常驻 playing，列表里永远是"对局中 + 加入不可用"，纯误导）
-  const isSnakeHome = slug === 'snake';
-  // 首帧 variants 还没回填时 activeVariant 为空，退回第一个玩法，避免底部按钮闪成另一个玩法
-  const isEndlessVariant = (activeVariant || variants[0]?.key) === 'endless';
+
+  // 顶栏中间入口（icon 左、名称右）：商店只有贪吃蛇有（UI-076），排行榜所有游戏都有
+  const headerCenter = (
+    <>
+      {isSnakeHome && (
+        <button className="game-header-center-btn" onClick={() => notificationManager.show('商店即将开放', 'warning')}>
+          <span className="game-header-center-icon" aria-hidden>🛒</span><span>商店</span>
+        </button>
+      )}
+      <button className="game-header-center-btn" onClick={() => local.setV({ showBoard: true })}>
+        <span className="game-header-center-icon" aria-hidden>🏆</span><span>排行榜</span>
+      </button>
+    </>
+  );
+
+  // 顶栏右侧业务入口（UI-076）：好友只在多人游戏出现，设置（音效）各游戏都有。
+  // GameHeader 只共用一个头像下拉 + 关闭按钮，这些入口由本页按游戏组装。
+  const headerExtra = (
+    <>
+      {!isSolo && (
+        <button
+          className="game-header-icon-btn"
+          title="好友"
+          aria-label="好友"
+          onClick={() => navigate(`/game/${slug}/friends`)}
+        >
+          <span aria-hidden="true">👥</span>
+        </button>
+      )}
+      <GameSettings game={slug} />
+    </>
+  );
+
+  // 当前皮肤预览（UI-069）：取已装备那件的图，没图回退 emoji
+  void local.skinTick; // 依赖：manifest 到达后重新计算
+  const currentSkin = (() => {
+    const m = getManifest(slug || '');
+    const id = m?.equipped || '';
+    const item = m?.skins?.find(s => s.id === id);
+    return { url: item?.url || '', label: item?.label || '默认皮肤' };
+  })();
 
   return (
     <div className="game-page">
-      {/* 游戏主页顶栏：游戏名称靠左、无 logo，右侧设置 + 头像 */}
+      {/* 游戏主页顶栏（UI-067）：左头像+昵称+badge，中商店/榜单，右好友/设置/关闭 */}
       <GameHeader
         title={game?.title || slug || '游戏'}
         subtitle={isSolo ? '单人挑战' : (variantInfo?.label || '房间对战')}
         mode="game"
         profileGame={slug}
+        center={headerCenter}
+        extra={headerExtra}
         onBack={() => {
           // 点返回回大厅时把当前分同步进排行榜（对局仍在房间里，不影响继续玩）
           syncRoomScore();
@@ -238,14 +301,33 @@ export const GamePage = observer(() => {
       />
       <div className="game-body">
         <div className={`game-container${isSnakeHome ? ' snake-home' : ''}`}>
-          {/* 榜单永远在最上面；贪吃蛇的玩法卡片紧随其后，其余游戏是"榜单 → 卡片 → 工具栏" */}
-          {leaderboard}
-          {variantTabs}
+          {/* 当前皮肤只有贪吃蛇有（UI-076）；皮肤在上、玩法横向按钮在下（UI-073） */}
+          {isSnakeHome && (
+            <div className="current-skin">
+              <div className="current-skin-preview">
+                {currentSkin.url ? <img src={currentSkin.url} alt={currentSkin.label} /> : <span aria-hidden>🐍</span>}
+                {/* 刷新/sync 图标压在皮肤预览图右上，点进皮肤页（UI-073） */}
+                <button
+                  className="current-skin-refresh"
+                  onClick={() => navigate(`/game/${slug}/skins`)}
+                  title="更换皮肤"
+                  aria-label="更换皮肤"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M20 11a8.1 8.1 0 0 0-14.5-5L3 9" /><path d="M3 4v5h5" />
+                    <path d="M4 13a8.1 8.1 0 0 0 14.5 5L21 15" /><path d="M21 20v-5h-5" />
+                  </svg>
+                </button>
+              </div>
+              <div className="current-skin-label">当前皮肤 · {currentSkin.label}</div>
+            </div>
+          )}
+          {modeButtons}
 
           {/* 房间玩法：匹配/创建收进一条工具栏，不再挤在标题行（贪吃蛇改走底部大按钮） */}
           {!isSolo && !isSnakeHome && (
             <div className="game-toolbar">
-              <button className="primary" disabled={local.matching} onClick={handleMatch}>
+              <button className="primary" disabled={local.matching} onClick={() => handleMatch()}>
                 {local.matching ? '匹配中…' : '匹配'}
               </button>
               <button
@@ -309,36 +391,19 @@ export const GamePage = observer(() => {
             </div>
           )}
 
-          {/* 贪吃蛇：底部固定主操作。无尽挑战=开始挑战（进常驻竞技房），团队模式=创建团队房间 */}
+          {/* 贪吃蛇：玩法按钮已在上方横向排列，这里只保留排队状态与提示 */}
           {isSnakeHome && (
             <div className="snake-actions">
-              {isEndlessVariant ? (
-                <>
-                  <button className="solo-start-btn" disabled={local.matching || local.waiting} onClick={handleMatch}>
-                    {local.matching ? '正在进入竞技场…' : (local.waiting ? '排队中…' : '▶ 开始无尽挑战')}
-                  </button>
-                  {local.waiting ? (
-                    /* 桌子满了：进等待队列，有人离开就把我拉进去 */
-                    <div className="match-waiting">
-                      <p>🎮 当前竞技场已满，正在排队等待空位（前面还有 {local.queueSize} 人）…</p>
-                      <button className="snake-join-btn" onClick={handleCancelMatch}>取消排队</button>
-                    </div>
-                  ) : (
-                    <p className="solo-hint">进入无尽竞技房，与场上玩家、人机同图刷分</p>
-                  )}
-                </>
+              {local.matching && <p className="solo-hint">正在进入竞技场…</p>}
+              {local.waiting ? (
+                <div className="match-waiting">
+                  <p>🎮 当前竞技场已满，正在排队等待空位（前面还有 {local.queueSize} 人）…</p>
+                  <button className="snake-join-btn" onClick={handleCancelMatch}>取消排队</button>
+                </div>
               ) : (
-                <>
-                  <button
-                    className="solo-start-btn"
-                    onClick={() => local.setV({ type: 'create', show: true, allowSpectate: true })}
-                  >创建团队房间</button>
-                  {/* 匹配入口保留在次要位置：团队房建好后需要能被人找到，否则只能自己开局 */}
-                  <button className="snake-join-btn" disabled={local.matching} onClick={handleMatch}>
-                    {local.matching ? '正在加入…' : '快速加入现有房间'}
-                  </button>
-                  <p className="solo-hint">最多 6 队同场，每队 5 人，最后存活的一队获胜</p>
-                </>
+                <p className="solo-hint">
+                  {isEndlessVariant ? '进入无尽竞技房，与场上玩家、人机同图刷分' : '最多 6 队同场，每队 5 人，最后存活的一队获胜'}
+                </p>
               )}
             </div>
           )}
@@ -365,13 +430,23 @@ export const GamePage = observer(() => {
                 </label>
                 <div className="modal-actions">
                   <button onClick={() => local.setV({ show: false })}>取消</button>
-                  <button onClick={handleCreateRoom}>创建</button>
+                  <button onClick={() => handleCreateRoom()}>创建</button>
                 </div>
               </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* 排行榜弹框：下方排行榜已移除，入口收进顶栏中间（UI-067） */}
+      {local.showBoard && (
+        <div className="modal" onMouseDown={() => local.setV({ showBoard: false })}>
+          <div className="modal-content board-modal" onMouseDown={e => e.stopPropagation()}>
+            <button className="settings-close" onClick={() => local.setV({ showBoard: false })} aria-label="关闭">×</button>
+            <Leaderboard slug={slug as string} limit={10} boards={game?.boards} />
+          </div>
+        </div>
+      )}
     </div>
   );
 });

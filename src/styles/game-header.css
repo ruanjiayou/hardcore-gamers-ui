@@ -89,12 +89,160 @@
   text-overflow: ellipsis;
 }
 
+/* 三段式顶栏（UI-067）：左用户区 / 中商店榜单 / 右好友·设置·关闭 */
+.game-header-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.game-header-center-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.game-header-center-btn:hover { background: rgba(255, 255, 255, 0.26); }
+.game-header-center-icon { font-size: 15px; line-height: 1; }
+
 .game-header-right {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
 }
+
+/* 好友 icon（多人）按钮：和设置齿轮同一尺寸 */
+.game-header-icon-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  line-height: 1;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.game-header-icon-btn:hover { background: rgba(255, 255, 255, 0.26); }
+.game-header-close { font-size: 26px; }
+
+/* 顶栏右上角邀请好友下拉（UI-072）：点击 ✉️ 展开好友列表，点好友即邀请进房 */
+.header-invite { position: relative; }
+.header-invite-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 130;
+  width: 240px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid #e8eaf2;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(30, 40, 90, .22);
+  color: #333;
+}
+.header-invite-title {
+  padding: 4px 6px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #4a4f68;
+  border-bottom: 1px solid #f0f1f6;
+  margin-bottom: 4px;
+}
+.header-invite-empty { padding: 14px 6px; text-align: center; color: #9aa0b4; font-size: 12px; }
+.header-invite-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+}
+.header-invite-row:hover { background: #f4f5fc; }
+.header-invite-avatar { flex: 0 0 auto; font-size: 18px; }
+.header-invite-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #333;
+}
+.header-invite-go {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: #667eea;
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.header-invite-go:disabled { opacity: .55; cursor: not-allowed; }
+
+/* 主页昵称紧挨头像（UI-067），等级 badge 叠在头像右下角 */
+.game-header-game .user-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.user-button-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.avatar-with-level { position: relative; display: inline-flex; flex: 0 0 auto; }
+.avatar-level-badge {
+  position: absolute;
+  right: -8px;
+  bottom: -5px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: #ffb020;
+  color: #3a2600;
+  -webkit-text-fill-color: #3a2600;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.3;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+}
+.game-header .status-avatar { position: relative; }
 
 /* 房间/对局顶栏：只有左上关闭 + 右上设置，中间完全留空 */
 .game-back.is-close {
@@ -143,4 +291,7 @@
     width: 30px;
     height: 30px;
   }
+  .game-header-center { gap: 6px; }
+  .game-header-center-btn { padding: 4px 7px; font-size: 12px; }
+  .user-button-name { max-width: 68px; font-size: 12px; }
 }

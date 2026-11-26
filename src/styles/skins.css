@@ -1,0 +1,82 @@
+/* 皮肤页（UI-069）：多行多列 grid，卡片底部标「已拥有 / 获取」 */
+.skins-page {
+  min-height: 100vh;
+  background: #f6f7fb;
+  color: #222;
+  padding-bottom: 32px;
+}
+.skins-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+.skins-header h2 { font-size: 18px; margin: 0; color: #fff; -webkit-text-fill-color: #fff; }
+.skins-body { max-width: 960px; margin: 18px auto 0; padding: 0 14px; }
+.skins-empty { color: #9aa0b4; text-align: center; margin-top: 48px; }
+
+.skins-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+}
+.skin-card {
+  background: #fff;
+  border: 1px solid #e7e9f1;
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(30, 40, 90, .05);
+}
+.skin-card.equipped { border-color: #667eea; box-shadow: 0 0 0 2px rgba(102, 126, 234, .18); }
+.skin-card.locked .skin-cover { filter: grayscale(.6); opacity: .72; }
+.skin-cover {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #eef1fb, #e2e7f8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 46px;
+  overflow: hidden;
+}
+.skin-cover img { width: 100%; height: 100%; object-fit: contain; }
+.skin-name {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skin-foot { display: flex; justify-content: center; }
+.skin-foot button {
+  width: 100%;
+  padding: 6px;
+  border: none;
+  border-radius: 7px;
+  background: #667eea;
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.skin-state {
+  font-size: 12px;
+  color: #9aa0b4;
+  padding: 6px;
+  text-align: center;
+  width: 100%;
+  border: 1px dashed #dfe3ee;
+  border-radius: 7px;
+}
+.skin-state.active { color: #4b51a8; border-style: solid; border-color: #c9cff5; background: #f2f4ff; }

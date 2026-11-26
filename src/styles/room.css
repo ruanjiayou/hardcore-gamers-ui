@@ -172,6 +172,53 @@
   position: relative;
 }
 
+/* ===== 团队房间等待区（UI-072）：不显示地图，居中等待 + 开始按钮 ===== */
+.team-wait {
+  width: 100%;
+  height: 100%;
+  min-height: 40vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f7f8ff, #eef0fb);
+}
+.team-wait-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  max-width: 480px;
+}
+.team-wait-icon { font-size: 64px; line-height: 1; }
+.team-wait-inner h2 { margin: 0; font-size: 22px; color: #333; }
+.team-wait-hint { margin: 0; font-size: 13px; color: #7a7f99; line-height: 1.5; }
+.team-wait-players {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.team-wait-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #dfe3f5;
+  border-radius: 18px;
+  background: #fff;
+  color: #4a4f68;
+  font-size: 13px;
+}
+.team-wait-chip em {
+  font-style: normal;
+  font-weight: 700;
+  color: #667eea;
+}
+
 /* ===== 贪吃蛇 DOM UI 层：世界层只画蛇/食物，HUD/小地图/摇杆/按钮全是 DOM/CSS =====
    根层 pointer-events:none，只有真正可点的控件（摇杆/加速/弹框按钮）单独打开 auto。 */
 .snake-dom-ui {

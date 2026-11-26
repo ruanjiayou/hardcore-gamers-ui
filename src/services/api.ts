@@ -143,6 +143,48 @@ export function changePassword(old_pass: string, new_pass: string) {
   return apiClient.post<ApiResult<boolean>>('/users/password', { old_pass, new_pass });
 }
 
+// ===== 好友（SB-060）：主体是玩家 ID，按游戏隔离，所有接口带 slug =====
+
+export interface FriendUser {
+  player_id: string;
+  nickname: string;
+  avatar?: string;
+  level?: number;
+  atline?: boolean;
+}
+/** 最近同玩玩家（SB-063）：好友信息 + 最近一次同场时间 */
+export interface RecentPlaymate extends FriendUser {
+  last_played_at?: string;
+}
+export interface FriendRequestItem {
+  invite_id: string;
+  /** from / to 都是玩家 ID（不是用户 ID） */
+  from: string;
+  to: string;
+  created_at: string;
+  user: FriendUser | null;
+}
+
+const q = (slug: string) => `?slug=${encodeURIComponent(slug)}`;
+
+export const getFriends = (slug: string) =>
+  apiClient.get<ApiResult<{ list: FriendUser[] }>>(`/friends${q(slug)}`);
+export const getRecentPlaymates = (slug: string) =>
+  apiClient.get<ApiResult<{ list: RecentPlaymate[] }>>(`/friends/recent${q(slug)}`);
+export const getFriendRequests = (slug: string) => apiClient.get<ApiResult<{
+  incoming: FriendRequestItem[]; outgoing: FriendRequestItem[];
+}>>(`/friends/requests${q(slug)}`);
+export const sendFriendRequest = (slug: string, target: string) =>
+  apiClient.post<ApiResult<{ invite_id: string }>>('/friends/requests', { slug, target });
+export const acceptFriendRequest = (id: string) =>
+  apiClient.post<ApiResult<boolean>>(`/friends/requests/${id}/accept`);
+export const rejectFriendRequest = (id: string) =>
+  apiClient.post<ApiResult<boolean>>(`/friends/requests/${id}/reject`);
+export const cancelFriendRequest = (id: string) =>
+  apiClient.delete<ApiResult<boolean>>(`/friends/requests/${id}`);
+export const removeFriend = (slug: string, player_id: string) =>
+  apiClient.delete<ApiResult<boolean>>(`/friends/${encodeURIComponent(player_id)}${q(slug)}`);
+
 /** 回放：frames 是每次落子后的棋盘快照，前端按帧渲染 */
 export interface ReplayData {
   _id: string;

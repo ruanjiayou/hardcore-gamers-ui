@@ -113,6 +113,9 @@ export const ReceiveEvent = {
   InviteReceived: 'invite:received',
   InviteResult: 'invite:result',
   InviteAccepted: 'invite:accepted',
+  // 好友申请实时推送（`SB-061` / `UI-071`）
+  FriendRequest: 'friend:request',
+  FriendResult: 'friend:result',
   // 匹配队列：竞技场满员时排队等待，分配到桌后服务端推这个事件
   MatchFound: 'lobby:match-found',
   // 房间事件（与服务端 emit 名称严格一致）

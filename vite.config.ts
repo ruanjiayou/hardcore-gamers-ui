@@ -18,16 +18,21 @@ export default defineConfig({
     allowedHosts: ["max.local", "game.jiayou.work","max.local:5173"],
     proxy: {
       '/api': {
-        target: 'http://localhost:8087',
+        target: 'http://100.125.39.89:8087',
         changeOrigin: true
       },
       // 语音包音频由后端从 server/public/audio 静态托管，dev 下必须转发，否则 /audio/* 打到 Vite
       '/audio': {
-        target: 'http://localhost:8087',
+        target: 'http://100.125.39.89:8087',
+        changeOrigin: true
+      },
+      // 皮肤图同理：server/public/skins/<pack>/<game>/...
+      '/skins': {
+        target: 'http://100.125.39.89:8087',
         changeOrigin: true
       },
       '/socket.io': {
-        target: 'http://localhost:8087', // socket.io 后端
+        target: 'http://100.125.39.89:8087', // socket.io 后端
         ws: true,                        // ⚠️ 关键：启用 WebSocket
         changeOrigin: true,
       }

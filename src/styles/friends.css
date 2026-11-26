@@ -1,0 +1,124 @@
+/* 好友页（UI-068）：普通列表页，跟随全局浅色主题 */
+.friends-page {
+  min-height: 100vh;
+  background: #f6f7fb;
+  color: #222;
+  padding-bottom: 32px;
+}
+
+.friends-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+.friends-header h2 { font-size: 18px; margin: 0; color: #fff; -webkit-text-fill-color: #fff; }
+.friends-header .game-back { border-color: rgba(255,255,255,.35); }
+
+.friends-body {
+  max-width: 720px;
+  margin: 18px auto 0;
+  padding: 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.friends-section {
+  background: #fff;
+  border: 1px solid #e7e9f1;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(30, 40, 90, .05);
+}
+.friends-section h3 {
+  font-size: 15px;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.friends-count {
+  background: #667eea;
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 11px;
+}
+
+.friends-add { display: flex; gap: 8px; }
+.friends-add input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #d9ddeb;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  color: #222;
+}
+.friends-add button,
+.friends-list button {
+  padding: 7px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #667eea;
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.friends-add button:disabled,
+.friends-list button:disabled { opacity: .55; cursor: not-allowed; }
+.friends-list button.ghost { background: #eef0f8; color: #4a4f68; -webkit-text-fill-color: #4a4f68; }
+.friends-list button.danger { background: #ffe8e8; color: #b4232a; -webkit-text-fill-color: #b4232a; }
+.friends-hint { margin: 8px 0 0; font-size: 12px; color: #8a8fa3; }
+
+.friends-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.friends-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid #eef0f6;
+  border-radius: 8px;
+  background: #fbfcff;
+}
+.friends-avatar {
+  width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #e8ebf7; border-radius: 50%; font-size: 17px;
+  flex: 0 0 auto;
+}
+.friends-name { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friends-time { font-size: 11px; color: #9aa0b4; white-space: nowrap; }
+.friends-empty { color: #9aa0b4; font-size: 13px; margin: 0; }
+
+/* 好友 / 最近 tab（UI-075） */
+.friends-tabs { display: flex; gap: 6px; margin: -4px 0 12px; border-bottom: 1px solid #eef0f6; }
+.friends-tab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border: none; border-bottom: 2px solid transparent;
+  background: transparent; color: #717790; font-size: 14px; cursor: pointer;
+}
+.friends-tab.active { color: #5a67d8; border-bottom-color: #667eea; font-weight: 700; }
+.friends-tab .friends-count { background: #eef0f8; color: #5a6178; -webkit-text-fill-color: #5a6178; }
+.friends-tab.active .friends-count { background: #667eea; color: #fff; -webkit-text-fill-color: #fff; }
+.friends-badge {
+  flex: 0 0 auto; padding: 3px 8px; border-radius: 6px;
+  background: #eef0f8; color: #6b7288; -webkit-text-fill-color: #6b7288; font-size: 12px;
+}
+.friends-add-icon {
+  flex: 0 0 auto; width: 30px; height: 30px; padding: 0;
+  border: none; border-radius: 8px; background: #667eea;
+  color: #fff; -webkit-text-fill-color: #fff; font-size: 18px; line-height: 1; cursor: pointer;
+}
+.friends-add-icon:disabled { opacity: .55; cursor: not-allowed; }

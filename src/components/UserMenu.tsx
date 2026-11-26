@@ -15,10 +15,12 @@ import '../styles/navbar.css';
  *
  * scope：区分下拉里的第一项叫法（UI-050）——
  *   'lobby' 大厅 →「👤 个人中心」；'game' 单个游戏里 →「👤 玩家中心」。
- * 游戏里还多一项「⚙ 游戏设置」，打开与顶栏齿轮同一个设置弹框。
- * 头像左侧**不再显示昵称**（UI-050），昵称只在下拉菜单第一排。
+ * showName：游戏主页顶栏要求昵称紧挨头像 + 头像右下角等级 badge（UI-067）；
+ *   大厅仍保持只有头像（UI-050），昵称只在下拉菜单第一排。
  */
-export const UserMenu = observer(({ scope = 'lobby', profileGame = '' }: { scope?: 'lobby' | 'game', profileGame?: string }) => {
+export const UserMenu = observer(({ scope = 'lobby', profileGame = '', showName = false }: {
+  scope?: 'lobby' | 'game', profileGame?: string, showName?: boolean
+}) => {
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -47,7 +49,10 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '' }: { scope
   };
 
   const hasAvatar = !!avatarUrl && !avatarBroken;
+  // 外层再包一层 relative：status-avatar 自己 overflow:hidden（裁圆头像），
+  // 等级 badge 必须放在它外面才不会被裁掉（UI-067）
   const statusAvatar = (
+    <span className="avatar-with-level">
     <span className={`status-avatar ${connected ? 'is-connected' : 'is-offline'}`} title={connected ? '已连接' : '连接已断开'}>
       {hasAvatar && connected && (
         <img className="avatar-image" src={avatarUrl} alt="" onError={() => setAvatarBroken(true)} />
@@ -68,6 +73,8 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '' }: { scope
         </svg>
       )}
     </span>
+    {showName && <em className="avatar-level-badge">Lv.{store.game.player?.level ?? 1}</em>}
+    </span>
   );
 
   return (
@@ -81,6 +88,7 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '' }: { scope
             aria-expanded={dropdownOpen}
           >
             {statusAvatar}
+            {showName && <span className="user-button-name">{name}</span>}
           </button>
 
           {dropdownOpen && (

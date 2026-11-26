@@ -11,6 +11,8 @@ import { GamePage } from './pages/Game';
 import { RoomPage } from './pages/Room';
 import { ProfilePage } from './pages/Profile';
 import { UserProfilePage } from './pages/UserProfile';
+import { FriendsPage } from './pages/Friends';
+import { SkinsPage } from './pages/Skins';
 import { InviteToasts } from './components/InviteToast';
 import { Notifications, notificationManager } from './components/Notifications';
 import { LoginRequiredModal } from './components/LoginRequired';
@@ -112,6 +114,18 @@ const AppBootstrap = observer(({ children, isReady, setIsReady }: { children: Re
         notificationManager.show('排到位置了，正在进入竞技场…', 'success');
         navigate(`/game/${data.slug || 'snake'}/room/${data.room_id}`);
       });
+      // 好友申请实时提示（SB-061 / UI-071）：全局监听，玩家可能在任何页面
+      getSocket()?.off(ReceiveEvent.FriendRequest);
+      getSocket()?.on(ReceiveEvent.FriendRequest, (data: any) => {
+        if (!data?.invite_id) return;
+        notificationManager.show(`${data.from?.nickname || '有玩家'} 想加你好友（30 分钟内有效）`, 'success');
+      });
+      getSocket()?.off(ReceiveEvent.FriendResult);
+      getSocket()?.on(ReceiveEvent.FriendResult, (data: any) => {
+        if (!data?.invite_id) return;
+        if (data.message) notificationManager.show(data.message, 'warning');
+        else if (data.accepted) notificationManager.show(`${data.player?.nickname || '对方'} 已接受你的好友申请`, 'success');
+      });
     } catch (error) {
       console.error('❌ 应用初始化失败:', error);
     } finally {
@@ -162,6 +176,14 @@ export const App = observer(() => {
           </AppBootstrap>} />
           <Route path="/game/:slug" element={<AppBootstrap isReady={isReady} setIsReady={setIsReady}>
             <GamePage />
+          </AppBootstrap>} />
+          {/* 皮肤页：从游戏主页中间「更换」进入（UI-069） */}
+          <Route path="/game/:slug/skins" element={<AppBootstrap isReady={isReady} setIsReady={setIsReady}>
+            <SkinsPage />
+          </AppBootstrap>} />
+          {/* 好友页：主体是玩家、按游戏隔离，所以 URL 带 slug（UI-068） */}
+          <Route path="/game/:slug/friends" element={<AppBootstrap isReady={isReady} setIsReady={setIsReady}>
+            <FriendsPage />
           </AppBootstrap>} />
           <Route path="/game/:slug/room/:room_id" element={<AppBootstrap isReady={isReady} setIsReady={setIsReady}>
             <RoomPage />
