@@ -95,17 +95,71 @@ self.addEventListener('fetch', event => {
   };
 }
 
+// UI-080：8 个 HTML 共用内联黑幕——在 <head> 里消费标记，不等 React 包；文档 load 后淡出。
+function transitionCurtain(): Plugin {
+  const CURTAIN_KEY = 'lobby:curtain';
+  const snippet = `<script>
+(function () {
+  try {
+    var flag = sessionStorage.getItem('${CURTAIN_KEY}');
+    if (!flag || Date.now() - Number(flag) > 10000) return;
+    sessionStorage.removeItem('${CURTAIN_KEY}');
+    var root = document.documentElement;
+    root.classList.add('lobby-curtain-on');
+    var done = false;
+    var off = function () {
+      if (done) return;
+      done = true;
+      root.classList.add('is-fading');
+      setTimeout(function () { root.classList.remove('lobby-curtain-on', 'is-fading'); }, 200);
+      window.removeEventListener('load', off);
+    };
+    window.addEventListener('load', off, { once: true });
+    setTimeout(off, 5000);
+  } catch (e) {}
+})();
+</script>
+<style>
+html.lobby-curtain-on, html.lobby-curtain-on body { background: #000; }
+html.lobby-curtain-on::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: #000;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+html.lobby-curtain-on.is-fading::before { opacity: 0; }
+</style>`;
+  return {
+    name: 'lobby-transition-curtain',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        return html.includes('</head>')
+          ? html.replace('</head>', `${snippet}\n  </head>`)
+          : `${snippet}\n${html}`;
+      }
+    }
+  };
+}
+
 function gameHtmlFallback(): Plugin {
   return {
     name: 'game-html-fallback',
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
         if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-        if (!req.headers.accept?.includes('text/html')) return next();
 
         const url = (req.url ?? '').split('?')[0];
-        // 带扩展名的静态资源（如 /lobby/game/snake/assets/x.js）不改写
-        if (/\.[^/]+$/.test(url)) return next();
+        // UI-080：软导航 fetch 预取的是 index.html（Accept 不是 text/html），也要回退到入口 HTML
+        const explicitHtml = /^\/lobby\/game\/[^/]+\/index\.html$/.test(url);
+        if (!explicitHtml) {
+          if (!req.headers.accept?.includes('text/html')) return next();
+          // 带扩展名的静态资源（如 /lobby/game/snake/assets/x.js）不改写
+          if (/\.[^/]+$/.test(url)) return next();
+        }
 
         const match = url.match(/^\/lobby\/game\/([^/]+)(\/.*)?$/);
         const slug = match?.[1];
@@ -124,7 +178,7 @@ export default defineConfig({
   define: {
     'process.env.PUBLIC_URL': JSON.stringify(PUBLIC_URL)
   },
-  plugins: [react(), gameHtmlOutputPath(), gameHtmlFallback(), serviceWorkerPrecache()],
+  plugins: [react(), transitionCurtain(), gameHtmlOutputPath(), gameHtmlFallback(), serviceWorkerPrecache()],
   build: {
     outDir: 'lobby',
     sourcemap: false,

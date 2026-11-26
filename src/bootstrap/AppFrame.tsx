@@ -7,9 +7,9 @@ import { go, registerEntryNav } from '../navigation';
 import AppBootstrap from './AppBootstrap';
 
 /** 在 Router 内把 navigate 交给 navigation.ts：同入口跳转走 push，跨入口仍整页。 */
-function NavBridge({ children }: { children: React.ReactNode }) {
+function NavBridge({ basename, children }: { basename: string, children: React.ReactNode }) {
   const navigate = useNavigate();
-  registerEntryNav(navigate);
+  registerEntryNav(basename, navigate);
   return <>{children}</>;
 }
 
@@ -20,7 +20,7 @@ export function AppFrame({ children, basename, showNavbar = true }: {
   const [isReady, setIsReady] = React.useState(false);
   return (
     <BrowserRouter basename={basename}>
-      <NavBridge>
+      <NavBridge basename={basename}>
         <div className="app">
           <Notifications />
           <LoginRequiredModal />
