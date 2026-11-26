@@ -128,3 +128,30 @@ a:hover {
   border-bottom: 2px solid #333;
   transform: rotate(45deg);
 }
+/* UI-079 跨入口热导航：顶部细进度条，取代整页紫色 Loading 遮罩 */
+.app-warm-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 9999;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.28);
+  pointer-events: none;
+}
+
+.app-warm-progress::after {
+  content: '';
+  display: block;
+  width: 38%;
+  height: 100%;
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.9);
+  animation: app-warm-slide 900ms ease-in-out infinite;
+}
+
+@keyframes app-warm-slide {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(360%); }
+}

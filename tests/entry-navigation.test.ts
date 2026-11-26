@@ -112,7 +112,7 @@ describe('跨入口跳转走整页 go()，不残留 SPA navigate', () => {
   test('7 个游戏入口 mountEntry 传 { showNavbar: false }', () => {
     const problems: string[] = [];
     for (const slug of SLUGS) {
-      const rel = `game/${slug}/main.tsx`;
+      const rel = `src/pages/game/${slug}/main.tsx`;
       if (!existsSync(join(ROOT, rel))) {
         problems.push(`${rel}: 文件不存在`);
         continue;

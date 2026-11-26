@@ -7,7 +7,7 @@ import { refreshAccessToken } from '../services/api';
 import { InviteToasts } from '../components/InviteToast';
 import { notificationManager } from '../components/Notifications';
 import Loading from '../components/Loading';
-import { gameUrl, go, lobbyUrl } from '../navigation';
+import { consumeWarmNav, gameUrl, go, lobbyUrl } from '../navigation';
 
 /**
  * 应用外壳：负责建立 socket 连接。
@@ -20,7 +20,10 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
   setIsReady: Function,
   onNavigate?: (url: string) => void,
 }) => {
-  const [isLoading, setIsLoading] = useState(false);
+  // 热导航（跨入口跳转）不弹全屏 Loading，只在顶部显示细进度条（UI-079）
+  const warmRef = useRef(consumeWarmNav());
+  const bootedRef = useRef(false);
+  const [isLoading, setIsLoading] = useState(!warmRef.current);
   const navigate = useNavigate();
   // 用 ref 记录建立连接时的身份，登录/退出后据此重连
   const tokenRef = useRef(store.auth.token);
@@ -55,10 +58,10 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
   };
 
   const bootstrap = async () => {
-    setIsLoading(true);
+    const showSpinner = !bootedRef.current && !warmRef.current;
+    if (showSpinner) setIsLoading(true);
     try {
-      // 身份可能已变化（游客→登录、退出登录）：断开旧连接再用当前 token 重连
-      disconnectSocket();
+      // initSocket 按当前 token 更新身份；跨入口新文档不该先断开再闪一下断线态
       let { success, error } = await initSocket();
       if (!success) {
         const msg = String((error as any)?.message || error || '');
@@ -82,10 +85,16 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
       // 语音包配置走 HTTP，与 socket 无关；失败时 store 自动回退默认包
       void store.audio.load();
       if (store.auth.token) {
-        try {
-          await loadUserInfo();
-        } catch (e) {
-          console.error('加载用户信息失败（继续以游客浏览）:', e);
+        const info = loadUserInfo();
+        if (showSpinner) {
+          try {
+            await info;
+          } catch (e) {
+            console.error('加载用户信息失败（继续以游客浏览）:', e);
+          }
+        } else {
+          // 热导航/身份切换：页面先显示，用户信息后台补齐
+          void info.catch(e => console.error('加载用户信息失败（继续以游客浏览）:', e));
         }
       }
       getSocket()?.off(ReceiveEvent.UserKicked);
@@ -132,6 +141,7 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
     } catch (error) {
       console.error('❌ 应用初始化失败:', error);
     } finally {
+      bootedRef.current = true;
       setIsReady(true);
       setIsLoading(false);
     }
@@ -154,11 +164,14 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.auth.token, isReady]);
 
-  return <Loading isLoading={isLoading}>
-    {/* 邀请提示常驻右上角，跨页面可见（大厅/游戏页/房间页都要能收到） */}
-    <InviteToasts />
-    {children}
-  </Loading>;
+  return <>
+    {warmRef.current && !isReady && <div className="app-warm-progress" aria-hidden />}
+    <Loading isLoading={isLoading}>
+      {/* 邀请提示常驻右上角，跨页面可见（大厅/游戏页/房间页都要能收到） */}
+      <InviteToasts />
+      {children}
+    </Loading>
+  </>;
 });
 
 export default AppBootstrap;

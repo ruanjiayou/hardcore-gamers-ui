@@ -3,93 +3,92 @@ import store from '../stores'
 
 let socket: Socket | null = null;
 
+/** 创建实例但不等待连接：热导航时页面 effect 拿到的也不再是 null（UI-079）。 */
+function createSocket(): Socket {
+  const s = io(window.location.origin.replace('http', 'ws'), {
+    auth: { token: store.auth.token },
+    reconnection: false,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: 5,
+    transports: ['websocket', 'polling'],
+    upgrade: true,
+    rejectUnauthorized: false
+  });
+  s.on('connect', () => store.ui.setSocketConnected(true));
+  s.on('disconnect', reason => {
+    store.ui.setSocketConnected(false);
+    console.log('断开原因', reason);
+  });
+  s.on('connect_error', () => store.ui.setSocketConnected(false));
+  return s;
+}
+
+/** 挂载 React 前同步创建实例；node 测试环境不创建。 */
+export function ensureSocket(): Socket | null {
+  if (typeof window === 'undefined') return null;
+  if (!socket) socket = createSocket();
+  return socket;
+}
+
 export async function initSocket(): Promise<{ success: boolean, error?: any }> {
-  const success = true;
-  // 如果已经连接，直接返回
-  if (socket && socket.connected) {
+  const s = ensureSocket();
+  if (!s) return { success: false, error: new Error('Socket 未初始化') };
+
+  // 身份可能已变化（游客→登录、退出登录）：更新 auth 后直接连接，不先断开再建实例
+  const token = store.auth.token;
+  const currentAuth = s.auth as { token?: string } | undefined;
+  if (currentAuth?.token !== token) s.auth = { token };
+  if (s.connected) {
     store.ui.setSocketConnected(true);
     console.log('🔄 Socket 已连接，直接返回');
-    return { success };
-  }
-
-  // 如果存在旧连接但已断开，清理（有旧连接才算真断线，才写断线态，UI-078）
-  if (socket && socket.disconnected) {
-    console.log('🧹 清理已断开的旧连接');
-    socket.disconnect();
-    socket = null;
-    store.ui.setSocketConnected(false);
+    return { success: true };
   }
 
   console.log('🔌 初始化 Socket.io 连接...');
+  return await new Promise<{ success: true }>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error('Socket 连接超时'));
+    }, 10000);
 
-  try {
-    socket = io(window.location.origin.replace('http', 'ws'), {
-      auth: {
-        token: store.auth.token,
-      },
-      reconnection: false,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      reconnectionAttempts: 5,
-      transports: ['websocket', 'polling'],
-      upgrade: true,
-      rejectUnauthorized: false
-    });
-    socket.on('connect', () => {
+    const onConnect = () => {
+      cleanup();
+      console.log('✅ WebSocket 连接成功');
       store.ui.setSocketConnected(true);
-    })
-    socket.on('disconnect', reason => {
-      store.ui.setSocketConnected(false);
-      console.log('断开原因', reason)
-    })
-    socket.on('connect_error', () => {
-      store.ui.setSocketConnected(false);
-    })
-    return await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        cleanup()
-        reject(new Error('Socket 连接超时'))
-      }, 10000)
+      resolve({ success: true });
+    };
+    const onError = (error: any) => {
+      cleanup();
+      reject(error);
+    };
+    const cleanup = () => {
+      clearTimeout(timeout);
+      s.off('connect', onConnect);
+      s.off('connect_error', onError);
+    };
 
-      const onConnect = () => {
-        cleanup()
-        console.log('✅ WebSocket 连接成功')
-        resolve({ success })
-      }
-
-      const onError = (error: any) => {
-        cleanup()
-        reject(error)
-      }
-
-      const cleanup = () => {
-        clearTimeout(timeout)
-        socket?.off('connect', onConnect)
-        socket?.off('connect_error', onError)
-      }
-
-      socket?.once('connect', onConnect)
-      socket?.once('connect_error', onError)
-    })
-  } catch (error: any) {
+    s.once('connect', onConnect);
+    s.once('connect_error', onError);
+    s.connect();
+  }).catch(error => {
     console.error('❌ Socket 初始化异常:', error);
-    socket = null;
     store.ui.setSocketConnected(false);
     return { success: false, error };
-  }
+  });
 }
+
 export function getSocket(): Socket | null {
   return socket;
 }
 
 export function disconnectSocket() {
-  // 没有实际连接时（新入口刚加载）不动 UI 状态，避免头像先裂一下再恢复（UI-078）
-  if (socket) {
-    socket.disconnect();
-    socket = null;
-    store.ui.setSocketConnected(false);
-    console.log('🔌 Socket 已断开');
-  }
+  if (!socket) return;
+  const wasConnected = socket.connected;
+  socket.disconnect();
+  // 没连上过（跨入口新文档）不写断线态，避免头像先裂一下再恢复（UI-078/UI-079）
+  if (wasConnected) store.ui.setSocketConnected(false);
+  console.log('🔌 Socket 已断开');
 }
 
 // 浏览器网络状态变化时同步头像状态（socket 尚未回调时的即时反馈）

@@ -9,7 +9,7 @@ function stripCssComments(src: string): string {
 
 const ROOT = join(import.meta.dir, '..');
 const PUBLIC_CSS_DIR = join(ROOT, 'src', 'styles');
-const SNAKE_CSS_DIR = join(ROOT, 'game', 'snake', 'styles');
+const SNAKE_CSS_DIR = join(ROOT, 'src', 'pages', 'game', 'snake', 'styles');
 const FORBIDDEN = ['.snake-', '.team-wait-', '.current-skin', '.game-2048', '.tetris-'];
 
 function cssFiles(dir: string): string[] {

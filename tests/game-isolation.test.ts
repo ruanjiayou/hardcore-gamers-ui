@@ -61,14 +61,14 @@ const REQUIRED_PAGES: Record<string, string[]> = {
 
 describe('按游戏拆入口后的源码隔离', () => {
   test('七个 slug 各有自己的 main.tsx', () => {
-    const missing = SLUGS.filter(slug => !existsSync(join(ROOT, 'game', slug, 'main.tsx')));
+    const missing = SLUGS.filter(slug => !existsSync(join(ROOT, 'src', 'pages', 'game', slug, 'main.tsx')));
     expect(missing).toEqual([]);
   });
 
   test('每个 main.tsx 只注册并加载自己的游戏引擎', () => {
     const problems: string[] = [];
     for (const slug of SLUGS) {
-      const path = join(ROOT, 'game', slug, 'main.tsx');
+      const path = join(ROOT, 'src', 'pages', 'game', slug, 'main.tsx');
       const src = readIfExists(path);
       if (src === null) {
         problems.push(`${slug}: 缺少 main.tsx`);
@@ -77,7 +77,7 @@ describe('按游戏拆入口后的源码隔离', () => {
       if (!src.includes(`registerLoader('${slug}'`)) {
         problems.push(`${slug}/main.tsx: 缺少 registerLoader('${slug}')`);
       }
-      if (!src.includes(`import('../../src/games/${slug}')`)) {
+      if (!src.includes(`import('../../../games/${slug}')`)) {
         problems.push(`${slug}/main.tsx: 缺少自己的引擎 import`);
       }
       for (const other of SLUGS) {
@@ -94,7 +94,7 @@ describe('按游戏拆入口后的源码隔离', () => {
     const missing: string[] = [];
     for (const [slug, pages] of Object.entries(REQUIRED_PAGES)) {
       for (const page of pages) {
-        if (!existsSync(join(ROOT, 'game', slug, `${page}.tsx`))) missing.push(`${slug}/${page}.tsx`);
+        if (!existsSync(join(ROOT, 'src', 'pages', 'game', slug, `${page}.tsx`))) missing.push(`${slug}/${page}.tsx`);
       }
     }
     expect(missing).toEqual([]);
@@ -104,7 +104,7 @@ describe('按游戏拆入口后的源码隔离', () => {
     const problems: string[] = [];
     for (const slug of SLUGS) {
       for (const page of PAGES) {
-        const path = join(ROOT, 'game', slug, `${page}.tsx`);
+        const path = join(ROOT, 'src', 'pages', 'game', slug, `${page}.tsx`);
         const src = readIfExists(path);
         if (src === null) continue;
         const code = stripComments(src);
