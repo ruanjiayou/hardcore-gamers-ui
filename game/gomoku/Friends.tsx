@@ -1,22 +1,22 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
 import {
   getFriends, getRecentPlaymates, getFriendRequests, sendFriendRequest, acceptFriendRequest,
   rejectFriendRequest, cancelFriendRequest, removeFriend,
   type FriendUser, type FriendRequestItem, type RecentPlaymate,
-} from '../services/api';
-import { getSocket, ReceiveEvent } from '../services/socket';
-import { notificationManager } from '../components/Notifications';
-import '../styles/friends.css';
+} from '../../src/services/api';
+import { getSocket, ReceiveEvent } from '../../src/services/socket';
+import { notificationManager } from '../../src/components/Notifications';
+import { gameUrl, go } from '../../src/navigation';
+import '../../src/styles/friends.css';
+
+const slug = 'gomoku' as const;
 
 /**
  * 好友页（UI-068 / UI-071）：从游戏主页顶栏多人 icon 进入。
  * 主体是**玩家**（player_id）、按游戏隔离；申请 30min TTL，实时推送后自动刷新。
  */
 export const FriendsPage = observer(() => {
-  const { slug = '' } = useParams<{ slug: string }>();
-  const navigate = useNavigate();
   const [tab, setTab] = useState<'friends' | 'recent'>('friends');
   const [friends, setFriends] = useState<FriendUser[]>([]);
   const [recent, setRecent] = useState<RecentPlaymate[]>([]);
@@ -26,7 +26,6 @@ export const FriendsPage = observer(() => {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    if (!slug) return;
     try {
       const [f, p, r] = await Promise.all([getFriends(slug), getRecentPlaymates(slug), getFriendRequests(slug)]);
       if (f.data?.code === 0) setFriends(f.data.data?.list || []);
@@ -72,7 +71,7 @@ export const FriendsPage = observer(() => {
   return (
     <div className="friends-page">
       <header className="friends-header">
-        <button className="game-back is-close" onClick={() => navigate(-1)} aria-label="返回">×</button>
+        <button className="game-back is-close" onClick={() => go(gameUrl(slug))} aria-label="返回">×</button>
         <h2>👥 好友</h2>
       </header>
 

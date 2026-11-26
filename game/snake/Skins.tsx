@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
-import store from '../stores';
-import { getManifest, loadGameAssets, markEquipped } from '../services/assets';
-import { equipSkin, type AssetManifest, type AssetManifestItem } from '../services/api';
-import { notificationManager } from '../components/Notifications';
-import '../styles/skins.css';
+import store from '../../src/stores';
+import { getManifest, loadGameAssets, markEquipped } from '../../src/services/assets';
+import { equipSkin, type AssetManifest, type AssetManifestItem } from '../../src/services/api';
+import { notificationManager } from '../../src/components/Notifications';
+import { gameUrl, go } from '../../src/navigation';
+import '../../src/styles/skins.css';
+
+const slug = 'snake' as const;
 
 /** 皮肤页（UI-069）：manifest.skins 多行多列 grid，卡片底部「已拥有 / 获取」。 */
 export const SkinsPage = observer(() => {
-  const { slug = '' } = useParams<{ slug: string }>();
-  const navigate = useNavigate();
   const [manifest, setManifest] = useState<AssetManifest | null>(() => getManifest(slug) || null);
 
   useEffect(() => {
@@ -40,7 +40,7 @@ export const SkinsPage = observer(() => {
   return (
     <div className="skins-page">
       <header className="skins-header">
-        <button className="game-back is-close" onClick={() => navigate(`/game/${slug}`)} aria-label="返回">×</button>
+        <button className="game-back is-close" onClick={() => go(gameUrl(slug))} aria-label="返回">×</button>
         <h2>🎨 皮肤</h2>
       </header>
       <div className="skins-body">

@@ -1,21 +1,27 @@
 import React, { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { login } from '../services/api';
 import store from '../stores'
+import { go, lobbyUrl } from '../navigation';
 import { notificationManager } from '../components/Notifications';
 import '../styles/login.css';
 import '../styles/components.css';
 
 export function LoginPage() {
-  const navigate = useNavigate();
   const location = useLocation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // 从游戏页/房间页被拦下来的，登录后回原页面
+  // 从游戏页/房间页被拦下来的，登录后回原页面；只接受大厅入口下的路径
   const redirect = new URLSearchParams(location.search).get('redirect');
-  const goBack = () => navigate(redirect && redirect !== '/login' ? redirect : '/lobby', { replace: true });
+  const goBack = () => {
+    if (redirect && (redirect.startsWith('/lobby/') || redirect.startsWith('/lobby'))) {
+      go(redirect);
+    } else {
+      go(lobbyUrl());
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,7 +51,7 @@ export function LoginPage() {
 
   /** 游客访问：不再伪造游客身份，直接以未登录状态浏览大厅（进入游戏时再提示登录） */
   const handleGuest = () => {
-    navigate('/lobby', { replace: true });
+    go(lobbyUrl());
   };
 
   return (

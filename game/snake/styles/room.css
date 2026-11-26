@@ -1,0 +1,408 @@
+/* 从 src/styles/room.css 迁出的贪吃蛇房间专属样式（任务 9） */
+/* ===== 团队房间等待区（UI-072）：不显示地图，居中等待 + 开始按钮 ===== */
+.team-wait {
+  width: 100%;
+  height: 100%;
+  min-height: 40vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f7f8ff, #eef0fb);
+}
+.team-wait-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  max-width: 480px;
+}
+.team-wait-icon { font-size: 64px; line-height: 1; }
+.team-wait-inner h2 { margin: 0; font-size: 22px; color: #333; }
+.team-wait-hint { margin: 0; font-size: 13px; color: #7a7f99; line-height: 1.5; }
+.team-wait-players {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.team-wait-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #dfe3f5;
+  border-radius: 18px;
+  background: #fff;
+  color: #4a4f68;
+  font-size: 13px;
+}
+.team-wait-chip em {
+  font-style: normal;
+  font-weight: 700;
+  color: #667eea;
+}
+
+/* ===== 贪吃蛇 DOM UI 层：世界层只画蛇/食物，HUD/小地图/摇杆/按钮全是 DOM/CSS =====
+   根层 pointer-events:none，只有真正可点的控件（摇杆/加速/弹框按钮）单独打开 auto。 */
+.snake-dom-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.snake-dom-ui * {
+  box-sizing: border-box;
+}
+
+/* 帧率诊断浮层：URL 带 ?fps=1 时显示，用来在真机上核对帧率与画质档位 */
+.snake-fps {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(12, 12, 22, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #9ae6b4;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 左上角排行榜：对局中显示"分数 + 前 10 名"。
+   底色刻意压得很淡（0.38），可读性靠 text-shadow 兜住，尽量不挡战场。 */
+.snake-hud {
+  position: absolute;
+  left: calc(env(safe-area-inset-left, 0px) + 12px);
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  /* 右上角让给一整排按钮，榜单自己收窄，窄屏时也不越界 */
+  width: min(168px, calc(100vw - 24px));
+  padding: 7px 10px 9px;
+  border-radius: 12px;
+  background: rgba(14, 16, 28, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #eef0f8;
+  /* 淡底上的文字全靠投影撑住对比度 */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+.snake-hud-mode {
+  font-size: 11px;
+  font-weight: 700;
+  color: #c8cbe0;
+  margin-bottom: 3px;
+  letter-spacing: 0.02em;
+}
+.snake-hud-scores {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 5px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.snake-hud-score {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.snake-hud-players {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.snake-hud-players:empty {
+  display: none;
+}
+.snake-player-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 17px;
+  color: #b9bdd6;
+}
+.snake-player-row.me {
+  color: #fff;
+  font-weight: 700;
+}
+.snake-player-row.dead {
+  opacity: 0.45;
+}
+.snake-player-rank {
+  flex: 0 0 auto;
+  width: 14px;
+  text-align: right;
+  color: #8b8ba7;
+  font-variant-numeric: tabular-nums;
+}
+.snake-player-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.snake-player-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.snake-player-name.me {
+  color: #fff;
+  font-weight: 700;
+}
+.snake-player-score {
+  flex: 0 0 auto;
+  color: #eef0f8;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 右上角微缩地图（关闭键下方）：只画轮廓和一个代表自己的白点，底色同样压淡。
+   位置由 Scene2D 的 snakeMinimapLayout() 算好后写成 inline left/top。 */
+.snake-minimap {
+  position: absolute;
+  border-radius: 10px;
+  background: rgba(12, 14, 26, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.snake-minimap-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px #38bdf8, 0 0 8px rgba(56, 189, 248, 0.8);
+  will-change: transform;
+}
+
+/* 右下角加速按钮：conic-gradient 画冷却环 */
+.snake-boost {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  color: #8b8ba7;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: none;
+  transition: border-color 0.15s, transform 0.1s;
+}
+.snake-boost.ready {
+  border-color: #38bdf8;
+  color: #eef0f8;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.25);
+}
+/* 按住中：手指还按着就一直保持点亮 —— 不因身长被扣到下限而变灰 */
+.snake-boost.held {
+  transform: scale(1.03);
+  border-color: #7dd3fc;
+}
+.snake-boost.boosting {
+  transform: scale(1.06);
+}
+.snake-boost-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(24, 24, 36, 0.82);
+}
+/* 加速按钮上的闪电图标：按钮上不显示文字 */
+.snake-boost-icon {
+  position: relative;
+  z-index: 1;
+  width: 32%;
+  height: 32%;
+  color: #8b8ba7;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0));
+  transition: color 0.15s, filter 0.15s;
+  pointer-events: none;
+}
+.snake-boost.ready .snake-boost-icon {
+  color: #eef0f8;
+}
+.snake-boost.held .snake-boost-icon {
+  color: #7dd3fc;
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.75));
+}
+.snake-boost.boosting .snake-boost-icon {
+  color: #bae6fd;
+  filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.95));
+}
+
+/* 左下角虚拟摇杆：外圈 + 手柄，手柄用 transform 定位（松手回中，CSS 过渡） */
+.snake-joystick {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+  border-radius: 50%;
+  background: rgba(12, 14, 26, 0.44);
+  border: 2px solid rgba(150, 170, 230, 0.45);
+  transition: border-color 0.15s, background 0.15s;
+}
+.snake-joystick.active {
+  border-color: rgba(96, 165, 250, 0.85);
+  background: rgba(12, 14, 26, 0.6);
+}
+/* 8 个刻度点：绝对方向的参照 */
+.snake-joy-base {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+.snake-joy-base::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9%;
+  height: 9%;
+  border-radius: 50%;
+  background: rgba(226, 232, 248, 0.35);
+  transform: translate(-50%, -50%);
+}
+.snake-joy-base::after {
+  content: '';
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  background-image: radial-gradient(rgba(226, 232, 248, 0.35) 1.6px, transparent 1.7px);
+  background-size: calc(50% - 6px) calc(50% - 6px);
+  background-position: center center;
+  background-repeat: no-repeat;
+}
+.snake-joy-knob {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 48%;
+  height: 48%;
+  border-radius: 50%;
+  background: rgba(96, 165, 250, 0.72);
+  border: 1.5px solid rgba(226, 232, 248, 0.9);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  will-change: transform;
+  transition: transform 0.12s ease-out;
+}
+.snake-joystick.active .snake-joy-knob {
+  background: rgba(96, 165, 250, 0.95);
+  transition: none;
+}
+
+/* 底部操作提示 */
+.snake-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 14px;
+  background: rgba(12, 12, 22, 0.6);
+  color: rgba(226, 232, 248, 0.78);
+  font-size: 11px;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+
+/* 中央提示（等待 / 结束） */
+.snake-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.snake-notice-card {
+  min-width: 220px;
+  max-width: calc(100% - 40px);
+  padding: 20px 26px;
+  border-radius: 14px;
+  background: rgba(10, 10, 18, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+}
+.snake-notice-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #eef0f8;
+}
+.snake-notice-sub {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #8b8ba7;
+}
+/* 无敌不再有顶部文字提示：改成蛇头的半透明遮罩圆（画在 Canvas 里），
+   这里对应的 .snake-invincible-tip / .snake-overlay.snake-invincible 已删除。 */
+
+/* 死亡卡片：重生 / 退出，按钮可点 */
+.snake-death {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(330px, calc(100% - 40px));
+  padding: 22px 26px;
+  border-radius: 16px;
+  background: rgba(22, 22, 34, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  text-align: center;
+  pointer-events: auto;
+  z-index: 3;
+}
+.snake-death::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 14, 0.55);
+  z-index: -1;
+}
+.snake-death-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #f5f7ff;
+}
+.snake-death-score {
+  margin-top: 16px;
+  font-size: 13px;
+  color: rgba(160, 168, 190, 0.95);
+}
+.snake-death-note {
+  margin-top: 8px;
+  font-size: 13px;
+  color: rgba(160, 168, 190, 0.95);
+}
+.snake-death-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+}
+.snake-death-btn {
+  flex: 1;
+  height: 42px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(226, 232, 248, 0.92);
+  cursor: pointer;
+}
+.snake-death-btn.primary {
+  background: #3b82f6;
+  border-color: rgba(147, 197, 253, 0.85);
+  color: #fff;
+}
