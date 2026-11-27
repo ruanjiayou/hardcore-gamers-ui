@@ -1,15 +1,15 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 const PUBLIC_URL = '/lobby';
 const GAME_SLUGS = ['snake', 'gomoku', 'xiangqi', 'othello', 'chess', '2048', 'tetris'];
 
-// UI-077 dev 回退：将 /lobby/game/<slug>/* 的 HTML 导航请求重写到对应入口 HTML，
-// 使游戏内路由（如 /lobby/game/snake/room/abc）刷新后仍由该游戏的入口接管。
-// 生产环境的同名回退在 server/src/index.ts 中实现。
-// UI-079：源码入口迁到 src/pages/game/<slug>/，产物路径仍归一为 game/<slug>/index.html，
-// 保证服务端回退（public/lobby/game/<slug>/index.html）与用户 URL 不变。
+/**
+ * 把 src/pages/game/<slug>/index.html 的产物路径归一为 game/<slug>/index.html，
+ * 让服务端回退路径与用户 URL 保持不变。
+ */
 function gameHtmlOutputPath(): Plugin {
   const PREFIX = 'src/pages/game/';
   return {
@@ -29,9 +29,61 @@ function gameHtmlOutputPath(): Plugin {
   };
 }
 
-// UI-079：按构建产物生成 sw.js，预缓存 8 个 HTML 与全部 chunk。
-// HTML 走 stale-while-revalidate（游戏内路由映射到该游戏的 index.html）；静态资源 cache-first。
-// /api、/socket.io、/audio、/skins 不在 /lobby/ 下，天然不拦截。
+/** 从 HTML 抽 script/link 的资源 URL（产物是 /lobby/assets/...，dev 是 /src/...）。 */
+function extractHtmlAssets(html: string): string[] {
+  const scripts = Array.from(html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["']/g), m => m[1]);
+  const styles = Array.from(html.matchAll(/<link\b[^>]*\bhref=["']([^"']+)["'][^>]*>/g), m => m[0])
+    .filter(tag => /rel=["']stylesheet["']/.test(tag) || /\.css(?:[?#]|$)/.test(tag))
+    .map(tag => tag.match(/\bhref=["']([^"']+)["']/)![1]);
+  return Array.from(new Set([...scripts, ...styles]))
+    .map(url => url.startsWith('/') ? url : `${PUBLIC_URL}/${url}`);
+}
+
+/**
+ * 资源清单：key = 入口 HTML 缓存路径，value = [HTML, ...JS/CSS]。
+ * 转场进度层用它做真实进度；构建期与 dev 都产出 asset-manifest.json。
+ */
+function entryAssetManifest(): Plugin {
+  const devEntries: Array<[string, string]> = [
+    [`${PUBLIC_URL}/index.html`, resolve(__dirname, 'index.html')],
+    ...GAME_SLUGS.map(slug => [
+      `${PUBLIC_URL}/game/${slug}/index.html`,
+      resolve(__dirname, `src/pages/game/${slug}/index.html`)
+    ] as [string, string])
+  ];
+  return {
+    name: 'lobby-entry-asset-manifest',
+    enforce: 'post',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if ((req.url ?? '').split('?')[0] !== `${PUBLIC_URL}/asset-manifest.json`) return next();
+        const manifest: Record<string, string[]> = {};
+        for (const [key, file] of devEntries) {
+          const assets = extractHtmlAssets(readFileSync(file, 'utf8'))
+            .map(url => url.startsWith('/src/') ? `${PUBLIC_URL}${url}` : url);
+          manifest[key] = Array.from(new Set([key, ...assets]));
+        }
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify(manifest));
+      });
+    },
+    generateBundle(_options, bundle) {
+      const manifest: Record<string, string[]> = {};
+      for (const [fileName, file] of Object.entries(bundle)) {
+        if (file.type !== 'asset' || !fileName.endsWith('.html')) continue;
+        const key = `${PUBLIC_URL}/${fileName}`;
+        manifest[key] = Array.from(new Set([key, ...extractHtmlAssets(String(file.source))]));
+      }
+      this.emitFile({ type: 'asset', fileName: 'asset-manifest.json', source: JSON.stringify(manifest) });
+    }
+  };
+}
+
+/**
+ * Service Worker：网络优先，成功写缓存；失败才回落缓存并通知页面显示离线横幅。
+ * /lobby/loading?to= 这类加载路由刷新与游戏深链都映射到该入口的 index.html。
+ * 探测请求（lobby_probe）直连网络、不写缓存，避免随机 query 撑爆缓存。
+ */
 function serviceWorkerPrecache(): Plugin {
   return {
     name: 'lobby-sw-precache',
@@ -43,6 +95,7 @@ function serviceWorkerPrecache(): Plugin {
           (file.type === 'chunk' && file.fileName.endsWith('.js'))
         )
         .map(file => `${PUBLIC_URL}/${file.fileName}`);
+      urls.push(`${PUBLIC_URL}/asset-manifest.json`);
       const source = `const DATA = ${JSON.stringify({ version: Date.now(), urls })};
 const CACHE = 'lobby-' + DATA.version;
 const SHELL = new Set(DATA.urls);
@@ -64,30 +117,35 @@ self.addEventListener('activate', event => {
       .then(() => self.clients.claim())
   );
 });
+function offlineNotice() {
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    .then(function (clients) {
+      return Promise.all(clients.map(function (client) {
+        return client.postMessage({ type: 'lobby:offline-cache' });
+      }));
+    })
+    .catch(function () { return undefined; });
+}
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin || !url.pathname.startsWith('/lobby/')) return;
-  if (req.mode === 'navigate') {
-    const key = htmlKey(url.pathname);
-    event.respondWith(
-      caches.match(key).then(cached => {
-        const network = fetch(req).then(res => {
-          if (res && res.ok) caches.open(CACHE).then(cache => cache.put(key, res.clone()));
-          return res;
-        }).catch(() => cached || Response.error());
-        return cached || network;
-      })
-    );
-    return;
-  }
-  event.respondWith(
-    caches.match(req).then(cached => cached || fetch(req).then(res => {
-      if (res && res.ok) caches.open(CACHE).then(cache => cache.put(req, res.clone()));
-      return res;
-    }))
-  );
+  if (url.searchParams.has('lobby_probe')) return;
+  const key = req.mode === 'navigate' ? htmlKey(url.pathname) : req;
+  const network = fetch(req).then(function (res) {
+    if (!res || !res.ok) throw new Error('network response not ok');
+    const copy = res.clone();
+    return caches.open(CACHE)
+      .then(function (cache) { return cache.put(key, copy); })
+      .catch(function () { return undefined; })
+      .then(function () { return res; });
+  });
+  event.respondWith(network.catch(function () {
+    return offlineNotice().then(function () {
+      return caches.match(key).then(function (cached) { return cached || Response.error(); });
+    });
+  }));
 });
 `;
       this.emitFile({ type: 'asset', fileName: 'sw.js', source });
@@ -95,77 +153,75 @@ self.addEventListener('fetch', event => {
   };
 }
 
-// UI-080：8 个 HTML 共用内联黑幕——在 <head> 里消费标记，不等 React 包；文档 load 后淡出。
-function transitionCurtain(): Plugin {
-  const CURTAIN_KEY = 'lobby:curtain';
-  const snippet = `<script>
-(function () {
-  try {
-    var flag = sessionStorage.getItem('${CURTAIN_KEY}');
-    if (!flag || Date.now() - Number(flag) > 10000) return;
-    sessionStorage.removeItem('${CURTAIN_KEY}');
-    var root = document.documentElement;
-    root.classList.add('lobby-curtain-on');
-    var done = false;
-    var off = function () {
-      if (done) return;
-      done = true;
-      root.classList.add('is-fading');
-      setTimeout(function () { root.classList.remove('lobby-curtain-on', 'is-fading'); }, 200);
-      window.removeEventListener('load', off);
-    };
-    window.addEventListener('load', off, { once: true });
-    setTimeout(off, 5000);
-  } catch (e) {}
-})();
-</script>
-<style>
-html.lobby-curtain-on, html.lobby-curtain-on body { background: #000; }
-html.lobby-curtain-on::before {
+/**
+ * UI-091 首帧渐变：向 8 个 HTML 注入主题变量、常驻渐变层与 loading 刷新脚本。
+ * 渐变层用负 safe-area inset 保证 iOS 首帧就覆盖安全区；转场遮罩已移除。
+ */
+function lobbyEntryHead(): Plugin {
+  const style = `<style>
+:root {
+  --lobby-brand-from: #667eea;
+  --lobby-brand-to: #764ba2;
+  --lobby-page-gradient: linear-gradient(135deg, var(--lobby-brand-from, #667eea) 0%, var(--lobby-brand-to, #764ba2) 100%);
+}
+/* UI-096 首帧高度：与 CSS bundle 同值，CSS 到位前也不跳变 */
+html, body, #root { height: 100vh; height: 100dvh; }
+@media (display-mode: standalone) { html, body, #root { height: 100vh; } }
+/* 根元素纯色兜底（不可见），渐变层用负安全区 inset 首帧铺满 */
+html { background-color: var(--lobby-brand-from, #667eea); }
+html::before {
   content: '';
   position: fixed;
-  inset: 0;
-  z-index: 2147483647;
-  background: #000;
+  top: calc(-1 * env(safe-area-inset-top, 0px));
+  right: calc(-1 * env(safe-area-inset-right, 0px));
+  bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
+  left: calc(-1 * env(safe-area-inset-left, 0px));
+  z-index: 0;
+  background: var(--lobby-page-gradient);
   pointer-events: none;
-  transition: opacity 180ms ease;
 }
-html.lobby-curtain-on.is-fading::before { opacity: 0; }
+#root { position: relative; z-index: 1; }
 </style>`;
+  const script = `<script>
+(function () {
+  if (location.pathname === '/lobby/loading') {
+    var to = new URLSearchParams(location.search).get('to');
+    if (to && to.indexOf('/lobby/') === 0) location.replace(to);
+  }
+})();
+</script>`;
   return {
-    name: 'lobby-transition-curtain',
+    name: 'lobby-entry-head',
     transformIndexHtml: {
       order: 'pre',
       handler(html) {
-        return html.includes('</head>')
-          ? html.replace('</head>', `${snippet}\n  </head>`)
-          : `${snippet}\n${html}`;
+        const withStyle = html.includes('</head>')
+          ? html.replace('</head>', `${style}\n  </head>`)
+          : `${style}\n${html}`;
+        return withStyle.includes('</head>')
+          ? withStyle.replace('</head>', `${script}\n  </head>`)
+          : `${script}\n${withStyle}`;
       }
     }
   };
 }
 
+/** dev 回退：游戏内路由与预取的 index.html 请求都交给对应游戏入口。 */
 function gameHtmlFallback(): Plugin {
   return {
     name: 'game-html-fallback',
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
         if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-
         const url = (req.url ?? '').split('?')[0];
-        // UI-080：软导航 fetch 预取的是 index.html（Accept 不是 text/html），也要回退到入口 HTML
         const explicitHtml = /^\/lobby\/game\/[^/]+\/index\.html$/.test(url);
         if (!explicitHtml) {
           if (!req.headers.accept?.includes('text/html')) return next();
-          // 带扩展名的静态资源（如 /lobby/game/snake/assets/x.js）不改写
           if (/\.[^/]+$/.test(url)) return next();
         }
-
         const match = url.match(/^\/lobby\/game\/([^/]+)(\/.*)?$/);
         const slug = match?.[1];
-        // 未知 slug 不改写，交给 Vite 默认处理（SPA 回退或 404）
         if (!slug || !GAME_SLUGS.includes(slug)) return next();
-
         req.url = `${PUBLIC_URL}/src/pages/game/${slug}/index.html`;
         next();
       });
@@ -175,10 +231,15 @@ function gameHtmlFallback(): Plugin {
 
 export default defineConfig({
   base: PUBLIC_URL,
-  define: {
-    'process.env.PUBLIC_URL': JSON.stringify(PUBLIC_URL)
-  },
-  plugins: [react(), transitionCurtain(), gameHtmlOutputPath(), gameHtmlFallback(), serviceWorkerPrecache()],
+  define: { 'process.env.PUBLIC_URL': JSON.stringify(PUBLIC_URL) },
+  plugins: [
+    react(),
+    lobbyEntryHead(),
+    gameHtmlOutputPath(),
+    entryAssetManifest(),
+    gameHtmlFallback(),
+    serviceWorkerPrecache()
+  ],
   build: {
     outDir: 'lobby',
     sourcemap: false,

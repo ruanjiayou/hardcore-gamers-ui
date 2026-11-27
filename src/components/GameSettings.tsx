@@ -11,7 +11,7 @@ import '../styles/game-settings.css';
  * 弹框本体是受控的 GameSettingsDialog，游戏主页的入口已下沉到头像下拉菜单
  * 「⚙ 游戏设置」（UI-050），两边共用同一份弹框。
  * 把原先散落各处的配置收进一个对话框：
- * - 背景音乐（音量 / 开关 / 下一首）——只控 BGM，不影响落子等操作音
+ * - 背景音乐（音量 / 开关）——只控 BGM，不影响落子等操作音（UI-105：已移除「下一首」按钮）
  * - 资源包选择（无权限锁定默认包）
  * - **本游戏的外观分区**（按 manifest 动态渲染：分组名由资源表给，画风/音效按主题决定）
  * - 观战开关（房间等待态房主）
@@ -123,7 +123,6 @@ export const GameSettingsDialog = observer(({
             <button className="settings-btn" onClick={() => audio.setMuted(!audio.muted)}>
               {audio.muted ? '🔇 已关闭' : '🎵 播放中'}
             </button>
-            <button className="settings-btn" onClick={() => audio.nextBgm()}>下一首</button>
           </div>
           <label className="settings-volume">
             音量

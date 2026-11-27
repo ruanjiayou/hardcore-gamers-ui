@@ -521,6 +521,7 @@
 .mode-buttons {
   display: flex;
   flex-direction: row;
+  justify-content: center;
   gap: 10px;
   width: 100%;
   overflow-x: auto;
@@ -535,22 +536,25 @@
   flex: 0 0 auto;
   min-width: 128px;
   padding: 12px 22px;
-  border: 1px solid #d9dded;
-  border-radius: 12px;
-  background: #fff;
-  color: #4a4f68;
-  -webkit-text-fill-color: #4a4f68;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background .16s ease, border-color .16s ease;
-}
-.mode-btn:hover { background: #f2f4ff; border-color: #b9c1f0; }
-.mode-btn.active {
+  /* border: 1px solid transparent; */
+  border-radius: 10px;
+  /* UI-102：两枚玩法按钮统一紫蓝渐变底，选中态再提亮 */
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #fff;
   -webkit-text-fill-color: #fff;
-  border-color: transparent;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.mode-btn:hover { filter: brightness(1.06); }
+.mode-btn.active {
+  background: linear-gradient(135deg, #7b8cf0 0%, #8b5cf6 100%);
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 6px 18px rgba(102, 126, 234, 0.4);
+  transform: translateY(-1px);
 }
 .mode-btn:disabled { opacity: .6; cursor: not-allowed; }
 .mode-label { white-space: nowrap; }

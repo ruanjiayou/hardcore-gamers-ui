@@ -1,27 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import store from '../stores'
-import { go, lobbyUrl, loginUrl, playerUrl, profileUrl, userUrl } from '../navigation';
-import { GameSettingsDialog } from './GameSettings';
+import { go, lobbyUrl, loginUrl, profileUrl, userUrl } from '../navigation';
 import '../styles/navbar.css';
 
 /**
- * 右上角用户区：登录后是一个无边框的头像按钮，点击展开菜单（昵称在第一排）；
- * 未登录显示同一个头像 + 登录入口。
- * 连接状态不再用独立的小绿点：在线时头像带绿色辉光，断线时头像整体转黑白、
- * 沿一条**闪电形折线**竖着裂成两半（只有一条裂缝，不是多块碎片）。
- * 大厅导航栏与游戏页/房间页标题栏共用，所有页面观感一致。
+ * 大厅右上角用户区（user 表，UI-109）：登录后头像按钮展开用户菜单，
+ * 只有「个人中心 /lobby/me」「公开主页 /lobby/user/:user_id」「退出登陆」；
+ * 游戏入口的玩家菜单在 `components/PlayerMenu.tsx`（player 表），两者不共文件。
  *
- * scope：区分下拉里的第一项叫法（UI-050）——
- *   'lobby' 大厅 →「👤 个人中心」；'game' 单个游戏里 →「👤 玩家中心」。
- * showName：游戏主页顶栏要求昵称紧挨头像 + 头像右下角等级 badge（UI-067）；
- *   大厅仍保持只有头像（UI-050），昵称只在下拉菜单第一排。
+ * 连接状态不用独立小绿点：在线时头像带绿色辉光，断线时头像整体转黑白、
+ * 沿一条**闪电形折线**竖着裂成两半（只有一条裂缝，不是多块碎片）。
  */
-export const UserMenu = observer(({ scope = 'lobby', profileGame = '', showName = false }: {
-  scope?: 'lobby' | 'game', profileGame?: string, showName?: boolean
-}) => {
+export const UserMenu = observer(() => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [avatarBroken, setAvatarBroken] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const connected = store.ui.socketConnected;
@@ -47,10 +39,7 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '', showName 
   };
 
   const hasAvatar = !!avatarUrl && !avatarBroken;
-  // 外层再包一层 relative：status-avatar 自己 overflow:hidden（裁圆头像），
-  // 等级 badge 必须放在它外面才不会被裁掉（UI-067）
   const statusAvatar = (
-    <span className="avatar-with-level">
     <span className={`status-avatar ${connected ? 'is-connected' : 'is-offline'}`} title={connected ? '已连接' : '连接已断开'}>
       {hasAvatar && connected && (
         <img className="avatar-image" src={avatarUrl} alt="" onError={() => setAvatarBroken(true)} />
@@ -71,8 +60,6 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '', showName 
         </svg>
       )}
     </span>
-    {showName && <em className="avatar-level-badge">Lv.{store.game.player?.level ?? 1}</em>}
-    </span>
   );
 
   return (
@@ -86,7 +73,6 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '', showName 
             aria-expanded={dropdownOpen}
           >
             {statusAvatar}
-            {showName && <span className="user-button-name">{name}</span>}
           </button>
 
           {dropdownOpen && (
@@ -96,46 +82,24 @@ export const UserMenu = observer(({ scope = 'lobby', profileGame = '', showName 
                 <span className="dropdown-identity-tag">玩家</span>
               </div>
               <div className="dropdown-divider"></div>
-              {/* 单个游戏里叫「玩家中心」，大厅里叫「个人中心」（UI-050）。
-                  从某个游戏进去时带上 game 参数：玩家中心里的「公开主页」要锁到本游戏。 */}
-              <div
-                className="dropdown-item"
-                onClick={() => { setDropdownOpen(false); go(profileGame ? profileUrl() + '?game=' + profileGame : profileUrl()); }}
-              >
-                <span>{scope === 'game' ? '👤 玩家中心' : '👤 个人中心'}</span>
+              <div className="dropdown-item" onClick={() => { setDropdownOpen(false); go(profileUrl()); }}>
+                <span>👤 个人中心</span>
               </div>
-              {/* 公开主页：在某个游戏主页点开时锁定该游戏（只显示这个游戏的战绩/记录） */}
               <div
                 className="dropdown-item"
                 onClick={() => {
                   setDropdownOpen(false);
                   const id = store.auth.user?._id;
-                  if (id) go(profileGame ? playerUrl(profileGame, id) : userUrl(id));
+                  if (id) go(userUrl(id));
                 }}
               >
-                <span>📊 {profileGame ? '本游戏战绩' : '公开主页'}</span>
+                <span>📊 公开主页</span>
               </div>
-              {/* 游戏设置：游戏主页的设置入口（原右下角悬浮齿轮已删，UI-050） */}
-              {scope === 'game' && (
-                <div
-                  className="dropdown-item"
-                  onClick={() => { setDropdownOpen(false); setSettingsOpen(true); }}
-                >
-                  <span>⚙ 游戏设置</span>
-                </div>
-              )}
-              {/* 语音包/背景音乐已收进游戏设置弹框，用户菜单不再重复入口 */}
-              <div
-                className="dropdown-item danger"
-                onClick={handleLogout}
-              >
+              <div className="dropdown-item danger" onClick={handleLogout}>
                 <span>🚪 退出登陆</span>
               </div>
             </div>
           )}
-
-          {/* 设置弹框与顶栏齿轮共用同一个组件（UI-050）；外观分区按当前游戏走 */}
-          <GameSettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} game={profileGame} />
         </div>
       ) : (
         /* 游客：只显示登录按钮。

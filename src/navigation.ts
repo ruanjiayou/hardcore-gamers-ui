@@ -14,6 +14,28 @@ const WARM_NAV_KEY = 'lobby:warm-nav';
 const WARM_NAV_TTL = 10_000;
 const MIN_LOADING_MS = 1000;
 
+/**
+ * UI-100：无尽匹配成功 → 跳转房间页时打标记，房间页首帧就知道这是竞技场，
+ * 直接进沉浸 canvas，避免房间壳/玩家列表闪一下。一次性消费，不影响直接打开房间地址。
+ */
+const ARENA_ENTRY_KEY = 'lobby:arena-entry';
+
+export function markArenaEntry(roomId: string): void {
+  if (typeof sessionStorage === 'undefined') return;
+  try { sessionStorage.setItem(ARENA_ENTRY_KEY, roomId); } catch { /* 隐私模式忽略 */ }
+}
+
+export function consumeArenaEntry(roomId?: string): boolean {
+  if (typeof sessionStorage === 'undefined') return false;
+  try {
+    const stored = sessionStorage.getItem(ARENA_ENTRY_KEY);
+    sessionStorage.removeItem(ARENA_ENTRY_KEY);
+    return !!stored && (!roomId || stored === roomId);
+  } catch {
+    return false;
+  }
+}
+
 // 纯字符串拼接：每一段都去掉首尾斜杠，避免出现 //
 function joinPath(base: string, ...parts: Array<string | undefined>): string {
   const tail = parts
@@ -51,6 +73,19 @@ export function isBackToLobby(currentPathname: string, targetUrl: string): boole
   const origin = typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
   const target = new URL(targetUrl, origin);
   return entryRootOf(currentPathname) !== LOBBY && entryRootOf(target.pathname) === LOBBY;
+}
+
+/**
+ * UI-104：游戏入口 → 大厅子页（/me、/user/:id、/login）。
+ * 与「关游戏回大厅」不同，这些跳转必须保留历史，浏览器返回才能回到刚离开的游戏页。
+ * 大厅根（/lobby/）不算子页：它走 isBackToLobby 的 replace 分支。
+ */
+export function isLobbySubpage(currentPathname: string, targetUrl: string): boolean {
+  if (!isBackToLobby(currentPathname, targetUrl)) return false;
+  const origin = typeof window === 'undefined' ? 'http://localhost' : window.location.origin;
+  const target = new URL(targetUrl, origin);
+  const sub = target.pathname.slice(LOBBY.length).replace(/^\/+|\/+$/g, '');
+  return sub === 'me' || sub === 'login' || sub.startsWith('user/');
 }
 
 /** 同入口内跳转用 react-router push，不必换文档。 */
@@ -238,13 +273,20 @@ export async function softGo(url: string): Promise<void> {
   }
 
   const back = isBackToLobby(window.location.pathname, target.pathname);
+  const subpage = isLobbySubpage(window.location.pathname, target.pathname);
   navigating = true;
   try {
     if (back) {
-      // 关游戏：无进度页、不强制 1s，但同样先预取完成才换文档
+      // 关游戏 / 跳大厅子页：无进度页、不强制 1s，但同样先预取完成才换文档
       await prefetchTarget(target.pathname);
       markWarmNav();
-      window.location.replace(url);
+      if (subpage) {
+        // UI-104：玩家中心等子页保留历史，返回按钮（navigate(-1)）才能回到游戏页
+        window.location.assign(url);
+      } else {
+        // 关游戏：replace 掉游戏文档，避免浏览器返回又回到游戏
+        window.location.replace(url);
+      }
       return;
     }
     // 进游戏：先 push 加载路由并显示真实进度

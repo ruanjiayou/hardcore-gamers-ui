@@ -130,6 +130,8 @@ export const ReceiveEvent = {
   PlayerKicked: 'room:player-kicked',
   TransfereeOwner: 'room:transferee-owner',
   SettingsUpdated: 'room:settings-updated',
+  // 团队合局池状态（SB-064）：还需几支队伍才开局
+  TeamMatchStatus: 'room:team-match-status',
 } as const;
 export const SendoutEvent = {
   KickPlayer: 'room:kick-player',

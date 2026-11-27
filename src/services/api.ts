@@ -139,6 +139,44 @@ export function updateProfile(payload: { nickname?: string, avatar?: string, ema
   return apiClient.put<ApiResult<any>>('/users/profile', payload);
 }
 
+// ===== 玩家中心 / 玩家公开主页（player 表，按游戏隔离，UI-107/108 / SB-065） =====
+
+/** 单个 player 的只读资料（player 表，不含 user 的邮箱/手机） */
+export interface PlayerProfileData {
+  player_id: string;
+  nickname: string;
+  avatar: string;
+  level: number;
+  score: number;
+  exp: number;
+  boards?: Record<string, number>;
+  stats: { matches: number, winners: number, draws: number, flees: number };
+  win_rate: number;
+}
+
+/** 玩家公开主页：按 player_id + 游戏取（只读） */
+export function getPlayerProfile(slug: string, player_id: string) {
+  return apiClient.get<ApiResult<{ player: PlayerProfileData }>>(`/players/${slug}/profile/${player_id}`);
+}
+
+/** 玩家公开主页的对局记录：按 player_id + 游戏取（与 user 版按 user_id 跨游戏区分） */
+export function getPlayerRecords(slug: string, player_id: string, skip = 0, limit = 20) {
+  return apiClient.get<ApiResult<{ total: number, list: GameRecord[] }>>(
+    `/players/${slug}/profile/${player_id}/records`,
+    { params: { skip, limit } },
+  );
+}
+
+/** 玩家中心：按 user_id+game 取自己的 player（需 Bearer） */
+export function getMyPlayerProfile(slug: string) {
+  return apiClient.get<ApiResult<{ player: PlayerProfileData }>>(`/players/${slug}/me`);
+}
+
+/** 玩家中心：只改本游戏 player 的昵称/头像，不回写 user 表 */
+export function updateMyPlayerProfile(slug: string, payload: { nickname?: string, avatar?: string }) {
+  return apiClient.put<ApiResult<{ player: PlayerProfileData }>>(`/players/${slug}/me`, payload);
+}
+
 export function changePassword(old_pass: string, new_pass: string) {
   return apiClient.post<ApiResult<boolean>>('/users/password', { old_pass, new_pass });
 }

@@ -18,9 +18,12 @@ import { GameHeader } from '../../../components/GameHeader';
 import { LoginRequiredPanel } from '../../../components/LoginRequired'
 import { getFriends, getRecentPlaymates, type FriendUser } from '../../../services/api';
 import { RoomStatus } from '../../../constant'
-import { gameUrl, go, lobbyUrl } from '../../../navigation';
+import { gameUrl, go, lobbyUrl, consumeArenaEntry } from '../../../navigation';
 
 const slug = 'snake' as const;
+
+/** 团队房座位卡数量：一间队房 = 1 队 = 最多 5 人（GM-snake-36） */
+const TEAM_SEAT_COUNT = 5;
 
 // 落子音节流：同一帧多个动作只播一次，避免批量快照把音效叠成噪音
 let lastMoveSfxAt = 0;
@@ -28,6 +31,8 @@ let lastMoveSfxAt = 0;
 const RoomPage = observer(() => {
   const { room_id } = useParams<{ room_id: string; }>();
   const local = useLocalObservable(() => ({
+    // UI-100：竞技场匹配跳转时打的一次性标记，首帧即沉浸，避免房间壳闪现
+    arenaEntry: consumeArenaEntry(room_id),
     showLeaveDialog: false,
     // 顶栏右上邀请下拉：好友 ∪ 最近同玩 + 邀请中标记
     showFriends: false,
@@ -44,9 +49,13 @@ const RoomPage = observer(() => {
     tcTotalMin: 10,
     tcSaving: false,
     tick: 0, // 每秒自增，驱动倒计时重渲染
+    // 团队合局池状态（SB-064）：还需几支队伍才开局
+    teamReadyNeed: 0,
     // 本局已结束（组队模式认输/自我淘汰后）：退出沉浸对局，回到房间界面
     endedMatch: false,
-    setV(key: 'showLeaveDialog' | 'showPanel' | 'showFriends' | 'friends' | 'friendsLoading' | 'inviting' | 'match_id' | 'loading' | 'tcEnabled' | 'tcStepSec' | 'tcTotalMin' | 'tcSaving' | 'tick' | 'endedMatch', v: any) {
+    // GM-snake-37：游戏逻辑还没加载好时，暂存服务端下发的局面，避免 ACK 被静默丢弃
+    pendingState: null as any,
+    setV(key: 'arenaEntry' | 'showLeaveDialog' | 'showPanel' | 'showFriends' | 'friends' | 'friendsLoading' | 'inviting' | 'match_id' | 'loading' | 'tcEnabled' | 'tcStepSec' | 'tcTotalMin' | 'tcSaving' | 'tick' | 'endedMatch' | 'teamReadyNeed' | 'pendingState', v: any) {
       // @ts-ignore - 动态字段赋值
       local[key] = v;
     }
@@ -85,9 +94,8 @@ const RoomPage = observer(() => {
       const changed = !!data.match_id && data.match_id !== local.match_id;
       local.setV('match_id', data.match_id)
       if (changed) {
-        socketEvents.excute(SendoutEvent.GetMatchState, { match_id: data.match_id, game_slug: slug }, (state: any) => {
-          gameManager.game?.logic.setState(state);
-        });
+        // GM-snake-37：ACK 可能早于 GameCanvas 的异步 load()，交给 applyState 暂存
+        loadState({ match_id: data.match_id, game_slug: slug });
       }
       // 读取房间计时配置（开局前双方可改）
       const tc = room?.settings?.timeControl;
@@ -192,6 +200,23 @@ const RoomPage = observer(() => {
     // 固定回游戏主页：用 history 回退可能回到已解散的房间地址
     go(gameUrl(slug));
   }
+  /** 团队房座位卡 × 踢人：服务端广播 room:player-kicked，各方同步移除成员 */
+  const onPlayerKicked = (data: { player_id: string }) => {
+    const room = store.room.roomInfo;
+    const member = (room?.members || []).find((m: any) => m._id === data.player_id);
+    if (member) {
+      notificationManager.show(`玩家 ${(member as any).nickname || '玩家'} 已被移出房间`);
+    }
+    store.room.setCurrentRoom({
+      ...room,
+      members: (room?.members || []).filter((m: any) => m._id !== data.player_id),
+    });
+  }
+  /** 团队合局池状态（SB-064）：刷新「还需 N 队」提示 */
+  const onTeamMatchStatus = (data?: { room_id?: string; ready_rooms?: number; need?: number }) => {
+    if (data?.room_id && data.room_id !== room_id) return;
+    local.setV('teamReadyNeed', data?.need ?? 0);
+  }
   useEffect(() => {
     if (!room_id) {
       go(lobbyUrl());
@@ -238,6 +263,8 @@ const RoomPage = observer(() => {
     socket.on(ReceiveEvent.SettingsUpdated, onSettingsUpdated);
     // 房主离开/解散房间后，房间内其他人同步退出
     socket.on(ReceiveEvent.RoomDisband, onRoomDisband);
+    socket.on(ReceiveEvent.PlayerKicked, onPlayerKicked);
+    socket.on(ReceiveEvent.TeamMatchStatus, onTeamMatchStatus);
     return () => {
       clearInterval(ticker);
       // 组件卸载（返回主页 / 浏览器后退 / 刷新）时也同步一次分数；服务端 disconnect 另有兜底
@@ -258,6 +285,8 @@ const RoomPage = observer(() => {
       socket.off(ReceiveEvent.RoomReady, onRoomReady);
       socket.off(ReceiveEvent.SettingsUpdated, onSettingsUpdated);
       socket.off(ReceiveEvent.RoomDisband, onRoomDisband);
+      socket.off(ReceiveEvent.PlayerKicked, onPlayerKicked);
+      socket.off(ReceiveEvent.TeamMatchStatus, onTeamMatchStatus);
     };
   }, [room_id]);
   // 兜底：进房后迟迟拿不到"进行中的对局"（match_id 仍为空）就重拉一次房间详情。
@@ -267,10 +296,21 @@ const RoomPage = observer(() => {
     const timer = setTimeout(() => init(room_id), 2000);
     return () => clearTimeout(timer);
   }, [room_id, local.match_id]);
+  /** GM-snake-37：把局面灌进逻辑；逻辑没就绪就暂存，等 GameCanvas onReady 后消费 */
+  const applyState = (state: any): boolean => {
+    if (!state) return false;
+    const logic = gameManager.game?.logic as any;
+    if (!logic) {
+      local.setV('pendingState', state);
+      return false;
+    }
+    logic.setState(state);
+    return true;
+  }
   const loadState = (data: { match_id: string, game_slug?: string }) => {
-    console.log(data, '加载对局数据')
+    if (!data.match_id) return;
     socketEvents.excute(SendoutEvent.GetMatchState, data, (state: any) => {
-      gameManager.game?.logic.setState(state)
+      applyState(state);
     });
   }
   const handleAddRobot = () => {
@@ -281,6 +321,13 @@ const RoomPage = observer(() => {
       } else {
         notificationManager.show(message || '添加机器人失败', 'warning')
       }
+    });
+  }
+  /** 团队房座位卡 × 踢人：仅房主等待态可见（服务端也会校验身份） */
+  const handleKickPlayer = (playerId: string, nickname: string) => {
+    if (!room_id) return;
+    socketEvents.excute(SendoutEvent.KickPlayer, { room_id, player_id: playerId }, (success: boolean, message?: string) => {
+      notificationManager.show(success ? `已移出 ${nickname}` : (message || '踢出失败'), success ? 'success' : 'warning');
     });
   }
   /** 顶栏邀请下拉（UI-072/074）：打开时拉好友 ∪ 最近同玩，去重、排除已在房的 */
@@ -317,6 +364,9 @@ const RoomPage = observer(() => {
     socketEvents.excute(SendoutEvent.StartGame, { room_id, player_id: store.game.player_id }, (success: boolean, message?: string) => {
       if (!success) {
         notificationManager.show(message || '人数不足，无法开始游戏', 'warning')
+      } else if (message) {
+        // 团队房凑队中：服务端回「还需 N 支队伍」
+        notificationManager.show(message, 'success')
       }
     });
   }
@@ -373,8 +423,13 @@ const RoomPage = observer(() => {
       init(room_id);
     });
   };
-  /** 关闭按钮的统一入口：按场景决定是"结束本局"还是"退出房间" */
+  /** 关闭按钮的统一入口：按场景决定是"结束本局""解散房间"还是"退出/离开房间" */
   const handleExit = () => {
+    // UI-101：团队房房主的主按钮就是「解散房间」，走解散而非离开
+    if (exitIntent.kind === 'disband-room') {
+      handleDisband();
+      return;
+    }
     if (exitIntent.endsMatch) {
       handleEndGame();
       return;
@@ -473,33 +528,40 @@ const RoomPage = observer(() => {
     : (gameInfo?.mode ?? ((gameInfo?.numbers?.max ?? 2) <= 1 ? 'solo' : 'room')) === 'solo';
   // 实时对局（团队模式贪吃蛇）：认输 = 自我淘汰
   const isRealtimeGame = roomVariant === 'team';
-  // 团队房间等待/结束态（UI-072）：不显示地图，改等待区 + 开始按钮；对局进行中才显示画布
-  const showTeamWait = isRealtimeGame && store.room.status !== RoomStatus.playing;
   // 常驻竞技场（贪吃蛇无尽）：进房自动开局，死了自动重生，随时可以退出（不算逃跑）。
   // 判定看房间自己的 settings.arena 标记（建桌时按玩法属性写入），不写死玩法名。
-  const isEndlessArena = store.room.roomInfo?.settings?.arena === true;
-  // 官方无尽桌没有"开始游戏"：进房即开局
-  const autoStarted = isEndlessArena && !!store.room.roomInfo?.official;
+  const isEndlessArena = local.arenaEntry || store.room.roomInfo?.settings?.arena === true;
+  // 官方无尽桌没有"开始游戏"：进房即开局（匹配跳转的标记等同于官方桌，首帧即沉浸）
+  const autoStarted = isEndlessArena && (local.arenaEntry || !!store.room.roomInfo?.official);
+  // 团队房间等待/结束态（UI-072）：不显示地图，改等待区 + 开始按钮；对局进行中才显示画布
+  // 竞技场官方房自动开局，不走等待卡片（UI-098）
+  const showTeamWait = isRealtimeGame && store.room.status !== RoomStatus.playing && !autoStarted;
   const clock = store.room.clock;
-  // 关闭按钮的语义按场景分化：单机=退出游戏 / 官方房=退出房间 / 组队对局中=结束游戏回房间
+  // 解散按钮仅自建非官方房的房主显示；官方房/他人房间/临时房/竞技场只能"退出"
+  const isOwner = store.room.roomInfo?.owner_id === store.game.player_id;
+  const canDisband = isOwner && !store.room.roomInfo?.official && !store.room.roomInfo?.transient && !isEndlessArena;
+  // 关闭按钮的语义按场景分化：单人=退出游戏 / 无尽=退出房间 / 团队房主=解散房间、非房主=离开房间 / 对局中=结束游戏
   const exitIntent = resolveExitIntent({
     isSoloGame,
     roomStatus: store.room.status || '',
     isEndlessArena,
     endedMatch: local.endedMatch,
+    isTeamRoom: isRealtimeGame,
+    canDisband: canDisband,
   });
-  // 解散按钮仅自建非官方房的房主显示；官方房/他人房间/临时房只能"退出"
-  const isOwner = store.room.roomInfo?.owner_id === store.game.player_id;
-  const canDisband = isOwner && !store.room.roomInfo?.official && !store.room.roomInfo?.transient;
   // 添加人机：仅多人对战、等待态、房主可见
   const canAddRobot = !isSoloGame && !isEndlessArena && store.room.status === RoomStatus.waiting && isOwner;
+  // UI-099：座位卡右上 × 踢人（房主 + 等待态，服务端也会校验）
+  const canKickSeat = canAddRobot;
+  const teamReadyNeed = isRealtimeGame ? local.teamReadyNeed : 0;
   // 邀请好友：只在**房间**（等待/未开局）能邀请，对弈中不能再拉人（UI-055）
   const canInvite = !isSoloGame && !store.room.roomInfo?.transient && !!room_id
     && !!store.room.roomInfo?._id
     && store.room.status !== RoomStatus.playing;
   // 设置弹框的房间配置：观战（等待态房主）+ 计时（象棋等待态）
   // 对局中切全屏沉浸：棋盘铺满视口，房间操作收进右上角悬浮按钮
-  const immersive = store.room.status === RoomStatus.playing && !local.endedMatch;
+  // 沉浸对局：竞技场官方房（autoStarted）直接全屏，跳过等待中间态（UI-098）
+  const immersive = (autoStarted || store.room.status === RoomStatus.playing) && !local.endedMatch;
   // 顶栏右上角邀请好友下拉（UI-072）：好友主体是 player_id，点一下直接发邀请
   const inviteExtra = canInvite ? (
     <div className="header-invite">
@@ -549,7 +611,7 @@ const RoomPage = observer(() => {
       {!immersive && (
         <GameHeader
           title={gameInfo?.title || slug}
-          subtitle={store.room.roomInfo?.name || variantInfo?.label || ''}
+          subtitle={isRealtimeGame ? variantInfo?.label || '' : store.room.roomInfo?.name || variantInfo?.label || ''}
           mode="room"
           closeLabel={exitIntent.title}
           extra={inviteExtra}
@@ -566,19 +628,52 @@ const RoomPage = observer(() => {
             <div className="team-wait">
               <div className="team-wait-inner">
                 <div className="team-wait-icon" aria-hidden>🐍</div>
-                <h2>{store.room.roomInfo?.name || variantInfo?.label || '团队模式'}</h2>
-                <p className="team-wait-hint">邀请好友组队，准备好后由房主开始，所有人一起进入对局</p>
-                <div className="team-wait-players">
-                  {store.room.players.map((p: any) => (
-                    <span className="team-wait-chip" key={p._id}>
-                      {p.team && <em>{p.team}</em>}
-                      {p.nickname || '玩家'}
-                      {p._id === store.room.roomInfo?.owner_id ? ' 👑' : ''}
-                    </span>
-                  ))}
+                {/* UI-099：5 个横向座位卡（上头像下昵称），队伍开局才由服务端分配，房里不显示队名 */}
+                <div className="team-seat-row">
+                  {Array.from({ length: TEAM_SEAT_COUNT }).map((_, i) => {
+                    const p = store.room.players[i] as any;
+                    if (!p) {
+                      return (
+                        <div className="team-seat empty" key={`seat-${i}`}>
+                          <div className="team-seat-avatar" aria-hidden>—</div>
+                          <div className="team-seat-name">空位 {i + 1}</div>
+                        </div>
+                      );
+                    }
+                    const isMe = p._id === store.game.player_id;
+                    return (
+                      <div className="team-seat occupied" key={p._id}>
+                        {canKickSeat && !isMe && (
+                          <button
+                            className="team-seat-kick"
+                            title={`移出 ${p.nickname || '玩家'}`}
+                            aria-label={`移出 ${p.nickname || '玩家'}`}
+                            onClick={() => handleKickPlayer(p._id, p.nickname || '玩家')}
+                          >×</button>
+                        )}
+                        <div className="team-seat-avatar" aria-hidden>{p.avatar || '👤'}</div>
+                        <div className="team-seat-name">{p.nickname || '玩家'}{isMe ? '（你）' : ''}</div>
+                        {p._id === store.room.roomInfo?.owner_id && <span className="team-seat-owner" aria-label="房主">👑</span>}
+                      </div>
+                    );
+                  })}
+                  {/* 🫱 添加人机：放在新玩家列表位置（5 座之后），仅房主等待态可见 */}
+                  {canAddRobot && (
+                    <button
+                      className="team-seat add-robot team-seat-add-robot"
+                      title="添加人机"
+                      aria-label="添加人机"
+                      onClick={handleAddRobot}
+                    >
+                      <span className="team-seat-avatar" aria-hidden>🫱</span>
+                      <span className="team-seat-name">添加人机</span>
+                    </button>
+                  )}
                 </div>
                 {store.room.status === RoomStatus.waiting && !autoStarted && isOwner && (
-                  <button className="board-center-btn" onClick={handleStartGame}>▶ 开始游戏</button>
+                  <button className="board-center-btn" onClick={handleStartGame}>
+                    {teamReadyNeed > 0 ? `▶ 开始匹配（还需 ${teamReadyNeed} 队）` : '▶ 开始游戏'}
+                  </button>
                 )}
                 {store.room.status === RoomStatus.waiting && !autoStarted && !isOwner && (
                   <p className="team-wait-hint">等待房主开始游戏…</p>
@@ -605,7 +700,13 @@ const RoomPage = observer(() => {
                       // 死亡弹框的「退出」：交给房间页走正常离房流程
                       const logic: any = gameManager.game?.logic
                       logic?.on?.('exit', () => handleLeaveRoom())
-                      loadState({ game_slug: slug, match_id: local.match_id, })
+                      // GM-snake-37：先把加载期间暂存的局面灌进去（避免卡在「连接中…」），
+                      // 再按 match_id 补拉一次权威状态；后续仍由 20Hz 快照刷新
+                      if (local.pendingState) {
+                        logic?.setState(local.pendingState)
+                        local.setV('pendingState', null)
+                      }
+                      loadState({ game_slug: slug, match_id: local.match_id })
                     });
                   }
                 }}
@@ -625,16 +726,18 @@ const RoomPage = observer(() => {
           )}
           </div>
         {immersive ? (
-          /* 全屏对局 HUD：左上让给排行榜，右上是「玩家与聊天 / 关闭」（对战页不显示设置，UI-070），
-             小地图右对齐压在关闭键正下方（位置由 Scene2D 的 snakeMinimapLayout 算）。 */
+          /* 全屏对局 HUD：左上让给排行榜，右上是对战操作；小地图右对齐压在关闭键正下方。
+             UI-100：无尽竞技是纯 canvas 对战，不渲染玩家/聊天抽屉按钮；团队对局仍保留 ☰。 */
           <div className="immersion-hud">
             <div className="hud-corner hud-top-right">
-              <button
-                className="hud-btn hud-panel-toggle"
-                title="玩家与聊天"
-                aria-label="玩家与聊天"
-                onClick={() => local.setV('showPanel', !local.showPanel)}
-              >☰</button>
+              {!isEndlessArena && (
+                <button
+                  className="hud-btn hud-panel-toggle"
+                  title="玩家与聊天"
+                  aria-label="玩家与聊天"
+                  onClick={() => local.setV('showPanel', !local.showPanel)}
+                >☰</button>
+              )}
               <button
                 className="hud-btn hud-close"
                 title="关闭 / 退出"
@@ -642,14 +745,14 @@ const RoomPage = observer(() => {
                 onClick={() => local.setV('showLeaveDialog', true)}
               >×</button>
             </div>
-            {local.showPanel && (
+            {local.showPanel && !isEndlessArena && (
               <div className="hud-drawer">
                 <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} />
                 <Chat room_id={room_id!} />
               </div>
             )}
           </div>
-        ) : (
+        ) : !isSoloGame && !isEndlessArena ? (
         <div className='game-info'>
           <div className="room-actions">
             {/* 添加人机已移到玩家列表标题右侧 */}
@@ -669,14 +772,11 @@ const RoomPage = observer(() => {
               <button onClick={requestSurrender} className="danger">认输</button>
             </Fragment>}
           </div>
-          {!isSoloGame ? (
-            <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: '0.5rem' }}>
-              <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} />
-              <Chat room_id={room_id!} />
-            </div>
-          ) : null}
+          {/* UI-100：团队房顶部已有 5 座卡，底部不再重复玩家列表；聊天保留 */}
+          {!isRealtimeGame && <PlayerList room_id={room_id!} showAddRobot={canAddRobot} onAddRobot={handleAddRobot} />}
+          <Chat room_id={room_id!} />
         </div>
-        )}
+        ) : null}
         </div>
       </div>
 
@@ -692,7 +792,8 @@ const RoomPage = observer(() => {
             <p className="leave-hint">{exitIntent.hint}</p>
             <div className="leave-actions">
               <button onClick={() => local.setV('showLeaveDialog', false)}>取消</button>
-              {canDisband && [RoomStatus.waiting, RoomStatus.finished].includes(store.room.status) && (
+              {/* UI-101：团队房主的主按钮已是「解散房间」，不再额外渲染一个重复按钮 */}
+              {canDisband && exitIntent.kind !== 'disband-room' && [RoomStatus.waiting, RoomStatus.finished].includes(store.room.status) && (
                 <button className="danger" onClick={() => { local.setV('showLeaveDialog', false); handleDisband(); }}>解散房间</button>
               )}
               <button

@@ -66,3 +66,60 @@ describe('对局页关闭按钮的退出语义', () => {
     expect(resolveLeaveToast(intent, '房间已解散')).toBe('房间已解散');
   });
 });
+
+describe('UI-101 退出弹框按玩法与房主身份分化', () => {
+  test('团队房房主（等待态）：提示「解散房间」', () => {
+    const intent = resolveExitIntent({
+      isSoloGame: false,
+      roomStatus: 'waiting',
+      isEndlessArena: false,
+      isTeamRoom: true,
+      canDisband: true,
+    });
+    expect(intent.kind).toBe('disband-room');
+    expect(intent.title).toBe('解散房间');
+    expect(intent.confirmText).toBe('解散房间');
+    expect(intent.endsMatch).toBe(false);
+  });
+
+  test('团队房非房主（等待态）：提示「离开房间」', () => {
+    const intent = resolveExitIntent({
+      isSoloGame: false,
+      roomStatus: 'waiting',
+      isEndlessArena: false,
+      isTeamRoom: true,
+      canDisband: false,
+    });
+    expect(intent.kind).toBe('leave-room');
+    expect(intent.title).toBe('离开房间');
+    expect(intent.confirmText).toBe('离开房间');
+    expect(intent.successMessage).toBe('已离开房间');
+    expect(resolveLeaveToast(intent, '已离开房间')).toBe('已离开房间');
+  });
+
+  test('团队房对局中（未认输）：仍是「结束游戏」', () => {
+    const intent = resolveExitIntent({
+      isSoloGame: false,
+      roomStatus: 'playing',
+      isEndlessArena: false,
+      isTeamRoom: true,
+      canDisband: true,
+    });
+    expect(intent.kind).toBe('end-game');
+    expect(intent.endsMatch).toBe(true);
+  });
+
+  test('无尽竞技房：即使房主身份也只「退出房间」，无解散意图', () => {
+    const intent = resolveExitIntent({
+      isSoloGame: false,
+      roomStatus: 'playing',
+      isEndlessArena: true,
+      isTeamRoom: true,
+      canDisband: true,
+    });
+    expect(intent.kind).toBe('exit-room');
+    expect(intent.title).toBe('退出房间');
+    expect(intent.confirmText).toBe('退出房间');
+    expect(intent.endsMatch).toBe(false);
+  });
+});

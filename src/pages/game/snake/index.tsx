@@ -9,7 +9,7 @@ import { LoginRequiredPanel } from '../../../components/LoginRequired';
 import { GameHeader } from '../../../components/GameHeader';
 import { GameSettings } from '../../../components/GameSettings';
 import { notificationManager } from '../../../components/Notifications';
-import { gameUrl, go, lobbyUrl } from '../../../navigation';
+import { gameUrl, go, lobbyUrl, markArenaEntry } from '../../../navigation';
 import '../../../styles/index.css';
 import '../../../styles/game.css';
 import './styles/index.css';
@@ -58,7 +58,9 @@ export const GamePage = observer(() => {
     }
     if (local.matching) return;
     local.setV({ matching: true });
-    socketEvents.match(slug, variantKey ?? variantInfo?.key, (success, player, message) => {
+    const key = variantKey ?? variantInfo?.key;
+    const arenaMatch = (variants.find(v => v.key === key) as any)?.arena === true || key === 'endless';
+    socketEvents.match(slug, key, (success, player, message) => {
       local.setV({ matching: false });
       if (success && player?.waiting) {
         local.setV({ waiting: true, queueSize: player.queue_size || 1 });
@@ -66,6 +68,8 @@ export const GamePage = observer(() => {
       }
       const roomId = player?.room_id;
       if (success && roomId) {
+        // UI-100：竞技场匹配直达全屏 canvas，房间页首帧消费此标记跳过房间壳
+        if (arenaMatch) markArenaEntry(roomId);
         go(gameUrl(slug, '/room/' + roomId));
       } else {
         alert(message || '匹配失败，请重试');
@@ -232,7 +236,7 @@ export const GamePage = observer(() => {
               {variants.map(v => (
                 <button
                   key={v.key}
-                  className={`mode-btn${(activeVariant || variants[0]?.key) === v.key ? ' active' : ''}`}
+                  className={`mode-btn`}
                   disabled={isBusyMode}
                   onClick={() => handleVariant(v)}
                 >

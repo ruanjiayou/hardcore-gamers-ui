@@ -15,8 +15,9 @@ export const Chat = observer(({ room_id }: { room_id: string }) => {
     });
   };
 
+  // UI-103：高度交给 CSS 的 .chat / .chat-panel，消息区自己滚，输入框固定底部
   return (
-    <div className="chat" style={{ flex: '0 0 60%', overflow: 'hidden' }}>
+    <div className="chat chat-panel">
       <h3>💬 聊天</h3>
       <div className="messages">
         {store.room.messages.map((msg, idx) => (

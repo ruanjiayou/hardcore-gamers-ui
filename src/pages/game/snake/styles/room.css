@@ -46,6 +46,100 @@
   color: #667eea;
 }
 
+/* ===== UI-099 团队房 5 座横向卡片（上头像下昵称，房主 × 踢人 / 🫱 加人机） ===== */
+.team-seat-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 560px;
+  margin: 6px 0;
+}
+.team-seat {
+  position: relative;
+  box-sizing: border-box;
+  width: 88px;
+  min-height: 92px;
+  padding: 10px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #dfe3f5;
+  border-radius: 12px;
+  background: #fff;
+  color: #4a4f68;
+}
+.team-seat.empty {
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.55);
+  color: #a0a6c0;
+}
+.team-seat-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #eef0fb, #dfe4fa);
+  font-size: 22px;
+  line-height: 1;
+}
+.team-seat-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+.team-seat-owner {
+  position: absolute;
+  left: 6px;
+  top: 4px;
+  font-size: 13px;
+}
+.team-seat-kick {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(220, 53, 69, 0.12);
+  color: #dc3545;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+  -webkit-text-fill-color: #dc3545;
+}
+.team-seat-kick:hover {
+  background: rgba(220, 53, 69, 0.22);
+}
+.team-seat.add-robot {
+  border-color: #667eea;
+  background: rgba(102, 126, 234, 0.08);
+  color: #667eea;
+  cursor: pointer;
+  -webkit-text-fill-color: #667eea;
+}
+.team-seat.add-robot .team-seat-avatar {
+  background: rgba(102, 126, 234, 0.14);
+}
+
+/* UI-103：团队房底部聊天给足高度，输入框与发送按钮不被消息挤出可视区 */
+.team-wait ~ .game-info > .chat-panel,
+.game-info > .chat-panel {
+  min-height: 220px;
+}
+
 /* ===== 贪吃蛇 DOM UI 层：世界层只画蛇/食物，HUD/小地图/摇杆/按钮全是 DOM/CSS =====
    根层 pointer-events:none，只有真正可点的控件（摇杆/加速/弹框按钮）单独打开 auto。 */
 .snake-dom-ui {
