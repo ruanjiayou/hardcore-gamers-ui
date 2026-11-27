@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import store from '../../../stores';
-import { getManifest, loadGameAssets, markEquipped } from '../../../services/assets';
+import { getManifest, subscribeAssets, loadGameAssets, markEquipped } from '../../../services/assets';
 import { equipSkin, type AssetManifest, type AssetManifestItem } from '../../../services/api';
 import { notificationManager } from '../../../components/Notifications';
 import { gameUrl, go } from '../../../navigation';
@@ -17,7 +17,10 @@ export const SkinsPage = observer(() => {
     let alive = true;
     setManifest(getManifest(slug) || null);
     loadGameAssets(slug).then(m => { if (alive && m) setManifest(m); });
-    return () => { alive = false; };
+    const unsubscribe = subscribeAssets(slug, () => {
+      if (alive) setManifest(getManifest(slug) || null);
+    });
+    return () => { alive = false; unsubscribe(); };
   }, [slug]);
 
   const choose = async (item: AssetManifestItem) => {
@@ -26,9 +29,8 @@ export const SkinsPage = observer(() => {
     try {
       const res = await equipSkin(slug, item.id);
       if (res.data?.code !== 0) { notificationManager.show(res.data?.message || '更换失败', 'warning'); return; }
-      markEquipped(slug, item.id);
-      setManifest(getManifest(slug) || null);
-      notificationManager.show('皮肤已更换，下一局生效', 'success');
+      setManifest(markEquipped(slug, item.id) || null);
+      notificationManager.show('皮肤已更换', 'success');
     } catch (e: any) {
       notificationManager.show(e?.message || '更换失败', 'warning');
     }

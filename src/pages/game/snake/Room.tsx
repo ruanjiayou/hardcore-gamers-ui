@@ -1,5 +1,5 @@
 import React, { useEffect, Fragment } from 'react';
-import { useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { observer, useLocalObservable } from 'mobx-react-lite';
 import { toJS } from 'mobx'
 import store from '../../../stores'
@@ -18,7 +18,7 @@ import { GameHeader } from '../../../components/GameHeader';
 import { LoginRequiredPanel } from '../../../components/LoginRequired'
 import { getFriends, getRecentPlaymates, type FriendUser } from '../../../services/api';
 import { RoomStatus } from '../../../constant'
-import { gameUrl, go, lobbyUrl, consumeArenaEntry } from '../../../navigation';
+import { gameUrl, go, lobbyUrl, consumeArenaEntry, isArenaEntryUrl } from '../../../navigation';
 
 const slug = 'snake' as const;
 
@@ -30,9 +30,10 @@ let lastMoveSfxAt = 0;
 
 const RoomPage = observer(() => {
   const { room_id } = useParams<{ room_id: string; }>();
+  const location = useLocation();
   const local = useLocalObservable(() => ({
-    // UI-100：竞技场匹配跳转时打的一次性标记，首帧即沉浸，避免房间壳闪现
-    arenaEntry: consumeArenaEntry(room_id),
+    // UI-100/112：URL 带 arena=1 即沉浸（刷新仍保持）；sessionStorage 标记只是跳转途中兜底
+    arenaEntry: isArenaEntryUrl(location.search) || consumeArenaEntry(room_id),
     showLeaveDialog: false,
     // 顶栏右上邀请下拉：好友 ∪ 最近同玩 + 邀请中标记
     showFriends: false,

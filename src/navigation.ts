@@ -2,9 +2,17 @@
  * UI-087 跨入口转场与 URL 助手（UI-091 去掉转场遮罩，缓存加载逻辑不变）。
  *
  * 一次转场（进游戏带进度层，关游戏不带）：
- *   push 加载路由 → 预取=PWA 缓存 → 1s 下限 → replace 文档
+ *   push 加载路由 → 预取=PWA 缓存 + 该游戏资源清单缓存 → 1s 下限 → replace 文档
  * 失败回滚 URL + 进度层；加载路由刷新由 HTML <head> 内联脚本 replace 回真实目标。
  */
+import { getAssetManifest, type AssetManifest } from './services/api';
+import { assetUrls, cacheGameAssets } from './services/assetCache';
+import { saveGameManifest } from './services/assets';
+
+/** 从 URL 取游戏 slug；大厅/加载路由返回空 */
+export function gameSlugOf(pathname: string): string {
+  return pathname.match(/^\/lobby\/game\/([^/]+)/)?.[1] || '';
+}
 
 const LOBBY = '/lobby';
 const LOADING_ROUTE = `${LOBBY}/loading`;
@@ -15,14 +23,27 @@ const WARM_NAV_TTL = 10_000;
 const MIN_LOADING_MS = 1000;
 
 /**
- * UI-100：无尽匹配成功 → 跳转房间页时打标记，房间页首帧就知道这是竞技场，
- * 直接进沉浸 canvas，避免房间壳/玩家列表闪一下。一次性消费，不影响直接打开房间地址。
+ * UI-100/112：无尽匹配成功 → 跳转房间页时打标记，房间页首帧就知道这是竞技场，
+ * 直接进沉浸 canvas，避免房间壳/玩家列表闪一下。
+ * UI-112：标记同时写进 URL（`?arena=1`），刷新/前进后退仍保持沉浸；sessionStorage
+ * 那份只作为匹配跳转途中的兼容兜底，一次性消费，不影响直接打开房间地址。
  */
 const ARENA_ENTRY_KEY = 'lobby:arena-entry';
 
 export function markArenaEntry(roomId: string): void {
   if (typeof sessionStorage === 'undefined') return;
   try { sessionStorage.setItem(ARENA_ENTRY_KEY, roomId); } catch { /* 隐私模式忽略 */ }
+}
+
+/** 竞技场房间地址：带 arena=1，刷新后仍能识别为全屏对战页（UI-112） */
+export function arenaRoomUrl(slug: string, roomId: string): string {
+  return `${gameUrl(slug, `/room/${roomId}`)}?arena=1`;
+}
+
+/** 房间页 URL 是否带竞技场沉浸标记 */
+export function isArenaEntryUrl(search: string): boolean {
+  if (typeof URLSearchParams !== 'undefined') return new URLSearchParams(search).get('arena') === '1';
+  return /[?&]arena=1(?:&|$)/.test(search);
 }
 
 export function consumeArenaEntry(roomId?: string): boolean {
@@ -155,6 +176,11 @@ function hideLoader(): void {
   if (typeof document !== 'undefined') document.getElementById('lobby-loader-style')?.remove();
 }
 
+/** 直达游戏冷启动复用同一套进度层（软导航内部仍调用 showLoader） */
+export function startEntryLoader(): void { showLoader(); }
+export function updateEntryLoader(done: number, total: number): void { setLoaderProgress(done, total); }
+export function stopEntryLoader(): void { hideLoader(); }
+
 // ---- 预取 = 进度条：入口 HTML 单独抓，其余资源 allSettled ----
 
 interface FetchResponse {
@@ -198,7 +224,23 @@ export async function prefetchTarget(
     } catch {
       // 旧部署没有清单接口：入口 HTML 已成功，进度直接到 100%
     }
-    const total = urls.length + 1; // +1 算入口 HTML
+    // UI-110：目标若属于某个游戏，按 slug 拉服务端清单并缓存该游戏全部资源
+    const slug = gameSlugOf(pathname);
+    let gameManifest: AssetManifest | null = null;
+    if (slug) {
+      try {
+        const res = await getAssetManifest(slug);
+        if (res.data?.code === 0 && res.data?.data) {
+          gameManifest = res.data.data;
+          // UI-111：过桥给目标文档，游戏主页首帧就显示已装备皮肤，不先闪默认图
+          saveGameManifest(slug, gameManifest);
+        }
+      } catch {
+        // 清单接口失败不阻断入口 HTML 的预取；对局仍能玩，只是没有自定义图
+      }
+    }
+    const gameUrls = gameManifest ? assetUrls(gameManifest) : [];
+    const total = urls.length + 1 + gameUrls.length; // +1 算入口 HTML
     let done = 1;
     report(done, total);
     await Promise.allSettled(urls.map(async url => {
@@ -209,6 +251,11 @@ export async function prefetchTarget(
         report(done, total);
       }
     }));
+    if (gameManifest) {
+      await cacheGameAssets(gameManifest, {
+        onProgress: d => report(1 + urls.length + d, total),
+      });
+    }
   } finally {
     activeFetch = previousFetch;
   }

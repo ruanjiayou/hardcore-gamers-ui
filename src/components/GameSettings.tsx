@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import store from '../stores';
-import { getManifest, loadGameAssets, markEquipped } from '../services/assets';
+import { getManifest, subscribeAssets, loadGameAssets, markEquipped } from '../services/assets';
 import { assetSections, type AssetSection } from '../services/assetSections';
 import { equipSkin, type AssetManifest, type AssetManifestItem } from '../services/api';
 import '../styles/game-settings.css';
@@ -62,39 +62,36 @@ export const GameSettingsDialog = observer(({
   const game = gameProp || audio.currentGame || '';
   const [manifest, setManifest] = useState<AssetManifest | null>(() => getManifest(game) || null);
 
-  // 换游戏/换资源包后清单会变（画风按主题），统一从 manifest 同步
+  // 换游戏/后台改资源后清单会变，统一从 manifest 同步
   useEffect(() => {
     let alive = true;
     setManifest(getManifest(game) || null);
     loadGameAssets(game).then(m => { if (alive && m) setManifest(m); });
-    return () => { alive = false; };
-  }, [game, audio.selected]);
+    // UI-111：其他页面换装后这里也立即换选中态
+    const unsubscribe = subscribeAssets(game, () => {
+      if (alive) setManifest(getManifest(game) || null);
+    });
+    return () => { alive = false; unsubscribe(); };
+  }, [game]);
 
-  /** 当前装备的外观 asset_id（空 = 用默认外观） */
-  const equippedId = manifest?.equipped || '';
+  /** 当前装备的外观 asset_id（按分区取，空 = 用默认外观） */
+  const equippedIdOf = (group: string) => manifest?.equippedByGroup?.[group] || '';
   /** 本游戏要显示的外观分区（按清单实际内容算） */
   const sections: AssetSection[] = manifest
     ? assetSections(game, Object.keys(manifest.groups || {}))
     : [];
 
-  const choosePack = async (id: string) => {
-    const result = await audio.select(id);
-    setMessage(result.success ? '资源包已更新' : (result.message || '设置失败'));
-    // 资源包换了 → 外观图也跟着换，重拉一次 manifest
-    if (result.success) setManifest(await loadGameAssets(game, { force: true }));
-  };
-
   const chooseSkin = async (item: AssetManifestItem) => {
     if (!store.auth.isLoggedIn) { setMessage('登录后才能更换外观'); return; }
     if (!item.owned) { setMessage('还没有这个外观，先在后台授予或活动获取'); return; }
+    const slot = item.group === 'corpse' ? 'corpse' : 'skin';
     setSaving(true);
     try {
-      const res = await equipSkin(game, item.id);
+      const res = await equipSkin(game, item.id, slot);
       if (res.data?.code !== 0) { setMessage(res.data?.message || '保存失败'); return; }
-      // 本地同步 manifest：不等重新拉，缩略图选中态立刻变
-      markEquipped(game, item.id);
-      setManifest(getManifest(game) || null);
-      setMessage('外观已更新，下一局生效');
+      // UI-111：不可变更新 + 广播，选中态与主页预览当场切换
+      setManifest(markEquipped(game, item.id, item.group === 'corpse' ? 'corpse' : 'snake') || getManifest(game) || null);
+      setMessage('外观已更新');
     } catch (err: any) {
       setMessage(err?.message || '保存失败');
     } finally {
@@ -134,34 +131,6 @@ export const GameSettingsDialog = observer(({
           </label>
         </section>
 
-        {/* 资源包：权限由服务端下发，无权限只能默认包 */}
-        <section className="settings-section">
-          <h4>🔊 资源包</h4>
-          <div className="settings-packs">
-            {audio.packs.map(pack => {
-              const active = pack.id === audio.selected;
-              const usable = audio.canUse(pack);
-              return (
-                <button
-                  key={pack.id}
-                  className={`settings-pack${active ? ' active' : ''}${usable ? '' : ' locked'}`}
-                  onClick={() => usable ? choosePack(pack.id) : setMessage('该资源包需要权限，当前仅可使用默认包')}
-                >
-                  <span>{pack.cover || '🎵'}</span>
-                  <span className="settings-pack-name">{pack.name}</span>
-                  {active && <em>使用中</em>}
-                  {!usable && <em className="lock">🔒</em>}
-                </button>
-              );
-            })}
-          </div>
-          <p className="settings-hint">
-            {game
-              ? `当前游戏：${game}，使用本包内该游戏的专属音效`
-              : '进入游戏后自动切换到该游戏的专属音效'}
-          </p>
-        </section>
-
         {/* 外观分区：按当前游戏的资源清单动态渲染（分组名由资源表给，互不串台） */}
         {sections.map(section => {
           const items = manifest?.groups?.[section.group]?.items || [];
@@ -171,7 +140,7 @@ export const GameSettingsDialog = observer(({
               <h4>{section.icon} {section.title}</h4>
               <div className="settings-packs">
                 {items.map(item => {
-                  const active = item.id === equippedId;
+                  const active = item.id === equippedIdOf(section.group);
                   const swatch = (
                     <img className="settings-skin-swatch" src={item.url} alt={item.label} />
                   );
@@ -201,7 +170,7 @@ export const GameSettingsDialog = observer(({
                   );
                 })}
               </div>
-              <p className="settings-hint">外观存在账号的玩家档案里，换主题会换画风；没配图的主题回退矢量外观。</p>
+              <p className="settings-hint">外观存在本游戏的玩家档案里；没配图的资源会自动回退矢量外观。</p>
             </section>
           );
         })}

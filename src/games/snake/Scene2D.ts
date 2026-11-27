@@ -17,7 +17,7 @@ import LogicSnake, {
   type SnakeView,
   normalizeAngle,
 } from './Logic';
-import { assetImage, defaultSkinAsset, foodAssetId, itemAssetId } from '../../services/assets';
+import { assetHeadImage, assetImage, defaultSkinAsset, equippedAsset, foodAssetId, itemAssetId } from '../../services/assets';
 
 const BG = '#0b0b14';
 const OUTSIDE = '#06060b';
@@ -1139,6 +1139,7 @@ export default class Scene2DSnake {
 
   /** 该拾取物对应的皮肤资源 id；没有配图返回 ''（走矢量绘制） */
   private foodAssetOf(kind: number, tier: number): string {
+    if (kind === SNAKE_KIND_CORPSE) return equippedAsset(GAME_SLUG, 'corpse');
     if (kind === SNAKE_KIND_FOOD) return foodAssetId(GAME_SLUG, foodTierOf(tier));
     const key = SNAKE_ITEM_KEYS[kind];
     return key ? itemAssetId(GAME_SLUG, key) : '';
@@ -1358,8 +1359,12 @@ export default class Scene2DSnake {
         ctx.arc(hx, hy, radius * 1.06, 0, Math.PI * 2);
         ctx.fillStyle = color;
         ctx.fill();
-        // 贴图皮肤：蛇头再盖一层图案，否则头是纯色、身体有花纹，接缝很突兀
-        if (skinPattern) {
+        // 贴图皮肤：优先用专门的蛇头图；没配头图才回退身体图案，避免纯色头+花纹身的接缝
+        const headImg = assetHeadImage(GAME_SLUG, snake.skin);
+        if (headImg) {
+          const d = radius * 2.12;
+          ctx.drawImage(headImg, hx - d / 2, hy - d / 2, d, d);
+        } else if (skinPattern) {
           ctx.fillStyle = skinPattern;
           ctx.fill();
         }

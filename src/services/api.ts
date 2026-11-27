@@ -292,12 +292,16 @@ export function selectVoicePack(packId: string) {
 /** 清单里的一条外观资源 */
 export interface AssetManifestItem {
   id: string;
-  /** 分组名（游戏自定义：snake 的 `snake`/`food`/`items`，别的游戏用自己的） */
+  /** 分组名（游戏自定义：snake 的 `snake`/`food`/`items`/`corpse`） */
   group: string;
   key: string;
   label: string;
+  /** 展示用身体图（其他分组就是资源图） */
   url: string;
-  /** 玩家级可装备（能在设置里勾选装备，存 players.skin） */
+  body: string;
+  /** 蛇头图（只有皮肤配了才有） */
+  head?: string;
+  /** 玩家级可装备（能在设置里勾选装备） */
   equippable: boolean;
   /** 玩家是否有权使用（free 或已授权） */
   owned: boolean;
@@ -307,31 +311,30 @@ export interface AssetManifestItem {
 
 export interface AssetManifest {
   game: string;
-  pack: string;
-  /** 缓存键：包或任意一条资源改过就变 */
+  /** 缓存键：任意一条资源改过就变 */
   revision: string;
-  /** asset_id → 图片 URL（进游戏前全部预解码，对局内零请求） */
+  /** asset_id → 身体图 URL；`<id>:head` → 蛇头图 URL */
   images: Record<string, string>;
-  /**
-   * 本游戏的外观资源，**按分组**下发。
-   * 服务端只按名字分组、不解释含义，所以黑白棋的清单里不会有贪吃蛇的 `snake` 分组，
-   * 前端拿到哪几个分组就渲染哪几个分区。
-   */
+  /** 本游戏的外观资源，按分组下发 */
   groups: Record<string, { items: AssetManifestItem[] }>;
   /** 玩家级可装备的外观（groups 里 equippable 的汇总） */
   skins: AssetManifestItem[];
-  /** 当前玩家装备的外观 asset_id */
+  /** 当前玩家装备的蛇身 asset_id（兼容旧字段） */
   equipped: string;
+  /** 按槽位区分的装备：snake=蛇身/蛇头，corpse=死亡残骸 */
+  equippedByGroup: Record<string, string>;
   /** 音频：BGM + 音效，随清单一次下发（按游戏各一份） */
   audio: { bgm: { url: string; label: string }[]; sfx: Record<string, string> };
 }
 
-/** 一次拿到该游戏的全部资源（游客可读） */
-export function getAssetManifest(game: string, pack?: string) {
-  return apiClient.get<ApiResult<AssetManifest>>('/assets/manifest.json', { params: { game, pack } });
+/** 一次拿到该游戏的全部资源（游客可读；游戏名在 path 上） */
+export function getAssetManifest(game: string) {
+  return apiClient.get<ApiResult<AssetManifest>>(`/assets/${encodeURIComponent(game)}/manifest.json`);
 }
 
-/** 装备蛇皮肤（传 asset_id，需登录） */
-export function equipSkin(game: string, assetId: string) {
-  return apiClient.post<ApiResult<{ skin: string }>>('/assets/equip', { game, asset_id: assetId });
+/** 装备外观（传 asset_id；slot=snake 蛇身/蛇头，corpse 死亡残骸） */
+export function equipSkin(game: string, assetId: string, slot: 'skin' | 'corpse' = 'skin') {
+  return apiClient.post<ApiResult<{ slot: string; asset_id: string }>>('/assets/equip', {
+    game, asset_id: assetId, slot,
+  });
 }

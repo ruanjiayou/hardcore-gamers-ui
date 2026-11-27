@@ -3,13 +3,13 @@ import { observer, useLocalObservable } from 'mobx-react-lite';
 import { toJS } from 'mobx';
 import store from '../../../stores';
 import { getSocket, ReceiveEvent, SendoutEvent, socketEvents, syncRoomScore } from '../../../services/socket';
-import { getManifest, loadGameAssets } from '../../../services/assets';
+import { getManifest, subscribeAssets, loadGameAssets } from '../../../services/assets';
 import { Leaderboard } from '../../../components/Leaderboard';
 import { LoginRequiredPanel } from '../../../components/LoginRequired';
 import { GameHeader } from '../../../components/GameHeader';
 import { GameSettings } from '../../../components/GameSettings';
 import { notificationManager } from '../../../components/Notifications';
-import { gameUrl, go, lobbyUrl, markArenaEntry } from '../../../navigation';
+import { arenaRoomUrl, gameUrl, go, lobbyUrl, markArenaEntry } from '../../../navigation';
 import '../../../styles/index.css';
 import '../../../styles/game.css';
 import './styles/index.css';
@@ -70,7 +70,8 @@ export const GamePage = observer(() => {
       if (success && roomId) {
         // UI-100：竞技场匹配直达全屏 canvas，房间页首帧消费此标记跳过房间壳
         if (arenaMatch) markArenaEntry(roomId);
-        go(gameUrl(slug, '/room/' + roomId));
+        // UI-112：arena=1 随 URL 保留，刷新后仍是全屏 canvas 对战页
+        go(arenaMatch ? arenaRoomUrl(slug, roomId) : gameUrl(slug, '/room/' + roomId));
       } else {
         alert(message || '匹配失败，请重试');
       }
@@ -125,6 +126,8 @@ export const GamePage = observer(() => {
     // 进入主页就切到本游戏的专属音效配置（房间页会幂等再设一次）
     store.audio.setGame(slug);
     loadGameAssets(slug).then(() => local.setV({ skinTick: local.skinTick + 1 }));
+    // UI-111：设置弹框/皮肤页换装后，主页当前皮肤预览立即跟着换
+    const unsubscribeSkin = subscribeAssets(slug, () => local.setV({ skinTick: local.skinTick + 1 }));
     // 直接打开/刷新主页时 store 里可能还没有游戏列表，自己拉一次
     if (!store.game.games.length) {
       socketEvents.excute(SendoutEvent.LobbyGames, (games: any) => {
@@ -156,6 +159,7 @@ export const GamePage = observer(() => {
     socket.on(ReceiveEvent.PlayerJoined, onRoomEvent);
     socket.on(ReceiveEvent.PlayerLeaved, onRoomEvent);
     return () => {
+      unsubscribeSkin();
       socket.off(ReceiveEvent.RoomCreated, onRoomEvent);
       socket.off(ReceiveEvent.PlayerChange, onPlayerChange);
       socket.off(ReceiveEvent.PlayerJoined, onRoomEvent);
@@ -172,7 +176,8 @@ export const GamePage = observer(() => {
     const m = getManifest(slug);
     const id = m?.equipped || '';
     const item = m?.skins?.find(s => s.id === id);
-    return { url: item?.url || '', label: item?.label || '默认皮肤' };
+    // 清单还没到位时不写默认外观字样——期待的是进度页加载好的当前皮肤
+    return { url: item?.url || '', label: item?.label || '外观加载中…' };
   })();
 
   return (

@@ -4,10 +4,14 @@ import { observer } from 'mobx-react-lite';
 import store from '../stores'
 import { initSocket, disconnectSocket, getSocket, ReceiveEvent } from '../services/socket';
 import { refreshAccessToken } from '../services/api';
+import { hydrateGameAssets, prewarmGameAssets } from '../services/assets';
 import { InviteToasts } from '../components/InviteToast';
 import { notificationManager } from '../components/Notifications';
 import Loading from '../components/Loading';
-import { consumeWarmNav, gameUrl, go, lobbyUrl } from '../navigation';
+import {
+  consumeWarmNav, gameSlugOf, gameUrl, go, lobbyUrl,
+  prefetchTarget, startEntryLoader, stopEntryLoader, updateEntryLoader,
+} from '../navigation';
 
 /**
  * 应用外壳：负责建立 socket 连接。
@@ -56,9 +60,13 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
   }, []);
 
   // 热导航（跨入口跳转）跳过全屏 Loading；UI-093 去掉了顶部细进度条
+  const gameSlug = typeof window !== 'undefined' ? gameSlugOf(window.location.pathname) : '';
+  // UI-111：进度页拉到的清单在渲染前同步恢复，主页首帧就是已装备皮肤
+  hydrateGameAssets(gameSlug);
   const warmRef = useRef(consumeWarmNav());
   const bootedRef = useRef(false);
-  const [isLoading, setIsLoading] = useState(!warmRef.current);
+  // 游戏入口冷启动由进度层覆盖全流程，不再叠加旋转 Loading（UI-111）
+  const [isLoading, setIsLoading] = useState(!warmRef.current && !gameSlugOf(window.location.pathname));
   const navigate = useNavigate();
   // 用 ref 记录建立连接时的身份，登录/退出后据此重连
   const tokenRef = useRef(store.auth.token);
@@ -93,9 +101,20 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
   };
 
   const bootstrap = async () => {
-    const showSpinner = !bootedRef.current && !warmRef.current;
+    const showSpinner = !bootedRef.current && !warmRef.current && !gameSlugOf(window.location.pathname);
     if (showSpinner) setIsLoading(true);
     try {
+      // UI-110/111：直接打开游戏地址也走同一套真实进度页；进度层一直保留到本函数 finally，
+      // socket 初始化、用户信息与图片解码都算在进度页里，不再冒出一个旋转中间态。
+      if (gameSlug && !bootedRef.current) {
+        startEntryLoader();
+        try {
+          await prefetchTarget(window.location.pathname, { onProgress: updateEntryLoader });
+        } catch (error) {
+          console.warn('进度页预取失败，继续进入游戏', error);
+        }
+        await prewarmGameAssets(gameSlug);
+      }
       // initSocket 按当前 token 更新身份；跨入口新文档不该先断开再闪一下断线态
       let { success, error } = await initSocket();
       if (!success) {
@@ -179,6 +198,7 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
       bootedRef.current = true;
       setIsReady(true);
       setIsLoading(false);
+      stopEntryLoader();
     }
   };
 
@@ -203,7 +223,7 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
     {offline && <div className="app-offline-banner" role="status">
       当前离线，正在使用缓存内容；部分功能暂不可用
     </div>}
-    <Loading isLoading={isLoading}>
+    <Loading isLoading={isLoading || (!!gameSlug && !isReady)}>
       {/* 邀请提示常驻右上角，跨页面可见（大厅/游戏页/房间页都要能收到） */}
       <InviteToasts />
       {children}

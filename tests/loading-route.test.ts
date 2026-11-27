@@ -95,4 +95,28 @@ describe('首帧与资源清单', () => {
   test('AppBootstrap 不再撤幕', () => {
     expect(read('src/bootstrap/AppBootstrap.tsx')).not.toContain('dismissCurtain');
   });
+
+  test('预取流程追加按游戏清单请求与全部资源缓存', () => {
+    const code = read('src/navigation.ts');
+    const prefetch = code.slice(code.indexOf('export async function prefetchTarget('), code.indexOf('// ---- 热导航标记'));
+    expect(prefetch).toContain('getAssetManifest');
+    expect(prefetch).toContain('cacheGameAssets');
+    expect(code).toContain('gameSlugOf');
+  });
+
+  test('直达游戏冷启动也先走进度页并检查缓存', () => {
+    const code = read('src/bootstrap/AppBootstrap.tsx');
+    expect(code).toContain('startEntryLoader');
+    expect(code).toContain('prefetchTarget');
+    expect(code).toContain('stopEntryLoader');
+    expect(code).toContain('consumeWarmNav');
+  });
+
+  test('SW 缓存范围扩展到静态资源路径，但不缓存 API', () => {
+    const config = read('vite.config.ts');
+    expect(config).toContain("'/skins/'");
+    expect(config).toContain("'/audio/'");
+    expect(config).toContain("'/uploads/'");
+    expect(config).toContain("url.pathname.startsWith('/api/')");
+  });
 });

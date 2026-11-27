@@ -24,6 +24,7 @@ export interface AssetSection {
 const SECTIONS: Record<string, AssetSection[]> = {
   snake: [
     { group: 'snake', title: '蛇皮肤', icon: '🐍' },
+    { group: 'corpse', title: '残骸外观', icon: '💀' },
     { group: 'food', title: '食物外观', icon: '🍎' },
     { group: 'items', title: '道具外观', icon: '🧲' },
   ],
