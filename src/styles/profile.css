@@ -6,7 +6,11 @@
   max-width: 820px;
   min-width: 0;
   margin: 0 auto;
-  padding: 16px 16px calc(64px + env(safe-area-inset-bottom, 0px));
+  /* UI-093：顶部 padding 归零，白色面板从吸顶顶栏下方开始，消除顶部白色空隙；
+     bottom 保留 Home 指示条避让。 */
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   /* 主题色渐变垫底；页面本身保持白底直角，和导航栏/其他页面连成一块（UI-078） */
   background: #fff;
 }
@@ -23,8 +27,18 @@
   /* 负边距 + 自身内边距：让导航条顶到面板左右边缘（面板有 16px 内边距） */
   margin-left: -16px;
   margin-right: -16px;
+  /* UI-093：顶部安全区另加（页面 padding-top 已归零），内容不被刘海压住；
+     负边距仍让渐变条顶到面板左右边缘。 */
   padding: 12px 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  background: linear-gradient(135deg, var(--lobby-brand-from, #667eea) 0%, var(--lobby-brand-to, #764ba2) 100%);
+}
+
+/* UI-093/090：standalone 用实色画进安全区，规避 iOS 27.x 顶部模糊带 */
+@media (display-mode: standalone) {
+  .profile-head {
+    background: var(--lobby-brand-from, #667eea);
+  }
 }
 
 .profile-head h2 {

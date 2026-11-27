@@ -61,7 +61,8 @@ describe('UI-079 同入口 push / 跨入口热导航', () => {
     expect(entry).toContain('ensureSocket()');
     expect(bootstrap).toContain('consumeWarmNav()');
     expect(bootstrap).toContain('isLoading');
-    expect(bootstrap).toContain('app-warm-progress');
+    // UI-093：热导航仍跳过全屏 Loading，但去掉了顶部白色进度条
+    expect(bootstrap).not.toContain('app-warm-progress');
   });
 
   test('PWA 注册只在生产生效', () => {

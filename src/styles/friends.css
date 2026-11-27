@@ -13,10 +13,19 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  height: 56px;
+  /* UI-093：内容区高度恒定 56px，顶部安全区另加 */
+  height: calc(56px + env(safe-area-inset-top, 0px));
   padding: 0 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding-top: env(safe-area-inset-top, 0px);
+  background: linear-gradient(135deg, var(--lobby-brand-from, #667eea) 0%, var(--lobby-brand-to, #764ba2) 100%);
   color: #fff;
+}
+
+/* UI-093/090：standalone 用实色画进安全区，规避 iOS 27.x 顶部模糊带 */
+@media (display-mode: standalone) {
+  .friends-header {
+    background: var(--lobby-brand-from, #667eea);
+  }
 }
 .friends-header h2 { font-size: 18px; margin: 0; color: #fff; -webkit-text-fill-color: #fff; }
 .friends-header .game-back { border-color: rgba(255,255,255,.35); }

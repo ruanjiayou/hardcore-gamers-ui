@@ -1,7 +1,6 @@
 /* 游戏页：顶栏 + 可滚动内容区（大厅的导航栏已不再叠加） */
 /* 滚动交给外层容器（.app > div），顶栏用 sticky 吸顶 */
 .game-page {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 0;
   min-height: 100%;
   display: flex;

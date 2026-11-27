@@ -17,5 +17,5 @@ test('个人中心/公开主页顶部用主题色，页面无圆角', () => {
   const page = css.slice(css.indexOf('.profile-page {'), css.indexOf('}', css.indexOf('.profile-page {')));
   const head = css.slice(css.indexOf('.profile-head {'), css.indexOf('}', css.indexOf('.profile-head {')));
   expect(page).not.toContain('border-radius');
-  expect(head).toContain('linear-gradient(135deg, #667eea 0%, #764ba2 100%)');
+  expect(head).toContain('linear-gradient(135deg, var(--lobby-brand-from, #667eea) 0%, var(--lobby-brand-to, #764ba2) 100%)');
 });

@@ -6,7 +6,7 @@ import { cacheUrlOf, go, softGo } from '../src/navigation';
 const ROOT = join(import.meta.dir, '..');
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 
-describe('UI-080 点击预取软导航', () => {
+describe('点击预取软导航（缓存逻辑不变）', () => {
   test('预取 URL 映射到 SW 的 HTML 缓存 key', () => {
     expect(cacheUrlOf('/lobby/game/snake/')).toBe('/lobby/game/snake/index.html');
     expect(cacheUrlOf('/lobby/game/snake/room/abc')).toBe('/lobby/game/snake/index.html');
@@ -19,17 +19,16 @@ describe('UI-080 点击预取软导航', () => {
     expect(code).toContain('history.pushState');
     expect(code).toContain('location.replace');
     expect(code).toContain('history.back()');
-    expect(code).toContain('lobby:curtain');
+    expect(code).toContain('lobby:warm-nav');
     expect(code).toContain('popstate');
     expect(typeof softGo).toBe('function');
     expect(typeof go).toBe('function');
   });
 
-  test('跨入口 go 走 softGo，不再直接写 location.href', () => {
+  test('跨入口 go 走 softGo，只有外链直接整页跳', () => {
     const code = read('src/navigation.ts');
     const body = code.slice(code.indexOf('export function go('));
     expect(body).toContain('void softGo(url)');
-    // 只有外链才直接整页跳，站内跨入口一律走 softGo
     expect(body.split('window.location.href = url').length - 1).toBe(1);
   });
 
@@ -40,19 +39,21 @@ describe('UI-080 点击预取软导航', () => {
   });
 });
 
-describe('UI-080 黑幕注入', () => {
-  test('Vite 向所有 HTML 注入内联黑幕脚本', () => {
+describe('首帧渐变注入（无遮罩）', () => {
+  test('Vite 向所有 HTML 注入主题变量、渐变与 loading 刷新', () => {
     const config = read('vite.config.ts');
     expect(config).toContain('transformIndexHtml');
-    expect(config).toContain('lobby:curtain');
-    expect(config).toContain('lobby-curtain-on');
-    // UI-086：淡出交给 React 首屏，内联脚本只保留 5s 强制移除兜底
-    expect(config).toContain('setTimeout(off, 5000)');
+    expect(config).toContain('--lobby-page-gradient');
+    expect(config).toContain('html::before');
+    expect(config).toContain('/lobby/loading');
+    expect(config).not.toContain('lobby-curtain-on');
+    expect(config).not.toContain('lobby:curtain');
   });
 
-  test('HTML 入口源文件不重复写内联脚本（由插件统一注入）', () => {
+  test('HTML 入口源文件不写内联首帧样式（由插件统一注入）', () => {
     for (const rel of ['index.html', 'src/pages/game/snake/index.html']) {
       expect(read(rel)).not.toContain('lobby-curtain-on');
+      expect(read(rel)).not.toContain('html::before');
     }
   });
 });

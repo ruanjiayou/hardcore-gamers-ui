@@ -1,17 +1,16 @@
 /**
- * UI-087 跨入口转场与 URL 助手。
+ * UI-087 跨入口转场与 URL 助手（UI-091 去掉转场遮罩，缓存加载逻辑不变）。
  *
- * 一次转场是固定的六步流水线（进游戏带进度层，关游戏不带）：
- *   push 加载路由 → 预取=PWA 缓存 → 1s 下限 → 黑幕 → replace 文档 → 首屏撤幕
- * 这里只负责编排；黑幕的即时绘制由 HTML <head> 内联脚本完成，撤幕由 AppBootstrap
- * 在 React 首屏 mount 后调用 dismissCurtain()。
+ * 一次转场（进游戏带进度层，关游戏不带）：
+ *   push 加载路由 → 预取=PWA 缓存 → 1s 下限 → replace 文档
+ * 失败回滚 URL + 进度层；加载路由刷新由 HTML <head> 内联脚本 replace 回真实目标。
  */
 
 const LOBBY = '/lobby';
 const LOADING_ROUTE = `${LOBBY}/loading`;
 const ASSET_MANIFEST_URL = `${LOBBY}/asset-manifest.json`;
+
 const WARM_NAV_KEY = 'lobby:warm-nav';
-const CURTAIN_KEY = 'lobby:curtain';
 const WARM_NAV_TTL = 10_000;
 const MIN_LOADING_MS = 1000;
 
@@ -79,28 +78,6 @@ export function registerEntryNav(basename: string, navigate: (to: string) => voi
   entryNavigate = navigate;
 }
 
-// ---- 黑幕：亮幕在换文档前，撤幕在新页首屏 mount 后 ----
-
-function showCurtain(): void {
-  if (typeof document !== 'undefined') document.documentElement.classList.add('lobby-curtain-on');
-}
-
-function hideCurtain(): void {
-  if (typeof document === 'undefined') return;
-  const root = document.documentElement;
-  root.classList.add('is-fading');
-  setTimeout(() => root.classList.remove('lobby-curtain-on', 'is-fading'), 200);
-}
-
-/** 新文档 React 首屏渲染后调用：此时内容已在，撤幕不会露空白。 */
-export function dismissCurtain(): void {
-  if (typeof document === 'undefined') return;
-  const root = document.documentElement;
-  if (!root.classList.contains('lobby-curtain-on')) return;
-  root.classList.add('is-fading');
-  setTimeout(() => root.classList.remove('lobby-curtain-on', 'is-fading'), 200);
-}
-
 // ---- 进度层：DOM 直建，不依赖 React Router，任何入口都能显示 ----
 
 function showLoader(): void {
@@ -109,9 +86,9 @@ function showLoader(): void {
     const style = document.createElement('style');
     style.id = 'lobby-loader-style';
     style.textContent = `
-#lobby-loader-overlay{position:fixed;inset:0;z-index:2147483648;display:flex;align-items:center;justify-content:center;background:#0f1020;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+#lobby-loader-overlay{position:fixed;inset:0;z-index:2147483648;display:flex;align-items:center;justify-content:center;background:var(--lobby-page-gradient);color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .lobby-loader-box{width:min(360px,78vw);text-align:center}
-.lobby-loader-title{font-size:16px;letter-spacing:1px;margin-bottom:14px}
+.lobby-loader-title{font-size:16px;letter-spacing:1px;margin-bottom:14px;text-shadow:0 2px 8px rgba(0,0,0,.35)}
 .lobby-loader-track{height:6px;border-radius:99px;background:rgba(255,255,255,.18);overflow:hidden}
 .lobby-loader-bar{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#6d5efc,#00d4ff);transition:width .18s ease}
 .lobby-loader-percent{margin-top:10px;font-size:13px;opacity:.8}`;
@@ -202,26 +179,22 @@ export async function prefetchTarget(
   }
 }
 
-// ---- 热导航标记：目标文档据此亮幕并跳过全屏 Loading ----
+// ---- 热导航标记：目标文档据此跳过全屏 Loading ----
 
-export function markWarmNav(withCurtain = true): void {
+export function markWarmNav(): void {
   if (typeof sessionStorage === 'undefined') return;
   try {
-    const now = String(Date.now());
-    sessionStorage.setItem(WARM_NAV_KEY, now);
-    if (withCurtain) sessionStorage.setItem(CURTAIN_KEY, now);
-    else sessionStorage.removeItem(CURTAIN_KEY);
+    sessionStorage.setItem(WARM_NAV_KEY, String(Date.now()));
   } catch {
     // 隐私模式下 sessionStorage 可能不可写
   }
 }
 
-/** 失败回滚/主动取消时清掉两个标记，避免下一个冷启动误亮幕。 */
+/** 失败回滚/主动取消时清掉标记，避免下一个冷启动误判为热导航。 */
 export function clearTransitionFlags(): void {
   if (typeof sessionStorage === 'undefined') return;
   try {
     sessionStorage.removeItem(WARM_NAV_KEY);
-    sessionStorage.removeItem(CURTAIN_KEY);
   } catch {
     // 忽略
   }
@@ -249,7 +222,7 @@ const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() =>
 
 /**
  * 跨入口软导航：一条流水线，只有「是否显示进度层」的分支差别。
- * 任一入口 HTML 预取失败 → 回滚 URL + 撤层撤幕，留在原页面。
+ * 任一入口 HTML 预取失败 → 回滚 URL + 撤进度层，留在原页面。
  */
 export async function softGo(url: string): Promise<void> {
   if (typeof window === 'undefined') return;
@@ -268,11 +241,9 @@ export async function softGo(url: string): Promise<void> {
   navigating = true;
   try {
     if (back) {
-      // 关游戏：无进度页、不强制 1s，但也先预取完成才亮幕
+      // 关游戏：无进度页、不强制 1s，但同样先预取完成才换文档
       await prefetchTarget(target.pathname);
       markWarmNav();
-      showCurtain();
-      await nextFrame();
       window.location.replace(url);
       return;
     }
@@ -290,14 +261,11 @@ export async function softGo(url: string): Promise<void> {
       await new Promise<void>(resolve => setTimeout(resolve, MIN_LOADING_MS - elapsed));
     }
     markWarmNav();
-    showCurtain();
-    await nextFrame(); // 黑幕至少绘制一帧再换文档
     window.location.replace(url);
   } catch (error) {
     console.warn('软导航预取失败，回滚到原页面', error);
     hideLoader();
     clearTransitionFlags();
-    hideCurtain();
     history.back();
   } finally {
     navigating = false;
@@ -311,7 +279,6 @@ export function installSoftNavPopstate(): void {
     if (navigating) return;
     if (entryRootOf(window.location.pathname) === currentEntryRoot) return;
     markWarmNav();
-    showCurtain();
     window.location.reload();
   });
 }

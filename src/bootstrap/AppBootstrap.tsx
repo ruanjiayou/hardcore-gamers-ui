@@ -7,7 +7,7 @@ import { refreshAccessToken } from '../services/api';
 import { InviteToasts } from '../components/InviteToast';
 import { notificationManager } from '../components/Notifications';
 import Loading from '../components/Loading';
-import { consumeWarmNav, dismissCurtain, gameUrl, go, lobbyUrl } from '../navigation';
+import { consumeWarmNav, gameUrl, go, lobbyUrl } from '../navigation';
 
 /**
  * 应用外壳：负责建立 socket 连接。
@@ -20,11 +20,6 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
   setIsReady: Function,
   onNavigate?: (url: string) => void,
 }) => {
-  // UI-087 第 6 步：新文档 React 首屏渲染后淡出黑幕（此时内容已在，撤幕不会露空白）
-  useEffect(() => {
-    dismissCurtain();
-  }, []);
-
   // UI-083：断网提示——浏览器 online/offline 事件 + SW 缓存兜底消息
   const [offline, setOffline] = useState(typeof navigator !== 'undefined' && !navigator.onLine);
   useEffect(() => {
@@ -60,7 +55,7 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
     };
   }, []);
 
-  // 热导航（跨入口跳转）不弹全屏 Loading，只在顶部显示细进度条（UI-079）
+  // 热导航（跨入口跳转）跳过全屏 Loading；UI-093 去掉了顶部细进度条
   const warmRef = useRef(consumeWarmNav());
   const bootedRef = useRef(false);
   const [isLoading, setIsLoading] = useState(!warmRef.current);
@@ -208,7 +203,6 @@ const AppBootstrap = observer(({ children, isReady, setIsReady, onNavigate }: {
     {offline && <div className="app-offline-banner" role="status">
       当前离线，正在使用缓存内容；部分功能暂不可用
     </div>}
-    {warmRef.current && !isReady && <div className="app-warm-progress" aria-hidden />}
     <Loading isLoading={isLoading}>
       {/* 邀请提示常驻右上角，跨页面可见（大厅/游戏页/房间页都要能收到） */}
       <InviteToasts />

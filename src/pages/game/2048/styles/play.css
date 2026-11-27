@@ -3,7 +3,7 @@
    vh 在前、dvh 覆盖，Safari 地址栏收起时用动态视口高度 */
 .room-page.game-2048 {
   height: 100vh;
-  height: 100dvh;
+  height: var(--lobby-viewport-h, 100dvh);
   overflow: hidden;
 }
 

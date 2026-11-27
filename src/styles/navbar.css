@@ -1,5 +1,5 @@
 .navbar {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--lobby-brand-from, #667eea) 0%, var(--lobby-brand-to, #764ba2) 100%);
   color: white;
   padding: 0;
   position: sticky;
@@ -8,10 +8,22 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
+/* UI-090 iOS 27.x Home Screen PWA：系统 .soft 顶部模糊带会越过安全区压住导航内容。
+   规避：standalone 下顶栏用实色从屏幕顶端绘制（WebKit bug 324438 / 328949）。 */
+@media (display-mode: standalone) {
+  .navbar {
+    background: var(--lobby-brand-from, #667eea);
+  }
+}
+
 .navbar-container {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 15px 20px;
+  /* UI-088 顶部/左右安全区：logo 与用户区不压刘海、不贴屏幕边 */
+  padding-top: calc(env(safe-area-inset-top, 0px) + 15px);
+  padding-bottom: 15px;
+  padding-left: calc(env(safe-area-inset-left, 0px) + 20px);
+  padding-right: calc(env(safe-area-inset-right, 0px) + 20px);
   display: flex;
   align-items: center;
   justify-content: space-between;

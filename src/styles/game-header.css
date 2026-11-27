@@ -6,17 +6,26 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  height: 58px;
+  /* UI-088：原 height:58px 与 padding-top 叠加会压缩内容（box-sizing:border-box），
+     改为 58px + 顶部安全区，可视内容高度恒定 58px。 */
+  height: calc(58px + env(safe-area-inset-top, 0px));
   padding: 0 14px;
   padding-top: env(safe-area-inset-top, 0px);
   padding-left: calc(env(safe-area-inset-left, 0px) + 14px);
   padding-right: calc(env(safe-area-inset-right, 0px) + 14px);
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--lobby-brand-from, #667eea) 0%, var(--lobby-brand-to, #764ba2) 100%);
   color: #fff;
   position: sticky;
   top: 0;
   z-index: 120;
   box-shadow: 0 3px 14px rgba(0, 0, 0, 0.18);
+}
+
+/* UI-090 standalone PWA 顶栏实色规避 iOS 27.x 顶部模糊带，见 navbar.css 说明 */
+@media (display-mode: standalone) {
+  .game-header {
+    background: var(--lobby-brand-from, #667eea);
+  }
 }
 
 .game-header-left {
@@ -277,7 +286,8 @@
 
 @media screen and (max-width: 480px) {
   .game-header {
-    height: 52px;
+    /* UI-097：窄屏也要保留顶部安全区补偿，否则 PWA 里 padding-top 吃掉内容区 */
+    height: calc(52px + env(safe-area-inset-top, 0px));
     padding-left: calc(env(safe-area-inset-left, 0px) + 10px);
     padding-right: calc(env(safe-area-inset-right, 0px) + 10px);
   }

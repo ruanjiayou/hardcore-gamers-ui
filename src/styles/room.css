@@ -1,5 +1,4 @@
 .room-page {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -721,9 +720,9 @@ body.immersive-mode .navbar {
   width: min(320px, calc(100vw - 24px));
   /* 高度够用就好，但不能被小地图挤到出屏 */
   height: min(56vh, 460px);
-  height: min(56dvh, 460px);
+  height: min(calc(var(--lobby-viewport-h, 100dvh) * 0.56), 460px);
   max-height: calc(100vh - var(--snake-minimap-bottom, 150px) - 20px);
-  max-height: calc(100dvh - var(--snake-minimap-bottom, 150px) - 20px);
+  max-height: calc(var(--lobby-viewport-h, 100dvh) - var(--snake-minimap-bottom, 150px) - 20px);
   display: flex;
   flex-direction: column;
   gap: 8px;
