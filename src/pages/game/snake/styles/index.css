@@ -81,8 +81,9 @@
 }
 .current-skin-preview {
   position: relative; /* 刷新 icon 定位到皮肤图右上（UI-073） */
-  width: 132px;
-  height: 132px;
+  /* GM-snake-42：预览改成竖版整蛇（头在上、尾在下），框子跟着竖起来 */
+  width: 128px;
+  height: 156px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -92,6 +93,7 @@
   overflow: hidden;
 }
 .current-skin-preview img { width: 100%; height: 100%; object-fit: contain; }
+.current-skin-canvas { width: 100%; height: 100%; display: block; }
 /* 刷新/sync 图标：压在皮肤图右上，不在卡片右上 */
 .current-skin-refresh {
   position: absolute;

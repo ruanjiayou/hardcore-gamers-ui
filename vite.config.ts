@@ -130,7 +130,14 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin || !url.pathname.startsWith('/lobby/')) return;
+  if (url.origin !== self.location.origin) return;
+  // API 一律不缓存（数据必须新鲜）
+  if (url.pathname.startsWith('/api/')) return;
+  // 静态资源与页面同策略：皮肤图 / 音频 / 后台上传图都进缓存，离线也能画
+  const isAsset = url.pathname.startsWith('/skins/')
+    || url.pathname.startsWith('/audio/')
+    || url.pathname.startsWith('/uploads/');
+  if (!isAsset && !url.pathname.startsWith('/lobby/')) return;
   if (url.searchParams.has('lobby_probe')) return;
   const key = req.mode === 'navigate' ? htmlKey(url.pathname) : req;
   const network = fetch(req).then(function (res) {

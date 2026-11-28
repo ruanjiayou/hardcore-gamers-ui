@@ -698,9 +698,11 @@ const RoomPage = observer(() => {
                       room: toJS(store.room.roomInfo),
                     }).then(() => {
                       console.log('game loaded')
-                      // 死亡弹框的「退出」：交给房间页走正常离房流程
+                      // 死亡弹框的「退出」：交给房间页按场景分流
+                      // （无尽竞技 = 离开房间；团队对局中 = 先结束本局）。
+                      // GM-snake-45：对战页去掉了右上角关闭键，死亡弹框是唯一出口
                       const logic: any = gameManager.game?.logic
-                      logic?.on?.('exit', () => handleLeaveRoom())
+                      logic?.on?.('exit', () => handleExit())
                       // GM-snake-37：先把加载期间暂存的局面灌进去（避免卡在「连接中…」），
                       // 再按 match_id 补拉一次权威状态；后续仍由 20Hz 快照刷新
                       if (local.pendingState) {
@@ -739,12 +741,7 @@ const RoomPage = observer(() => {
                   onClick={() => local.setV('showPanel', !local.showPanel)}
                 >☰</button>
               )}
-              <button
-                className="hud-btn hud-close"
-                title="关闭 / 退出"
-                aria-label="关闭"
-                onClick={() => local.setV('showLeaveDialog', true)}
-              >×</button>
+
             </div>
             {local.showPanel && !isEndlessArena && (
               <div className="hud-drawer">

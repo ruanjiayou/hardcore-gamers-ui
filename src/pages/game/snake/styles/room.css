@@ -202,6 +202,12 @@
   margin-bottom: 4px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
+.snake-hud-best-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #9aa0c0;
+  letter-spacing: 0.02em;
+}
 .snake-hud-score {
   font-size: 18px;
   font-weight: 700;
@@ -214,6 +220,107 @@
 }
 .snake-hud-players:empty {
   display: none;
+}
+
+/*
+ * buff 状态条（GM-snake-45）：挂在排行榜正下方。
+ * 加速 / 磁吸 / 无敌 原来是蛇头上的半透明光环 —— 深色地图上既看不清又压暗蛇头，
+ * 改成文字牌后，有哪几个 buff、各剩多久一眼可见。
+ */
+.snake-buffs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.snake-buffs:empty {
+  display: none;
+}
+.snake-buff {
+  /**
+   * GM-snake-46：只留图标，不写「加速中 / 磁吸 4.2s」文案。
+   * GM-snake-50/51：基类只是一块 26px 的定位框，**默认没有底板**；
+   * 底板只留给加速（见 `.snake-buff.boost`）——
+   * 用户口径：「我说去掉磁吸外围的圈，不是加速的啊！加速的不要去掉」，
+   * 磁吸 / 无敌的图标本事就是完整的图形（磁铁、五角星），再套一层圆盘就是双圈。
+   */
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: #e8ebf5;
+}
+/**
+ * 时效性 buff（磁吸 / 无敌）的倒计时外环（`GM-snake-48` / `GM-snake-50` 重画）。
+ *
+ * 环 = 剩余时间：12 点方向起顺时针，100% → 0% 收完，徽标同时消失。
+ * 老实现用 `conic-gradient` + `mask` 抠边，有两个改不掉的毛病（用户反馈）：
+ * - 线太粗：mask 抠出来的边最细也就 3px，26px 的框上显得又粗又闷；
+ * - 端点是**直角**：conic-gradient 按角度切断，天然画不出圆头。
+ * 现在换成一层 SVG `<circle>`：`stroke-dasharray` + `pathLength="100"` →
+ * 百分比直接就是弧长，`stroke-linecap: round` 两头都是圆头，线宽想多细就多细（2px）。
+ *
+ * `stroke-dashoffset` 由 `Scene2D.renderBuffs` 每帧写（= (1 - 剩余占比) × 100），
+ * 不重建 DOM，也不依赖 calc() 对无单位百分比的支持。
+ */
+.snake-buff-ring {
+  position: absolute;
+  inset: 0;
+  width: 26px;
+  height: 26px;
+  transform: rotate(-90deg); /* SVG 圆从 3 点起画，转 90° 变 12 点起、顺时针 */
+  overflow: visible;
+  pointer-events: none;
+}
+.snake-buff-ring circle {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.snake-buff-ring .track {
+  stroke: rgba(255, 255, 255, 0.13);
+}
+.snake-buff-ring .bar {
+  stroke: #7dd3fc;
+  stroke-dasharray: 100;
+}
+.snake-buff-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+}
+/**
+ * 道具皮肤图标（`GM-snake-49` / `GM-snake-50`）：磁吸 / 无敌的徽标里贴的是
+ * **道具自己的画法**（与地图上那颗道具同一张精灵）。
+ *
+ * 画布本身已经是「贴着图形裁过」的（`buildFoodSprite` 的 tight 模式，见 `buffIcon`），
+ * 所以这里给的 21px 基本就是图形本身的尺寸 —— 比原来 22px 画布里只占 14.5px 的内容
+ * 大了一圈，正好填满环的内圈。
+ */
+.snake-buff-art {
+  width: 21px;
+  height: 21px;
+  display: block;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+}
+.snake-buff.boost {
+  /* 唯一保留圆形底板的徽标：闪电本体太细，没有底托在深色 HUD 上会飘 */
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: rgba(56, 189, 248, 0.22);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  color: #bae6fd;
+}
+.snake-buff.magnet {
+  color: #dbeafe;
+}
+.snake-buff.star {
+  color: #fde68a;
 }
 .snake-player-row {
   display: flex;

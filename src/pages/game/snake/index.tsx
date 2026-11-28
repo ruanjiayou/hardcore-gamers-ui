@@ -8,6 +8,7 @@ import { Leaderboard } from '../../../components/Leaderboard';
 import { LoginRequiredPanel } from '../../../components/LoginRequired';
 import { GameHeader } from '../../../components/GameHeader';
 import { GameSettings } from '../../../components/GameSettings';
+import SkinPreview from '../../../components/SkinPreview';
 import { notificationManager } from '../../../components/Notifications';
 import { arenaRoomUrl, gameUrl, go, lobbyUrl, markArenaEntry } from '../../../navigation';
 import '../../../styles/index.css';
@@ -177,7 +178,7 @@ export const GamePage = observer(() => {
     const id = m?.equipped || '';
     const item = m?.skins?.find(s => s.id === id);
     // 清单还没到位时不写默认外观字样——期待的是进度页加载好的当前皮肤
-    return { url: item?.url || '', label: item?.label || '外观加载中…' };
+    return { item: item || null, label: item?.label || '外观加载中…' };
   })();
 
   return (
@@ -217,10 +218,13 @@ export const GamePage = observer(() => {
       />
       <div className="game-body">
         <div className="game-container snake-home">
-          {/* 当前皮肤：取已装备那件的图，没图回退 emoji */}
+          {/* 当前皮肤（GM-snake-42）：画一条竖着的整蛇（头在上、尾在下），
+              与皮肤列表页同一套 `SkinPreview`，不再是单张身体贴图 */}
           <div className="current-skin">
             <div className="current-skin-preview">
-              {currentSkin.url ? <img src={currentSkin.url} alt={currentSkin.label} /> : <span aria-hidden>🐍</span>}
+              {currentSkin.item
+                ? <SkinPreview game={slug} item={currentSkin.item} units={4} className="current-skin-canvas" />
+                : <span aria-hidden>🐍</span>}
               <button
                 className="current-skin-refresh"
                 onClick={() => go(gameUrl(slug, '/skins'))}

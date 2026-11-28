@@ -26,16 +26,23 @@ describe('UI-111 皮肤即改即显 / 清单过桥 / 合并加载态', () => {
     expect(body).toContain('returnnext');
   });
 
-  test('设置弹框、皮肤页、主页当前皮肤都监听清单变更', () => {
+  test('皮肤页与主页当前皮肤都监听清单变更', () => {
     for (const file of [
-      'src/components/GameSettings.tsx',
       'src/pages/game/snake/Skins.tsx',
       'src/pages/game/snake/index.tsx',
     ]) {
       expect(compact(read(file))).toContain('subscribeAssets(');
     }
+  });
+
+  // GM-snake-42：外观（皮肤/食物/道具）从设置弹框里整块移走，改在主页与皮肤列表页展示。
+  // 这里锁死「设置里不再出现外观」——否则以后又会有人顺手把皮肤小图塞回去。
+  test('设置弹框不再包含外观分区', () => {
     const settings = compact(read('src/components/GameSettings.tsx'));
-    expect(settings).toContain('setManifest(markEquipped(');
+    expect(settings).not.toContain('assetSections');
+    expect(settings).not.toContain('SkinPreview');
+    expect(settings).not.toContain('equipSkin(');
+    expect(settings).not.toContain('settings-packs');
   });
 
   test('进度页把按游戏清单写进会话存储，供下一份文档首帧复用', () => {

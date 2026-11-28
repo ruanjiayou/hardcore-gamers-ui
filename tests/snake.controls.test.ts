@@ -67,13 +67,13 @@ describe('贪吃蛇控件：固定屏幕布局，与场景/镜头无关', () => 
 });
 
 describe('贪吃蛇微缩地图与局部绘制', () => {
-  test('小地图在右上角关闭键下方，自己的世界坐标映射为地图上的相对位置', () => {
+  test('小地图顶在右上角（关闭键已删，不再往下让 60px），自己坐标映射为地图上的相对位置', () => {
     for (const [w, h] of [[1280, 800], [375, 667]]) {
       const m = snakeMinimapLayout(w, h);
-      // 右上角、且在 42px 按钮行（top 10 + 42）之下，两者不重叠
+      // GM-snake-46：右上角关闭键删掉后，地图直接顶到安全区 + 10
       expect(m.x).toBeGreaterThan(w / 2);
       expect(m.x + m.w).toBeLessThanOrEqual(w - 11);
-      expect(m.y).toBeGreaterThanOrEqual(52);
+      expect(m.y).toBe(10);
       expect(m.y).toBeLessThan(h / 2);
       expect(m.y + m.h).toBeLessThan(h);
       const [topLeft] = minimapPoint(m, 3600, 2600, 0, 0);

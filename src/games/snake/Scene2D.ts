@@ -13,12 +13,20 @@ import LogicSnake, {
   SNAKE_KIND_MAGNET,
   SNAKE_KIND_STAR,
   SNAKE_ITEM_KEYS,
-  SNAKE_MAGNET_RADIUS,
   type SnakeView,
   normalizeAngle,
 } from './Logic';
-import { assetAltImage, assetHeadImage, assetImage, assetTailImage, defaultSkinAsset, equippedAsset, foodAssetId, itemAssetId } from '../../services/assets';
-import { bodySegments, partAngle, tailCenter } from './skin';
+import { assetAltImage, assetHeadImage, assetImage, assetTailImage, defaultSkinAsset, equippedAsset, foodAssetId, itemAssetId, skinAccent, skinIsRound, skinTile } from '../../services/assets';
+import { drawSnakeHead } from './head';
+import {
+  TAIL_SPAN,
+  bodyBand,
+  bodySegments,
+  skinCell,
+  tailPose,
+  trimTail,
+  type SkinCell,
+} from './skin';
 
 const BG = '#0b0b14';
 const OUTSIDE = '#06060b';
@@ -30,6 +38,36 @@ const BORDER = 'rgba(248,113,113,0.55)';
 const BORDER_GLOW_RGB = '248,113,113';
 /** 普通食物：三档（小的多、大的少），越值钱越大越亮 */
 const FOOD_COLORS = ['#ff7a7a', '#ff5d5d', '#ff3b3b'];
+/**
+ * buff 徽标里的三个回退图标（`GM-snake-46`：只留图标，不写文案）。
+ * `GM-snake-50` 统一加 `snake-buff-icon` 类：`.snake-buff svg` 这种后代选择器
+ * 会把倒计时环那层 `<svg>` 也命中，一改尺寸环就跟着变形。
+ */
+const BUFF_ICONS = {
+  boost: '<svg class="snake-buff-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.6 2 5.4 13.4h4.5L8.9 22l8.2-11.4h-4.5L13.6 2Z" fill="currentColor"/></svg>',
+  // GM-snake-51：与 items/magnet.svg 对齐 —— 左蓝右红、两腿末端灰白磁极
+  magnet: '<svg class="snake-buff-icon" viewBox="0 0 24 24" aria-hidden="true">'
+    + '<defs><linearGradient id="snake-magnet-half" x1="0" y1="0" x2="1" y2="0">'
+    + '<stop offset="0.5" stop-color="#3b82f6"/><stop offset="0.5" stop-color="#ef4444"/>'
+    + '</linearGradient></defs>'
+    + '<path d="M6 21V11a6 6 0 0 1 12 0v10" fill="none" stroke="url(#snake-magnet-half)" stroke-width="5"/>'
+    + '<rect x="3.5" y="18" width="5" height="3" fill="#e2e8f0"/>'
+    + '<rect x="15.5" y="18" width="5" height="3" fill="#e2e8f0"/></svg>',
+  // GM-snake-51：描边（线框）类型，不再实心填充
+  star: '<svg class="snake-buff-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.4l2.96 6 6.64.97-4.8 4.68 1.13 6.6L12 17.55 6.07 20.65l1.13-6.6-4.8-4.68 6.64-.97L12 2.4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>',
+} as const;
+
+/** 无敌护盾：出生保护与星星道具**同一套**边色（GM-snake-46） */
+const SHIELD_RGB = '96,165,250';
+/**
+ * 头圈在「头本体」之外再外扩的**固定屏幕像素**（`GM-snake-48/49`）。
+ *
+ * 护盾只罩蛇头（用户口径：`GM-snake-49` 从整身 AABB 改回只加在头部），
+ * 半径 = `身半径 × 1.5`（包住 2.3R 宽的头图，还留出一圈呼吸位 —— `GM-snake-50` 从 1.25 放大）
+ * + 这个固定像素。
+ * 固定像素而不是「按身宽比例」：手机竖屏 zoom 大时按比例会胖出一大圈，拉远了又贴太紧。
+ */
+const SHIELD_PAD_PX = 8;
 /** 尸体残骸：暗灰红 */
 const CORPSE_COLOR = '#9b6b6b';
 /** 道具配色：磁铁（蓝）、星星（黄） */
@@ -81,12 +119,7 @@ function teamColorIndex(team: string): number {
   return h;
 }
 
-/** #rrggbb → rgba(r,g,b,a) */
-function withAlpha(hex: string, alpha: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
-}
-
+/** #rrggbb → 与白色混合 `t`（0..1）后的颜色（用于头部高光） */
 /** 相机缩放：按屏幕尺寸自适应，保证不同设备看到的"世界范围"接近 */
 const ZOOM_MIN = 0.7;
 const ZOOM_MAX = 1.35;
@@ -133,22 +166,6 @@ const DOWNGRADE_FRAMES = 45;
  */
 const UPGRADE_FRAMES = 60;
 
-/**
- * 身体贴图锚点间距（× 半径×2）：1.0 = 相邻两节刚好相切。
- *
- * GM-snake-39：交替皮肤的身体是「一节蛇身」的贴图，锚点**按弧长**排（不是按路径点下标），
- * 所以蛇再长、走得再快，节距也只由半径决定。
- */
-const SKIN_STEP = 1.0;
-/**
- * 身体贴图边长（× 半径×2）：**大于 1 才会重叠**。
- *
- * 蛇是折线拼的，弯道外侧相邻两节的间距会被拉开，不重叠就露「关节缝」。
- * 取 1.3 → 相邻重叠约 23%，弯到 90° 也不露缝；代价是后画的盖住前画的
- * （从尾向头画，所以靠头的那节压在上面）。蛇变粗时 step 与 size 等比放大，
- * **重叠比例恒定**，不会因为蛇变长就糊成一团。
- */
-const SKIN_SIZE = 1.3;
 /**
  * 目标渲染帧间隔（ms）：约 60fps。
  * 120Hz 屏幕上按这个间隔只画一半的帧 —— 游戏本身是 60fps 节奏，
@@ -197,8 +214,9 @@ export interface WorldRect {
 export function snakeMinimapLayout(cssW: number, cssH: number, topInset = 0) {
   const w = Math.max(88, Math.min(150, Math.round(cssW * 0.26)));
   const h = Math.round(w * 0.72);
-  // 按钮行：top = 安全区 + 10、高 42，地图与它留 8px 间隙
-  return { x: Math.max(12, cssW - w - 12), y: topInset + 60, w, h };
+  // GM-snake-46：关闭键删掉后右上角整排按钮不再占位，小地图直接顶到顶部，
+  // 只和安全区留 10px（原来为了躲关闭键要往下让 60px，一半屏幕高度被地图吃掉）
+  return { x: Math.max(12, cssW - w - 12), y: topInset + 10, w, h };
 }
 
 /** 世界坐标 → 微缩地图坐标（纯函数，便于校验"自己的位置"） */
@@ -395,6 +413,8 @@ interface SnakeUi {
   hudMode: HTMLDivElement;
   hudScore: HTMLSpanElement;
   hudPlayers: HTMLDivElement;
+  /** 排行榜下方的 buff 条（加速 / 磁吸 / 无敌） */
+  buffs: HTMLDivElement;
   minimap: HTMLDivElement;
   minimapDot: HTMLDivElement;
   boost: HTMLDivElement;
@@ -408,6 +428,8 @@ interface SnakeUi {
   overlay: HTMLDivElement;
   death: HTMLDivElement;
   deathScore: HTMLDivElement;
+  /** 弹框底部提示（"\u5206\u6570\u5df2\u8bb0\u5165\u6392\u884c\u699c"） */
+  deathNote: HTMLDivElement;
   deathRespawn: HTMLButtonElement;
   deathExit: HTMLButtonElement;
   /** 可选的帧率诊断浮层（?fps=1 开启） */
@@ -440,8 +462,17 @@ export default class Scene2DSnake {
   private colorSlots = new Map<string, number>();
   /** 食物/道具预渲染精灵：按 (类型, 半径) 缓存，避免每帧为每颗画多层圆 */
   private foodSprites = new Map<string, { canvas: HTMLCanvasElement; size: number }>();
-  /** 蛇皮肤图案（按皮肤 key 缓存；图像不存在时缓存 null，避免每帧重试） */
-  private skinPatterns = new Map<string, CanvasPattern | null>();
+  /** buff 徽标里的道具图标（`GM-snake-49`）：与地图道具同一套画法，按 kind+皮肤缓存 */
+  private buffIcons = new Map<string, HTMLCanvasElement>();
+  /**
+   * 头圈护盾的**出现系数**（0~1，`GM-snake-49`）：只有半径需要过渡，圆心就是蛇头。
+   *
+   * 圆心不再平滑：圈跟着头走，一旦滞后就会拖在头后面（快速移动 / 加速时最明显）。
+   * 半径从 0.2 撑到 1（τ=60ms），生效瞬间是「圈从头上扩散出来」而不是凭空出现。
+   */
+  private shieldScales = new Map<string, number>();
+  /** 上一次看到的重生计数：变了说明整条蛇瞬移，镜头要直接对齐（-1 = 还没见过） */
+  private lastRespawns = -1;
   /** 边界内辉光的四条渐变条：null=还没建，undefined=当前环境建不了（无 document） */
   private glowSprites: Record<'left' | 'right' | 'top' | 'bottom', HTMLCanvasElement> | null | undefined = null;
   /** 指针坐标缓存：pointermove 不再每次读 getBoundingClientRect 触发强制布局 */
@@ -455,6 +486,20 @@ export default class Scene2DSnake {
   /** 按住加速的 pointerId（松手/取消时收到同一个 id 才停） */
   private boostPointerId: number | null = null;
   private hudPlayersSig = '';
+  /** buff 条的**结构**签名（哪几个 buff 亮着）：只有它变了才重建 DOM */
+  private buffKey = '';
+  /** buff 徽标缓存：倒计时每帧只改属性，不重建元素 */
+  private buffChips = new Map<string, HTMLSpanElement>();
+  /** 倒计时环里那根进度弧（`GM-snake-50` SVG 方案）：每帧只改 stroke-dashoffset */
+  private buffBars = new Map<string, SVGCircleElement>();
+  /**
+   * buff 满值（剩余时间见过的最大值）—— 倒计时环 100% 的基准。
+   *
+   * 时长由服务端道具规则决定（磁吸 9s / 无敌 4s），客户端不硬编码一份：
+   * 看到 buff 的第一帧剩余量就是满值；中途又吃一个续上更长的，基准自动抬高、环回满。
+   * buff 消失时清零，下一轮重新起算（`GM-snake-48`）。
+   */
+  private buffPeak: Record<'magnet' | 'star', number> = { magnet: 0, star: 0 };
   /** DOM 写入去重器 */
   private dom = new DomWriter();
   /** 当前渲染缩放（DPR 上限）：掉帧时自动下调，恢复后回升 */
@@ -517,15 +562,7 @@ export default class Scene2DSnake {
     if (!ctx) throw new Error('Canvas 2D context unavailable');
     this.ctx = ctx;
     this.state = logic.view();
-    let lastRespawns = -1;
-    logic.on('state', (s: SnakeView) => {
-      this.state = s;
-      // 重生是整条蛇瞬移到地图另一处：镜头直接对齐，别从旧位置平滑飞过去
-      const mine = s.snakes.find(x => x.mine);
-      const respawns = mine?.respawns ?? 0;
-      if (mine && lastRespawns >= 0 && respawns !== lastRespawns) this.camInited = false;
-      lastRespawns = respawns;
-    });
+    logic.on('state', (s: SnakeView) => { this.state = s; });
   }
 
   async init() {
@@ -566,7 +603,7 @@ export default class Scene2DSnake {
     this.ui?.root.remove();
     this.ui = null;
     this.foodSprites.clear();
-    this.skinPatterns.clear();
+    this.shieldScales.clear();
     this.rectCache = null;
     this.inited = false;
     this.joyPointerId = null;
@@ -588,10 +625,17 @@ export default class Scene2DSnake {
     const hud = el('div', 'snake-hud');
     const hudMode = el('div', 'snake-hud-mode');
     const hudScores = el('div', 'snake-hud-scores');
+    // 顶部显示**全游戏今日最高分**（GM-snake-46）：玩家自己的分数在下面的榜单里，
+    // 顶部留一个「今天最高到过多少」的目标值。
+    const hudBestLabel = el('span', 'snake-hud-best-label');
+    hudBestLabel.textContent = '今日最高';
     const hudScore = el('span', 'snake-hud-score');
-    hudScores.append(hudScore);
+    hudScores.append(hudBestLabel, hudScore);
     const hudPlayers = el('div', 'snake-hud-players');
-    hud.append(hudMode, hudScores, hudPlayers);
+    // buff 状态条（GM-snake-45）：加速 / 磁吸 / 无敌 改成排行榜下方的文字牌，
+    // 不再在蛇身上叠半透明光环（那东西在深色地图上反而看不清，还挡蛇头）
+    const buffs = el('div', 'snake-buffs');
+    hud.append(hudMode, hudScores, hudPlayers, buffs);
 
     const minimap = el('div', 'snake-minimap');
     const minimapDot = el('div', 'snake-minimap-dot');
@@ -647,10 +691,10 @@ export default class Scene2DSnake {
 
     parent.appendChild(root);
     this.ui = {
-      root, hud, hudMode, hudScore, hudPlayers,
+      root, hud, hudMode, hudScore, hudPlayers, buffs,
       minimap, minimapDot, boost, boostRing, boostIcon,
       joystick, joyBase, joyKnob, hint, overlay,
-      death, deathScore, deathRespawn, deathExit, fps,
+      death, deathScore, deathNote, deathRespawn, deathExit, fps,
     };
 
     joystick.addEventListener('pointerdown', this.onJoyDown);
@@ -689,7 +733,6 @@ export default class Scene2DSnake {
     this.canvas.width = Math.round(this.cssW * this.dpr);
     this.canvas.height = Math.round(this.cssH * this.dpr);
     this.foodSprites.clear();
-    this.skinPatterns.clear();
     this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(this.cssW / 900, this.cssH / 720)));
     this.layoutUi();
   }
@@ -915,8 +958,14 @@ export default class Scene2DSnake {
     this.lastFrame = now;
     this.checkQuality();
 
-    // 每帧重新取视图：本地预测按"距快照经过的时间"前推，必须逐帧算才顺滑
+    // 每帧重新取视图：本地预测按"距快照经过的时间"前推，必须逐帧算才顺滑。
+    // 快照在 view() 里消化（GM-snake-49：socket 回调只登记、不处理），
+    // 所以「重生」的检测也放到这里 —— `on('state')` 不再逐帧触发。
     this.state = this.logic.view();
+    const meNow = this.state.snakes.find(x => x.mine);
+    const respawnsNow = meNow?.respawns ?? 0;
+    if (meNow && this.lastRespawns >= 0 && respawnsNow !== this.lastRespawns) this.camInited = false;
+    this.lastRespawns = respawnsNow;
 
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
@@ -929,7 +978,7 @@ export default class Scene2DSnake {
     );
     this.drawWorld(view);
     this.drawFood(now, view);
-    this.drawSnakes(now, view);
+    this.drawSnakes(now, view, dt);
 
     // UI 在同一个 rAF 里更新：连续量每帧写 transform/opacity，静态内容按脏检查写
     this.syncUi(now);
@@ -1172,10 +1221,27 @@ export default class Scene2DSnake {
    * 按类型与档位生成精灵：普通食物分三档（越小越暗）、残骸暗红、磁铁/星星画图标。
    * 资源包给了皮肤图就直接贴图（光晕仍按配色画，保证大小/脉动/占位一致）。
    */
-  private buildFoodSprite(kind: number, radius: number, tier: number, assetId: string | null = null): { canvas: HTMLCanvasElement; size: number } | null {
+  private buildFoodSprite(
+    kind: number,
+    radius: number,
+    tier: number,
+    assetId: string | null = null,
+    /** 半径的倍率：地图上跟 zoom 走；buff 徽标里固定 1（与缩放无关） */
+    scale = this.zoom,
+    /**
+     * 紧凑画布（`GM-snake-50`）：只留图形本身那一点边，不带脉动余量。
+     *
+     * 地图上要 3.1r，是因为道具会按 `itemPulse` 放大到 1.12 倍，画布不留余量会切边。
+     * 徽标里的图标是静态的，留那圈空白等于把图形缩小到 2/3 —— 用户要的「里面的内容放大」
+     * 就是把这圈空白裁掉（2.35r），同一个 21px 的框，图形从 14px 变成 ≈19px。
+     */
+    tight = false,
+  ): { canvas: HTMLCanvasElement; size: number } | null {
     if (typeof document === 'undefined') return null;
-    const r = radius * this.zoom;
-    const size = Math.ceil(r * 5.2);
+    const r = radius * scale;
+    // 不留光晕的余量（GM-snake-45）：以前画布开到 5.2r 全是为了那圈半透明光晕，
+    // 现在只剩实体（2.05r）+ 脉动余量（1.12 倍），3.1r 就够。
+    const size = Math.ceil(r * (tight ? 2.35 : 3.1));
     const c = document.createElement('canvas');
     c.width = c.height = Math.ceil(size * this.dpr);
     const g = c.getContext('2d');
@@ -1186,16 +1252,15 @@ export default class Scene2DSnake {
       ? CORPSE_COLOR
       : (kind === SNAKE_KIND_FOOD ? FOOD_COLORS[foodTierIndex(tier)] : (ITEM_COLORS[kind] || FOOD_COLORS[0]));
 
-    // 光晕
-    g.beginPath();
-    g.arc(mid, mid, r * 2.1, 0, TAU);
-    g.fillStyle = withAlpha(color, 0.12);
-    g.fill();
-    // 主体
-    g.beginPath();
-    g.arc(mid, mid, r, 0, TAU);
-    g.fillStyle = color;
-    g.fill();
+    // GM-snake-46：道具**不画彩色底圆**（磁铁的蓝底被当成"蓝色边框"，星星的黄底同问题），
+    // 只留放大的白色图标；食物/残骸仍是实体圆（它们是"能吃的东西"，需要圆的身形）。
+    const isItem = kind === SNAKE_KIND_MAGNET || kind === SNAKE_KIND_STAR;
+    if (!isItem) {
+      g.beginPath();
+      g.arc(mid, mid, r, 0, TAU);
+      g.fillStyle = color;
+      g.fill();
+    }
 
     const img = this.skinImage(assetId);
     if (img) {
@@ -1206,28 +1271,62 @@ export default class Scene2DSnake {
     }
 
     if (kind === SNAKE_KIND_MAGNET) {
-      // 马蹄形磁铁：白色 U 形 + 两个极
-      g.strokeStyle = '#e2e8f0';
-      g.lineWidth = Math.max(1.5, r * 0.26);
-      g.beginPath();
-      g.arc(mid, mid + r * 0.12, r * 0.6, Math.PI, 0);
-      g.stroke();
+      // 马蹄形磁铁（`GM-snake-51`）：**一半蓝一半红** + 两腿末端一小段灰白磁极，
+      // 与 `public/skins/arcade/snake/items/magnet.svg` 同一套配色和比例。
+      // 不再画外围那圈深色描边 —— 它让 U 形看起来像个圆环（用户：「不要外围的圈」）。
+      const R = r * 0.95;
+      const lw = R * 0.48;
+      const cx = mid;
+      const cy = mid + R * 0.1;
+      const arcR = R * 0.58;
+      const legH = R * 0.62;
+      // 左右两半各画一遍**完整的** U（弧 + 两条腿），靠 clip 在中线硬切：
+      // 只画各自的半弧会露出断口，画两遍再切就正好在顶点接上。
+      const half = (left: boolean, color: string) => {
+        g.save();
+        g.beginPath();
+        g.rect(left ? 0 : cx, 0, cx, size);
+        g.clip();
+        g.beginPath();
+        g.arc(cx, cy, arcR, Math.PI, 0);
+        g.strokeStyle = color;
+        g.lineWidth = lw;
+        g.lineCap = 'butt';
+        g.stroke();
+        g.fillStyle = color;
+        g.fillRect(cx - arcR - lw / 2, cy, lw, legH);
+        g.fillRect(cx + arcR - lw / 2, cy, lw, legH);
+        g.restore();
+      };
+      half(true, '#3b82f6');   // 左：蓝（S 极）
+      half(false, '#ef4444');  // 右：红（N 极）
+      // 磁极：两腿末端的一小段灰白（约两成腿长）
+      const capH = legH * 0.26;
       g.fillStyle = '#e2e8f0';
-      g.fillRect(mid - r * 0.6, mid + r * 0.12, r * 0.24, r * 0.4);
-      g.fillRect(mid + r * 0.36, mid + r * 0.12, r * 0.24, r * 0.4);
+      g.fillRect(cx - arcR - lw / 2, cy + legH - capH, lw, capH);
+      g.fillRect(cx + arcR - lw / 2, cy + legH - capH, lw, capH);
     } else if (kind === SNAKE_KIND_STAR) {
-      // 五角星（无敌）
-      g.fillStyle = '#fffbeb';
-      g.beginPath();
-      for (let i = 0; i < 10; i++) {
-        const ang = -Math.PI / 2 + (i * Math.PI) / 5;
-        const rad = i % 2 === 0 ? r * 0.86 : r * 0.36;
-        const px = mid + Math.cos(ang) * rad;
-        const py = mid + Math.sin(ang) * rad;
-        if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
-      }
-      g.closePath();
+      // 五角星（无敌）：**描边（线框）**类型（`GM-snake-51`）——
+      // 不填实心、不垫底色，只留一圈同色轮廓 + 10% 的淡填充（纯空心在小尺寸下会糊成一条线）。
+      const drawStar = (rr: number, inner: number) => {
+        g.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+          const rad = i % 2 === 0 ? rr : inner;
+          const px = mid + Math.cos(ang) * rad;
+          const py = mid + Math.sin(ang) * rad;
+          if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+        }
+        g.closePath();
+      };
+      g.lineJoin = 'round';
+      g.lineCap = 'round';
+      drawStar(r * 0.9, r * 0.38);
+      g.fillStyle = 'rgba(252,211,77,0.10)';
       g.fill();
+      g.strokeStyle = '#fcd34d';
+      g.lineWidth = Math.max(2, r * 0.2);
+      g.stroke();
     } else {
       // 食物 / 残骸：高光
       g.beginPath();
@@ -1256,95 +1355,120 @@ export default class Scene2DSnake {
   }
 
   /**
-   * 蛇皮肤图案：资源包给的是一张可平铺贴图，直接拿来做描边填充。
-   * 图案坐标系是屏幕的，所以每帧按镜头位置平移一次，贴图才会"贴在世界"上随场景滚动。
-   */
-  private skinPattern(assetId: string): CanvasPattern | null {
-    // 没装备皮肤（空串）用默认皮肤资源，保证「有主题就统一画风」
-    const key = assetId || defaultSkinAsset(GAME_SLUG);
-    if (!key) return null;
-    const cached = this.skinPatterns.get(key);
-    if (cached) {
-      cached.setTransform(this.patternShift(key));
-      return cached;
-    }
-    const img = this.skinImage(key);
-    // 图还没解码完：**绝对不能**把 null 缓存进去，否则这一整局都不会再试（只剩纯色蛇）
-    if (!img) return null;
-    const pattern = this.ctx.createPattern(img, 'repeat');
-    if (!pattern) return null;
-    this.skinPatterns.set(key, pattern);
-    pattern.setTransform(this.patternShift(key));
-    return pattern;
-  }
-
-  /**
-   * 图案随镜头滚动的平移量，按**贴图自身尺寸**取模。
+   * 身体贴图：按弧长逐节贴整张图，**圆贴图直接叠圆**（`GM-snake-44` 定稿方案）。
    *
-   * 原来写死 `% 96`（那张默认纹理正好 96px），换任何尺寸的素材都会在每 96px 边界
-   * 跳一下 —— 交替身体拼接、或者用户上传 128/256 的图时非常明显。
-   */
-  private patternShift(key: string): DOMMatrix {
-    const img = this.skinImage(key);
-    const w = img?.naturalWidth || 96;
-    const h = img?.naturalHeight || 96;
-    return new DOMMatrix([1, 0, 0, 1, this.sx(0) % w, this.sy(0) % h]);
-  }
-
-  /**
-   * 交替身体：沿路径按弧长分节贴图（GM-snake-39）。
+   * 这是评审稿 `.review/snake-skin-chain.html` ②「弧长重采样」的对局实现：
+   * - 锚点沿头部走过的路径按弧长取，节距 `2R × (1 − 18%)`；
+   * - 每节只做两件事：平移到锚点、按切向旋转（切向取前后各 1.2R，折点不跳）；
+   * - **从尾向头画**：靠头的一张压住靠尾的一张（前方覆盖后方）；
+   * - 圆贴图直径 = 身宽，**不裁剪也不填色**，四角透明直接落在轮廓外。
    *
-   * 只处理 `alt_body` 系（有第二张身体图）的皮肤；单图/头身/头身尾的 body 是
-   * 可平铺纹理，用 `CanvasPattern` 描边就够了（蛇怎么弯都自然，还不用逐节画）。
+   * 为什么不用 `CanvasPattern` 描边：图案是屏幕坐标、不跟蛇身转，
+   * 蛇只有 2R 宽 —— 96px 的贴图只被截到一小块，蛇一转向露出的那块就变了。
    *
-   * 绘制顺序**从尾向头**：靠头的锚点最后画、压在最上层，蛇头方向看起来最干净；
-   * 相邻贴图刻意重叠（`SKIN_SIZE > SKIN_STEP`），弯道外侧不会露缝。
-   * 视口外的锚点直接跳过 —— 一局 80 节 × 10 条蛇全画会掉帧。
+   * 满幅贴图（熔岩/霓虹/默认）四角不透明，仍然裁到身宽带子里（`cell.clip`），
+   * 否则方块按各自朝向旋转后会露出直角；圆形贴图不走裁剪 ——
+   * 那圈扇贝边就是「一个个圆叠起来」本来的样子。
+   *
+   * 视口外的锚点直接跳过 —— 一局几十节 × 10 条蛇全画会掉帧。
    */
   private drawBodySkin(
     ctx: CanvasRenderingContext2D,
     pts: [number, number][],
-    body: HTMLImageElement | null,
-    alt: HTMLImageElement,
+    body: CanvasImageSource,
+    alt: CanvasImageSource | null,
     view: WorldRect,
+    cell: SkinCell,
   ) {
     const worldR = this.state.radius;
-    const step = worldR * 2 * SKIN_STEP;
-    const world = worldR * 2 * SKIN_SIZE;
-    const size = world * this.zoom;
-    const half = size / 2;
-    const segs = bodySegments(pts, step, 2);
+    // 切向取前后各 1.2 个身宽：折点处不会整段跳（画面抖动的根因之一）
+    const segs = bodySegments(pts, cell.step, alt ? 2 : 1, worldR * 1.2);
+    if (!segs.length) return;
+
+    // 正方形贴图：宽高都是 cell.size
+    const w = cell.size * this.zoom;
+    const h = w;
+    const halfW = w / 2;
+    const halfH = h / 2;
+    const reach = cell.size;
+
+    if (cell.clip) {
+      // 只有满幅贴图才裁：方块的四角不会戳出轮廓，尾端也是圆的。
+      // 半径传**世界坐标**的 r（下面的坐标会再乘一次 zoom）。
+      const band = bodyBand(pts, worldR);
+      if (band.length < 3) return;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(this.sx(band[0][0]), this.sy(band[0][1]));
+      for (let i = 1; i < band.length; i++) ctx.lineTo(this.sx(band[i][0]), this.sy(band[i][1]));
+      ctx.closePath();
+      ctx.clip();
+    }
+
     for (let i = segs.length - 1; i >= 0; i--) {
       const s = segs[i];
-      if (s.x < view.x0 - world || s.x > view.x1 + world) continue;
-      if (s.y < view.y0 - world || s.y > view.y1 + world) continue;
+      if (s.x < view.x0 - reach || s.x > view.x1 + reach) continue;
+      if (s.y < view.y0 - reach || s.y > view.y1 + reach) continue;
       const img = s.slot === 0 ? body : alt;
       if (!img) continue;
       ctx.save();
       ctx.translate(this.sx(s.x), this.sy(s.y));
-      // 部件图约定「图像上方（-Y）对准前进方向」
+      // 部件图约定「图像上方（-Y）对准前进方向」→ 高度那一边沿着蛇长
       ctx.rotate(s.angle + Math.PI / 2);
-      ctx.drawImage(img, -half, -half, size, size);
+      ctx.drawImage(img, -halfW, -halfH, w, h);
       ctx.restore();
     }
+    if (cell.clip) ctx.restore();
   }
 
-  /** 尾巴贴图：中心内缩一个半径，尖端正好落在路径末端（不超出碰撞长度） */
+  /**
+   * 头圈护盾的出现系数（`GM-snake-49`）。
+   *
+   * 用户口径：「无敌罩还是改为只加在头部吧」—— 圈只包住蛇头，不再罩整条身体：
+   * - 圆心 = 蛇头（不平滑，圈必须跟着头，不能拖在后面）；
+   * - 半径 = 头的半径 + 固定像素（见 `SHIELD_PAD_PX`），与蛇长、朝向、45° 走位都无关，
+   *   所以也就不存在「头跑到圈外」这件事；
+   * - 只剩这个系数做过渡：生效时 0.2 → 1（τ=60ms），消失时直接删掉，下次重新扩散。
+   */
+  private shieldGrow(id: string, dt: number): number {
+    const cur = this.shieldScales.get(id) ?? 0;
+    const next = cur + (1 - cur) * (1 - Math.exp(-dt / 60));
+    this.shieldScales.set(id, next);
+    // 不从 0 起：第一帧是个点会闪一下，0.2 起步看着就是「从头上扩出来」
+    return 0.2 + 0.8 * next;
+  }
+
+  /**
+   * 尾巴贴图（`GM-snake-48` 重写旋转中心）。
+   *
+   * 老代码把画布原点放在**图心**（贴着尾尖）再旋转 —— 角度一变，靠身体那一端的接缝
+   * 就横着扫过去，帝王这种长尾皮肤一转弯就看得到尾巴和身体错开一道缝，像在甩尾。
+   * 现在原点放在**关节**（身体截断点 = 尾巴与身体的接缝），旋转钉在关节上：
+   * 接缝严丝合缝，转弯时只有尾尖在甩，和身体一样流畅。见 `tailPose`。
+   */
   private drawTailSkin(
     ctx: CanvasRenderingContext2D,
     pts: [number, number][],
-    img: HTMLImageElement,
+    img: CanvasImageSource,
   ) {
-    const c = tailCenter(pts, this.state.radius);
-    if (!c) return;
-    const d = this.state.radius * 2.12 * this.zoom;
-    const x = this.sx(c[0]);
-    const y = this.sy(c[1]);
-    if (x < -d || x > this.cssW + d || y < -d || y > this.cssH + d) return;
+    const R = this.state.radius;
+    const pose = tailPose(pts, R, TAIL_SPAN * R);
+    if (!pose) return;
+    // 2.3 而不是 2.12：尾图是 64 画布里画 r=30 的圆（留 2px 透明边），
+    // 放大一点才能盖满尾巴那一段，不露出后面的身体/背景
+    const d = R * 2.3 * this.zoom;
+    const off = pose.offset * this.zoom;
+    const jx = this.sx(pose.x);
+    const jy = this.sy(pose.y);
+    // 图心 = 关节沿尾巴方向（朝尾尖）退 off；视口裁剪按图心算，别用关节
+    const cx = jx - Math.cos(pose.angle) * off;
+    const cy = jy - Math.sin(pose.angle) * off;
+    if (cx < -d || cx > this.cssW + d || cy < -d || cy > this.cssH + d) return;
     ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(partAngle('tail', 0, pts) + Math.PI / 2);
-    ctx.drawImage(img, -d / 2, -d / 2, d, d);
+    ctx.translate(jx, jy);
+    // 图像上方对准前进方向（朝头）；该局部系的 +y 因此指向尾尖
+    ctx.rotate(pose.angle + Math.PI / 2);
+    ctx.drawImage(img, -d / 2, off - d / 2, d, d);
     ctx.restore();
   }
 
@@ -1363,7 +1487,7 @@ export default class Scene2DSnake {
     return SNAKE_COLORS[slot % SNAKE_COLORS.length];
   }
 
-  private drawSnakes(now: number, view: WorldRect) {
+  private drawSnakes(now: number, view: WorldRect, dt: number) {
     const ctx = this.ctx;
     const radius = this.state.radius * this.zoom;
     const margin = radius / this.zoom * 2;
@@ -1388,11 +1512,27 @@ export default class Scene2DSnake {
       const pts = disp ? disp.pts : snake.pts;
       if (!pts.length) return;
 
-      const segCount = clipSnakeSegmentRanges(pts, {
+      // 有尾图的皮肤：身体截到尾巴前面，尾巴那一段**只有尾图**（GM-snake-40）
+      const tailImg = assetTailImage(GAME_SLUG, skinId);
+      const bodyPts = tailImg ? trimTail(pts, TAIL_SPAN * this.state.radius) : pts;
+      const bodyImg = this.skinImage(skinId);
+      const altImg = assetAltImage(GAME_SLUG, skinId);
+      const headImg = assetHeadImage(GAME_SLUG, skinId);
+      // 位图缓存 + 透明角填色（GM-snake-42）：每帧只是缩放一张已光栅化的图，
+      // 身体贴图额外把四角的透明像素填成自身边缘色 —— 去掉描边后蛇身才不露缝
+      const bodyBmp = skinTile(bodyImg);
+      const altBmp = skinTile(altImg);
+      const headBmp = skinTile(headImg);
+      const tailBmp = skinTile(tailImg);
+      // 一节贴图的尺寸（GM-snake-44）：圆贴图 = 身宽、不裁；满幅贴图放大 1.5 倍再裁。
+      // 节距恒为 `2R × (1 − 18%)`，换皮肤不会改变身体的节数。
+      const roundBody = skinIsRound(bodyImg);
+      const cell = skinCell(this.state.radius, roundBody);
+
+      const segCount = bodyPts.length >= 2 ? clipSnakeSegmentRanges(bodyPts, {
         x0: view.x0 - margin, y0: view.y0 - margin,
         x1: view.x1 + margin, y1: view.y1 + margin,
-      }, this.segRanges);
-      if (!segCount) return;
+      }, this.segRanges) : 0;
 
       const head = pts[0];
       const hx = this.sx(head[0]);
@@ -1402,120 +1542,80 @@ export default class Scene2DSnake {
         && hx > -radius * 3 && hx < this.cssW + radius * 3
         && hy > -radius * 3 && hy < this.cssH + radius * 3;
 
-      ctx.beginPath();
-      for (let s = 0; s < segCount; s++) {
-        const from = Math.max(0, this.segRanges[s * 2] - 1);
-        const to = Math.min(pts.length - 1, this.segRanges[s * 2 + 1] + 1);
-        if (to <= from) continue;
-        ctx.moveTo(this.sx(pts[from][0]), this.sy(pts[from][1]));
-        for (let i = from + 1; i <= to; i++) ctx.lineTo(this.sx(pts[i][0]), this.sy(pts[i][1]));
-      }
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = 'rgba(0,0,0,0.38)';
-      ctx.lineWidth = radius * 2 + Math.max(2, radius * 0.32);
-      ctx.stroke();
-      // 有皮肤贴图就用图案描边（画风随资源包），没有就用单色
-      const skinPattern = this.skinPattern(skinId);
-      ctx.strokeStyle = skinPattern || color;
-      ctx.lineWidth = radius * 2;
-      ctx.stroke();
-      // 交替身体：两张「一节蛇身」的贴图沿路径轮换（叠在上面那遍底色描边之上，
-      // 所以弯道露出的缝也是皮肤底色，不会看到黑色外描边）
-      const altImg = assetAltImage(GAME_SLUG, skinId);
-      if (altImg) {
-        this.drawBodySkin(ctx, pts, this.skinImage(skinId), altImg, view);
-      }
-      // 尾巴：画在身体之上、蛇头之前
-      const tailImg = assetTailImage(GAME_SLUG, skinId);
-      if (tailImg) this.drawTailSkin(ctx, pts, tailImg);
-      // 高光只给玩家自己那条：远端蛇省掉一整遍宽描边（多人局里这是笔不小的光栅开销）
-      if (snake.mine) {
-        ctx.strokeStyle = 'rgba(255,255,255,0.13)';
-        ctx.lineWidth = radius * 0.8;
-        ctx.stroke();
-      }
-
-      if (headVisible && snake.boosting && snake.alive) {
+      // GM-snake-42：不再先描一圈黑边、再描一层平均色底、最后加一道白色高光。
+      // 身体就是「配置的那套皮肤」，贴图自己已经有描边/渐变/花纹，
+      // 再套一层深色外圈只会让蛇变细一圈、颜色也被压暗。
+      // 没有贴图（资源没配/还在解码）时才用玩家配色画一条纯色身体兜底。
+      if (!bodyBmp && segCount) {
         ctx.beginPath();
-        ctx.moveTo(hx, hy);
-        for (let i = 1; i < Math.min(pts.length, 6); i++) ctx.lineTo(this.sx(pts[i][0]), this.sy(pts[i][1]));
+        for (let s = 0; s < segCount; s++) {
+          const from = Math.max(0, this.segRanges[s * 2] - 1);
+          const to = Math.min(bodyPts.length - 1, this.segRanges[s * 2 + 1] + 1);
+          if (to <= from) continue;
+          ctx.moveTo(this.sx(bodyPts[from][0]), this.sy(bodyPts[from][1]));
+          for (let i = from + 1; i <= to; i++) ctx.lineTo(this.sx(bodyPts[i][0]), this.sy(bodyPts[i][1]));
+        }
+        ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
-        ctx.strokeStyle = 'rgba(125,211,252,0.35)';
-        ctx.lineWidth = radius * 2.6;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = radius * 2;
         ctx.stroke();
       }
+      // 身体贴图：一张图 = 一节蛇身，沿路径逐节贴（所有皮肤类型同一条路，GM-snake-40）
+      if (bodyBmp && segCount) {
+        this.drawBodySkin(ctx, bodyPts, bodyBmp, altBmp, view, cell);
+      }
+      // 尾巴：画在身体之上、蛇头之前（身体已截短，这一段只有尾图）
+      if (tailBmp) this.drawTailSkin(ctx, pts, tailBmp);
 
-      // 磁铁：蛇头外圈画吸附范围提示（半径读本局参数，后台可改）
-      if (headVisible && snake.magnet > 0 && snake.alive) {
-        const magnetR = this.state.params?.magnetRadius ?? SNAKE_MAGNET_RADIUS;
-        ctx.beginPath();
-        ctx.arc(hx, hy, magnetR * this.zoom, 0, TAU);
-        ctx.strokeStyle = 'rgba(96,165,250,0.30)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
+      // 加速 / 磁吸不再在蛇头上画半透明光环与吸附范围圈（GM-snake-45）：
+      // 深色地图上那层半透明边太虚，还会把蛇头本身的颜色压暗；
+      // 改成排行榜下方的 buff 文字牌（见 syncUi / renderBuffs）。
 
       if (headVisible) {
         const angle = disp ? disp.angle : snake.angle;
-        ctx.beginPath();
-        ctx.arc(hx, hy, radius * 1.06, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.fill();
-        // 贴图皮肤：优先用专门的蛇头图；没配头图才回退身体图案，避免纯色头+花纹身的接缝
-        const headImg = assetHeadImage(GAME_SLUG, skinId);
-        if (headImg) {
-          const d = radius * 2.12;
-          // 必须按朝向旋转：头图是有「正脸」的（眼睛/角），不转的话往回走时脸朝后。
-          // 约定与身体贴图一致：图像上方（-Y）对准前进方向。
-          ctx.save();
-          ctx.translate(hx, hy);
-          ctx.rotate(angle + Math.PI / 2);
-          ctx.drawImage(headImg, -d / 2, -d / 2, d, d);
-          ctx.restore();
-        } else if (skinPattern) {
-          ctx.fillStyle = skinPattern;
-          ctx.fill();
-        }
-        if (snake.mine) {
-          ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        }
+        // GM-snake-42：头也不再铺队伍色圆底、不再描一圈白边 —— 头就是配置的那张头图。
+        // GM-snake-46：整套画法抽到 `head.ts`，皮肤预览用的是同一个函数，
+        // 否则预览里糖果头还是旧样子（花纹贴图 + 眼睛靠下），跟对局对不上。
+        drawSnakeHead(ctx, hx, hy, angle, {
+          head: headBmp,
+          body: bodyBmp,
+          roundBody,
+          spriteSize: cell.size * this.zoom,
+          radius,
+          accent: bodyImg ? skinAccent(bodyImg) : '#e2e8f0',
+          fallbackColor: color,
+        });
 
-        const ex = Math.cos(angle);
-        const ey = Math.sin(angle);
-        const px = -ey;
-        const py = ex;
-        const eyeR = Math.max(1.6, radius * 0.26);
-        for (const side of [-1, 1]) {
-          const cxp = hx + ex * radius * 0.42 + px * radius * 0.42 * side;
-          const cyp = hy + ey * radius * 0.42 + py * radius * 0.42 * side;
-          ctx.beginPath();
-          ctx.arc(cxp, cyp, eyeR, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(10,10,18,0.82)';
-          ctx.fill();
-        }
-
-        // 无敌：半透明遮罩圆（罩在头上），不再在画面上方弹文字提示。
-        // 星星道具 = 金罩，重生护盾 = 蓝罩；星星期间 invincible 也 >0，
-        // 两者同时只画金色，避免两层叠在一起看不清。
+        // 无敌：只罩**蛇头**（`GM-snake-49` 按用户口径从整身改回头部）。
+        // 圆心 = 蛇头、半径 = 头的一圈多 + 固定像素；圈的大小与蛇长/朝向无关，
+        // 也就不会再出现「蛇头在圈外」。出生护盾与星星道具同一套视觉（同色同形）。
         if (snake.alive && (snake.star > 0 || snake.invincible > 0)) {
-          const rgb = snake.star > 0 ? '251,191,36' : '96,165,250';
-          const pulse = 0.5 + 0.5 * Math.sin(now / 220);
-          const r = radius * (2.05 + 0.12 * pulse);
-          const g = ctx.createRadialGradient(hx, hy, radius * 0.5, hx, hy, r);
-          g.addColorStop(0, `rgba(${rgb},0.06)`);
-          g.addColorStop(1, `rgba(${rgb},${(0.16 + 0.14 * pulse).toFixed(2)})`);
+          const grow = this.shieldGrow(snake.id, dt);
+          const cx = hx;
+          const cy = hy;
+          const pulse = 0.5 + 0.5 * Math.sin(now / 320);
+          // GM-snake-50：1.25 → 1.5，圈再大一圈（头图外留出明显空隙，不贴着脖子）
+          const rr = (this.state.radius * 1.5 * this.zoom + SHIELD_PAD_PX) * grow * (1 + 0.01 * pulse);
+          // 内圈完全透明、越靠边越亮：整圆铺色会把蛇身糊成一片
+          const g = ctx.createRadialGradient(cx, cy, rr * 0.55, cx, cy, rr);
+          g.addColorStop(0, `rgba(${SHIELD_RGB},0)`);
+          g.addColorStop(0.7, `rgba(${SHIELD_RGB},${(0.04 + 0.03 * pulse).toFixed(3)})`);
+          g.addColorStop(0.94, `rgba(${SHIELD_RGB},${(0.16 + 0.08 * pulse).toFixed(3)})`);
+          g.addColorStop(1, `rgba(${SHIELD_RGB},${(0.30 + 0.12 * pulse).toFixed(3)})`);
           ctx.beginPath();
-          ctx.arc(hx, hy, r, 0, TAU);
+          ctx.arc(cx, cy, rr, 0, TAU);
           ctx.fillStyle = g;
           ctx.fill();
+          // 外面再压一条亮边：深色地图上单靠渐变边界发虚，得有一根清晰的线
           ctx.beginPath();
-          ctx.arc(hx, hy, r, 0, TAU);
-          ctx.strokeStyle = `rgba(${rgb},${(0.35 + 0.25 * pulse).toFixed(2)})`;
-          ctx.lineWidth = 2;
+          ctx.arc(cx, cy, rr, 0, TAU);
+          ctx.strokeStyle = `rgba(${SHIELD_RGB},${(0.38 + 0.18 * pulse).toFixed(3)})`;
+          ctx.lineWidth = Math.max(1.5, 2.2 * this.zoom);
           ctx.stroke();
+        } else {
+          // 护盾消失：清掉系数，下次生效重新从 0.2 扩散
+          this.shieldScales.delete(snake.id);
         }
 
         ctx.globalAlpha = 1;
@@ -1552,10 +1652,11 @@ export default class Scene2DSnake {
     const clock = left > 0
       ? ` · ${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`
       : '';
-    const hudSig = `${s.score}|${clock}`;
+    const hudSig = `${s.todayBest}|${clock}`;
     if (hudSig !== this.hudSig) {
       ui.hudMode.textContent = `🏆 排行榜${clock}`;
-      ui.hudScore.textContent = String(s.score);
+      // 顶部是今日全游戏最高分；自己的分数看下面榜单里高亮的那一行
+      ui.hudScore.textContent = String(s.todayBest || 0);
       this.hudSig = hudSig;
     }
     // 排行榜签名：按分数排序后取前 10（分数/生死/名字任一变化才重建 DOM）
@@ -1569,6 +1670,22 @@ export default class Scene2DSnake {
       this.renderPlayers(ui.hudPlayers, s);
       this.hudPlayersSig = playersSig;
     }
+
+    // --- buff 状态条（GM-snake-45 / 46 / 48）：排行榜下方的图标徽标 ---
+    const meSnake = s.snakes.find(x => x.mine);
+    const magnetLeft = meSnake && meSnake.alive ? Math.max(0, meSnake.magnet) : 0;
+    const starLeft = meSnake && meSnake.alive ? Math.max(0, meSnake.star) : 0;
+    const boostOn = !!s.boosting && !!s.alive;
+    // 每帧都刷：倒计时环是连续量（100% → 0%），量化到 100ms 会一格一格掉；
+    // renderBuffs 内部只在「哪几个 buff 亮着」变化时重建 DOM，其余帧只改一个 CSS 变量。
+    this.renderBuffs(
+      ui.buffs,
+      boostOn,
+      magnetLeft,
+      starLeft,
+      this.buffFrac('magnet', magnetLeft),
+      this.buffFrac('star', starLeft),
+    );
 
     // --- 小地图：只标自己，白点位置变了才写 transform ---
     const showMap = !!s.w && !!s.h && s.status !== 'waiting';
@@ -1665,6 +1782,179 @@ export default class Scene2DSnake {
     }
   }
 
+  /**
+   * buff 状态条：加速（按住即生效，不算剩余时间）/ 磁吸 / 无敌（带剩余秒数）。
+   *
+   * 为什么放在这里：原来加速是头部一圈半透明光环、磁吸是头部一圈很大的
+   * 半透明圆（半径 220px）—— 深色地图上两个都看不清，还会把蛇头压暗。
+   * 改成排行榜下方的文字牌，当前有哪些 buff、剩多久一目了然。
+   * 没有 buff 时整条隐藏 —— 它挂在榜单下面，空着会白占一块。
+   */
+  /** 剩余时间 → 倒计时环占比（0~1）。buff 消失时基准清零，下一轮从 100% 起 */
+  private buffFrac(kind: 'magnet' | 'star', left: number): number {
+    if (!(left > 0)) {
+      this.buffPeak[kind] = 0;
+      return 0;
+    }
+    if (left > this.buffPeak[kind]) this.buffPeak[kind] = left;
+    const peak = this.buffPeak[kind];
+    return peak > 0 ? Math.min(1, left / peak) : 1;
+  }
+
+  /**
+   * buff 徽标里的道具图标（`GM-snake-49`）。
+   *
+   * 用户口径：「磁吸和无敌的 buff 使用道具的皮肤」—— 不另画一套图标，
+   * 直接复用地图道具的精灵生成（`buildFoodSprite`）：manifest 配了道具皮肤图就贴图，
+   * 没配就是磁铁 / 五角星的矢量画法，和场上那颗长得**一模一样**。
+   * 半径固定 8px、倍率 1（与地图 zoom 解耦），按 `kind + 皮肤 id` 缓存一张画布。
+   * `GM-snake-50`：走 tight 画布 —— 徽标只要图形本身，不要那圈为脉动预留的空白。
+   */
+  private buffIcon(kind: number): HTMLCanvasElement | null {
+    const assetId = this.foodAssetOf(kind, 0);
+    const key = `${kind}:${assetId || '-'}`;
+    const hit = this.buffIcons.get(key);
+    if (hit) return hit;
+    const built = this.buildFoodSprite(kind, 8, 0, assetId, 1, true);
+    if (!built) return null;
+    this.buffIcons.set(key, built.canvas);
+    return built.canvas;
+  }
+
+  /**
+   * buff 徽标（`GM-snake-46` 只留图标；`GM-snake-48` 加倒计时外环）。
+   *
+   * 时效性 buff（磁吸 / 无敌）的外环从 100% 顺时针收到 0%，到 0 时整块消失 ——
+   * 环就是剩余时间，比数字直观，也不用再往徽标里塞秒数。
+   * 加速是「按住就加速、没有时长」，所以没有环。
+   */
+  private renderBuffs(
+    container: HTMLDivElement,
+    boost: boolean,
+    magnetMs: number,
+    starMs: number,
+    magnetFrac: number,
+    starFrac: number,
+  ) {
+    // GM-snake-49：磁吸 / 无敌不再用内联 SVG，改成**道具自己的皮肤**
+    // （地图上那颗道具怎么画，徽标里就怎么画；没配图时就是磁铁 / 五角星的矢量画法）
+    const chips: {
+      cls: string;
+      title: string;
+      icon: string;
+      art: HTMLCanvasElement | null;
+      frac: number;
+      /** 有时长 → 带倒计时环（加速是按住即生效，没有时长） */
+      timed: boolean;
+    }[] = [];
+    if (boost) {
+      chips.push({
+        cls: 'snake-buff boost',
+        title: '加速中',
+        icon: BUFF_ICONS.boost,
+        art: null,
+        frac: 1,
+        timed: false,
+      });
+    }
+    if (magnetMs > 0) {
+      chips.push({
+        cls: 'snake-buff magnet timed',
+        title: '磁吸中',
+        icon: BUFF_ICONS.magnet,
+        art: this.buffIcon(SNAKE_KIND_MAGNET),
+        frac: magnetFrac,
+        timed: true,
+      });
+    }
+    if (starMs > 0) {
+      chips.push({
+        cls: 'snake-buff star timed',
+        title: '无敌中',
+        icon: BUFF_ICONS.star,
+        art: this.buffIcon(SNAKE_KIND_STAR),
+        frac: starFrac,
+        timed: true,
+      });
+    }
+
+    // 结构只在「哪几个 buff 亮着」变了才重建：倒计时是每帧改一个属性，不碰 DOM 结构
+    const key = chips.map(c => c.cls).join(',');
+    if (key !== this.buffKey) {
+      this.buffKey = key;
+      this.buffChips.clear();
+      this.buffBars.clear();
+      container.replaceChildren();
+      for (const c of chips) {
+        const chip = document.createElement('span');
+        chip.className = c.cls;
+        chip.title = c.title;
+        chip.setAttribute('aria-label', c.title);
+        // 内容先画，环最后盖上去 —— `innerHTML` 会清空已有子节点
+        if (c.art) {
+          // 画布是缓存复用的：换 chip 时只是把它挪到新节点里
+          c.art.className = 'snake-buff-art';
+          chip.appendChild(c.art);
+        } else {
+          chip.innerHTML = c.icon;
+        }
+        if (c.timed) {
+          const bar = this.buildBuffRing(chip);
+          this.buffBars.set(c.cls, bar);
+        }
+        container.appendChild(chip);
+        this.buffChips.set(c.cls, chip);
+      }
+    }
+    // 倒计时环：每帧只写 `stroke-dashoffset`（100 = 空，0 = 满）
+    for (const c of chips) {
+      const bar = this.buffBars.get(c.cls);
+      if (!bar) continue;
+      const left = Math.max(0, Math.min(1, c.frac));
+      bar.setAttribute('stroke-dashoffset', String(((1 - left) * 100).toFixed(2)));
+    }
+    // 每帧都会走到这里，display 只在真的变了才写（避免每帧一次无意义的样式失效）
+    const want = chips.length ? '' : 'none';
+    if (container.style.display !== want) container.style.display = want;
+  }
+
+  /**
+   * 倒计时环（`GM-snake-50`）：一层 SVG，两条同心圆 —— 暗色轨道 + 进度弧。
+   *
+   * 为什么不再用 `conic-gradient`：它按角度切断，端点必然是**直角**（做不出圆头），
+   * 而且要靠 `mask` 抠细边，最细也就 3px，26px 的框上看着又粗又闷。
+   * SVG 弧用 `stroke-linecap: round` 两头直接是圆的，线宽 2px 想多细都行；
+   * `pathLength="100"` 之后 `stroke-dasharray: 100` 的单位就是「整圈的 1%」，
+   * 每帧只需要写 `stroke-dashoffset = (1 - 占比) × 100`。
+   *
+   * @returns 进度弧节点，交给 `buffBars` 缓存，每帧更新
+   */
+  private buildBuffRing(chip: HTMLElement): SVGCircleElement {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'snake-buff-ring');
+    svg.setAttribute('viewBox', '0 0 26 26');
+    svg.setAttribute('aria-hidden', 'true');
+    let bar: SVGCircleElement | null = null;
+    for (const cls of ['track', 'bar'] as const) {
+      const circle = document.createElementNS(NS, 'circle');
+      circle.setAttribute('class', cls);
+      circle.setAttribute('cx', '13');
+      circle.setAttribute('cy', '13');
+      // r=11.5 + 半根线宽 1 = 12.5，留 0.5 余量，圆头不会顶到视口边界被切
+      circle.setAttribute('r', '11.5');
+      if (cls === 'bar') {
+        circle.setAttribute('pathLength', '100');
+        circle.setAttribute('stroke-dasharray', '100');
+        circle.setAttribute('stroke-dashoffset', '100');
+        bar = circle;
+      }
+      svg.appendChild(circle);
+    }
+    chip.appendChild(svg);
+    return bar!;
+  }
+
   private renderPlayers(container: HTMLDivElement, s: SnakeView) {
     container.replaceChildren();
     if (s.snakes.length <= 1) return;
@@ -1723,16 +2013,26 @@ export default class Scene2DSnake {
         title = '本局结束';
       }
       sub = `本局最高 ${s.best} 分`;
+    } else if (!s.alive && (s.snakes.some(x => x.mine) || s.variant === 'team')) {
+      // 团队模式下即使服务端把死蛇摘掉了也要给弹框：关闭键已删除，
+      // 没有弹框就没有任何退出口（`GM-snake-45` 的收尾）。
+      // 自己死了 → 出局弹框（GM-snake-45）。
+      // 无尽模式有「重生 / 退出」；团队模式本局对玩家已经结束（不会复活），
+      // 弹框里只有「退出」。对战屏幕已经去掉关闭键，
+      // 这个弹框是对局中唯一的出口。
+      kind = 'death';
     } else if (!s.alive) {
-      if (s.awaiting) {
-        kind = 'death';
-      } else {
-        kind = 'notice'; title = '已出局'; sub = '对局已结束';
-      }
+      // 没有自己的蛇（观战者）：只提示，不给操作
+      kind = 'notice'; title = '已出局'; sub = '对局已结束';
     }
     // 无敌不再用顶部文字提示：蛇头的半透明遮罩圆已经表达了（GM-snake-36）
 
-    const sig = `${kind}|${title}|${sub}`;
+    // 出局卡片里的名次/分数会随结算变化，签名要带上，否则弹框停在第一帧的数字上
+    const myScore = s.snakes.find(x => x.mine)?.score ?? s.score;
+    const myRank = myScore > 0
+      ? 1 + s.snakes.filter(x => (x.score || 0) > myScore).length
+      : 0;
+    const sig = `${kind}|${title}|${sub}|${myScore}|${myRank}|${s.snakes.length}|${s.todayBest}`;
     if (sig === this.overlaySig) return;
     this.overlaySig = sig;
 
@@ -1741,7 +2041,18 @@ export default class Scene2DSnake {
     ui.overlay.style.display = kind ? '' : 'none';
     ui.death.style.display = kind === 'death' ? '' : 'none';
     if (kind === 'death') {
-      ui.deathScore.textContent = `本局得分 ${s.score} · 最高 ${s.best}`;
+      // GM-snake-46：弹框里补上**名次**（用户反馈「弹框里没数据」就是要看排名），
+      // 名次按场上所有蛇的分数算，跟左侧榜单口径一致。
+      const total = s.snakes.length;
+      ui.deathScore.textContent = myRank > 0 && total > 1
+        ? `第 ${myRank} 名 / 共 ${total} 条蛇 · 本局 ${myScore} 分`
+        : `本局得分 ${myScore} · 最高 ${s.best}`;
+      ui.deathNote.textContent = s.variant === 'team'
+        ? `本局已结束，分数已记入排行榜${s.todayBest > 0 ? ` · 今日最高 ${s.todayBest}` : ''}`
+        : `分数已记入排行榜${s.todayBest > 0 ? ` · 今日最高 ${s.todayBest}` : ''}`;
+      // 只有无尽模式能重生；团队模式出局就是真出局，留一个「重生」只会被点到不生效
+      const canRespawn = s.variant === 'endless' && s.awaiting;
+      ui.deathRespawn.style.display = canRespawn ? '' : 'none';
     } else if (kind === 'notice') {
       const card = document.createElement('div');
       card.className = 'snake-notice-card';

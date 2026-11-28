@@ -148,56 +148,8 @@
   flex: 1;
 }
 
-.settings-packs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.settings-pack {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1px solid #e0e0e0;
-  border-radius: 10px;
-  background: #fff;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.settings-pack.active {
-  border-color: #667eea;
-  background: #f0f0ff;
-}
-
-.settings-pack.locked {
-  opacity: 0.6;
-}
-
-/* 主题资源（食物、道具、棋盘…）：随资源包整体生效，玩家不能单独换 → 不可点 */
-.settings-pack.static {
-  cursor: default;
-  background: #fafafd;
-}
-.settings-pack.static:hover {
-  border-color: #e0e0e0;
-}
-
-.settings-pack em {
-  font-style: normal;
-  font-size: 11px;
-  color: #667eea;
-}
-
-.settings-pack em.lock {
-  color: #999;
-}
-
-.settings-pack-name {
-  color: #333;
-  font-weight: 600;
-}
+/* GM-snake-42：外观分区（.settings-packs / .settings-pack / .settings-skin-swatch）
+   随「设置里不再放皮肤预览」一起删掉；皮肤改在主页与皮肤列表页竖着展示整蛇。 */
 
 .settings-check {
   display: flex;
@@ -243,22 +195,4 @@
     min-width: 38px;
     border-radius: 19px;
   }
-}
-
-/* 蛇皮肤缩略图：贴图是可平铺的 96px 方块，缩略图直接当色卡看 */
-/* 皮肤缩略图：比原来的方块宽一点，能画出「头 + 几节身体 + 尾」看出皮肤类型（GM-snake-39） */
-.settings-skin-swatch {
-  width: 58px;
-  height: 26px;
-  border-radius: 6px;
-  object-fit: cover;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  background: #f5f5f8;
-  display: block;
-}
-
-/* 未获得的皮肤：占位但不可选，避免"点了没反应" */
-.settings-pack.locked {
-  opacity: 0.45;
-  cursor: not-allowed;
 }

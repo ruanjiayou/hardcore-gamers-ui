@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Observer, observer } from 'mobx-react-lite';
-import store from '../stores';
 import '../styles/components.css';
 import { SendoutEvent, socketEvents } from '../services/socket';
 
@@ -14,6 +13,14 @@ interface Props {
 export const Leaderboard = observer(({ slug, limit, boards }: Props) => {
   const [board, setBoard] = useState<string | undefined>(boards?.[0]?.key);
   const [loading, setLoading] = useState(false);
+  /**
+   * 榜单数据放**组件自己**的 state（`GM-snake-47`）。
+   * 以前写全局 `store.game.leaderboard`：同一页面/多个弹框同时存在时会互相覆盖，
+   * 一个还没回来的旧请求能把刚渲染出来的榜清空 —— 表现就是「排行榜没数据」。
+   */
+  const [rows, setRows] = useState<any[]>([]);
+  /** 请求序号：切分榜 / 换游戏后，慢回来的旧响应直接丢弃 */
+  const reqRef = useRef(0);
 
   useEffect(() => {
     // 切换游戏 / games 加载完成后，确保选中的分榜属于当前游戏
@@ -22,11 +29,19 @@ export const Leaderboard = observer(({ slug, limit, boards }: Props) => {
   }, [slug, boards?.length]);
 
   useEffect(() => {
+    const id = ++reqRef.current;
     setLoading(true);
+    // 超时兜底：服务端抛异常时 emit 的回调不会回来，不能让榜永远转圈
+    const timer = setTimeout(() => {
+      if (reqRef.current === id) setLoading(false);
+    }, 5000);
     socketEvents.excute(SendoutEvent.GameRanks, { slug, limit, board }, (ranks: any) => {
-      store.game.setLeaderboard(Array.isArray(ranks) ? ranks : []);
+      if (reqRef.current !== id) return; // 过期响应：已经切到别的分榜了
+      clearTimeout(timer);
+      setRows(Array.isArray(ranks) ? ranks : []);
       setLoading(false);
     });
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, board, limit]);
 
@@ -73,9 +88,9 @@ export const Leaderboard = observer(({ slug, limit, boards }: Props) => {
             <div className="spinner"></div>
           </div>
         ) : (
-          store.game.leaderboard.length === 0
+          rows.length === 0
             ? <div>暂无数据</div>
-            : store.game.leaderboard.map(player => (
+            : rows.map(player => (
               <div key={player.rank} className="leaderboard-item">
                 <div className={`rank rank-${player.rank}`}>
                   {getRankMedal(player.rank)}

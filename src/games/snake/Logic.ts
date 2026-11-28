@@ -258,6 +258,8 @@ export interface SnakeView {
   teamScores: Record<string, number>;
   /** 团队模式剩余毫秒（0 = 不限时） */
   endsIn: number;
+  /** 全游戏今日最高分（HUD 顶部显示，跨房间跨玩家；0 = 还没有记录） */
+  todayBest: number;
   /**
    * 本局生效的可调参数（服务端下发）。
    * 渲染层要用它判断「身长够不够加速」等阈值 —— 阈值同样由服务端决定，
@@ -331,6 +333,8 @@ interface Snapshot {
   teamScores?: Record<string, number>;
   /** 团队模式剩余毫秒；0 = 不限时 */
   endsIn?: number;
+  /** 全游戏今日最高分（服务端日榜，跨房间汇总） */
+  todayBest?: number;
 }
 
 export default class LogicSnake extends EventEmitter {
@@ -407,9 +411,23 @@ export default class LogicSnake extends EventEmitter {
   private corr = { x: 0, y: 0, a: 0 };
   /** 上一次校正量衰减的时间戳：保证一帧只衰减一次 */
   private lastDecayAt = 0;
-  /** 最近几次快照间隔（ms），用于识别慢网并自适应放宽预测 */
+  /** 最近几次快照**到达**间隔（ms），用于识别慢网并自适应放宽预测 */
   private gaps: number[] = [];
   private avgGap = 0;
+  /**
+   * 待消化的**最新**快照（`GM-snake-49`）。
+   *
+   * 网络抖动（弱网重传、切后台回来）时积压的快照会**成串**一次性到达。
+   * 老实现收到就同步处理：每条都要深拷贝全部蛇身、重建远端路径、再广播一次视图；
+   * 十条堆在同一帧里就是几十毫秒的主线程卡顿 —— 表现是「网络一卡，连自己的蛇都冻住」。
+   * 现在只留最后一条，由渲染帧统一消化（每帧最多一条，最新者胜）：
+   * 自己的位置本来就是本地预测前推的，别人的位置用最新一帧就够。
+   */
+  private pendingSnap: Snapshot | null = null;
+  /** 最近一次快照**到达**的时刻（间隔统计按到达算，不能按消化算 —— 消化是每帧一条） */
+  private lastArriveAt = 0;
+  /** 正在帧内消化快照：不再额外广播视图（调用方紧接着就会拿到新视图） */
+  private draining = false;
   private roomId = '';
 
   // ===== 本地展示的道具状态（快照驱动） =====
@@ -421,6 +439,8 @@ export default class LogicSnake extends EventEmitter {
   private localStarUntil = 0;
   /** 团队模式结束时间戳（ms），0 = 不限时 */
   private endsAt = 0;
+  /** 全游戏今日最高分（快照里的 todayBest，HUD 顶部显示） */
+  private todayBest = 0;
   private invincibleUntil = 0;
   private awaiting = false;
   private respawnAt = 0;
@@ -445,7 +465,7 @@ export default class LogicSnake extends EventEmitter {
   }
 
   private onRemoteAction = (data: any) => {
-    if (data?.snake) this.applySnapshot(data.snake as Snapshot);
+    if (data?.snake) this.queueSnapshot(data.snake as Snapshot);
   };
 
   constructor(socket: SocketTransport, player: any, variant?: string, room?: any) {
@@ -509,7 +529,11 @@ export default class LogicSnake extends EventEmitter {
     const variant = state.variant as string | undefined;
     if (variant === 'team' || variant === 'endless') this.variant = variant;
     this.status = state.snake ? 'playing' : 'waiting';
-    if (state.snake) this.applySnapshot(state.snake as Snapshot);
+    // 重连/开局这条一次性路径不走队列（要立刻出画面），但到达间隔照样要记
+    if (state.snake) {
+      this.noteArrival();
+      this.applySnapshot(state.snake as Snapshot);
+    }
     else this.emitView();
   }
 
@@ -623,6 +647,42 @@ export default class LogicSnake extends EventEmitter {
   }
 
   // ===== 快照 =====
+  /**
+   * 收快照：只登记最新的那条 + 记到达间隔，处理留给渲染帧（见 `pendingSnap`）。
+   *
+   * socket 回调必须**极轻**：它和渲染共用主线程，弱网一次 flush 十几条时，
+   * 每条都在这里做重活就会把 rAF 顶掉 —— 玩家看到的是「自己也在卡」。
+   */
+  private queueSnapshot(snap: Snapshot) {
+    this.pendingSnap = snap;
+    this.noteArrival();
+  }
+
+  /** 记一次「快照到达」：慢网判定（`avgGap` / `stale`）只认这个时刻 */
+  private noteArrival() {
+    const now = Date.now();
+    const gap = this.lastArriveAt ? now - this.lastArriveAt : 0;
+    if (gap > 0 && gap < 5000) {
+      this.gaps.push(gap);
+      if (this.gaps.length > 5) this.gaps.shift();
+      this.avgGap = this.gaps.reduce((a, b) => a + b, 0) / this.gaps.length;
+    }
+    this.lastArriveAt = now;
+  }
+
+  /** 帧内消化待处理快照：一帧最多一条，且只消化最新的那条 */
+  drainPendingSnapshot() {
+    const snap = this.pendingSnap;
+    if (!snap) return;
+    this.pendingSnap = null;
+    this.draining = true;
+    try {
+      this.applySnapshot(snap);
+    } finally {
+      this.draining = false;
+    }
+  }
+
   private applySnapshot(snap: Snapshot) {
     // 外来的帧要挡掉（SB-053）：
     // 同一个房间如果同时存在两个运行时（僵尸对局没停干净），它们会往同一个频道
@@ -658,15 +718,11 @@ export default class LogicSnake extends EventEmitter {
     }
     if (snap.teamScores) this.teamScores = snap.teamScores;
     this.endsAt = typeof snap.endsIn === 'number' ? Date.now() + snap.endsIn : 0;
+    if (typeof snap.todayBest === 'number') this.todayBest = snap.todayBest;
 
     const now = Date.now();
-    // 慢网识别：记录最近几次快照的真实间隔（排除首次与 >5s 的异常值）
-    const prevGap = this.lastSnapshotAt ? now - this.lastSnapshotAt : 0;
-    if (prevGap > 0 && prevGap < 5000) {
-      this.gaps.push(prevGap);
-      if (this.gaps.length > 5) this.gaps.shift();
-      this.avgGap = this.gaps.reduce((a, b) => a + b, 0) / this.gaps.length;
-    }
+    // 慢网识别只看 `avgGap`（在 `queueSnapshot` 里按**到达**间隔统计）：
+    // 换成按消化间隔统计的话，突发快照被摊成每帧一条，会误判成「网络很好」
     // 视觉误差平滑：先记下"旧快照在现在这一刻的预测位置"，
     // 新快照进来后两者的差值就是这次校正量，作为渲染偏移逐步吃掉（否则每 50ms 顿一下）
     const beforePred = this.predict(now);
@@ -675,7 +731,9 @@ export default class LogicSnake extends EventEmitter {
       x: s.x,
       y: s.y,
       angle: s.angle,
-      pts: s.pts.map(([x, y]) => [x, y] as [number, number]),
+      // 直接引用这条消息刚解析出来的数组：没有别处共享、也没有任何地方原地改它，
+      // 逐点拷贝只会给弱网突发添一份「30 条蛇 × 200 点」的 GC 压力（GM-snake-49）
+      pts: s.pts as [number, number][],
       length: s.length,
       alive: s.alive,
       score: s.score,
@@ -754,7 +812,7 @@ export default class LogicSnake extends EventEmitter {
     this.predAliveWasAlive = !!mine?.alive;
     this.lastSnapshotAt = now;
 
-    const wasStale = prevGap > STALE_GAP_MS || this.avgGap > STALE_GAP_MS;
+    const wasStale = this.avgGap > STALE_GAP_MS;
     const afterPred = this.predict(now);
     if (beforePred && afterPred) {
       let da = normalizeAngle(beforePred.angle - afterPred.angle);
@@ -768,7 +826,9 @@ export default class LogicSnake extends EventEmitter {
         this.corr.x = 0; this.corr.y = 0; this.corr.a = 0;
       }
     }
-    this.emitView();
+    // 帧内消化时不广播：调用方（`view()`）紧接着就会用新数据算一版视图，
+    // 再 emit 一次等于把整套远端路径推进/纠偏白算一遍
+    if (!this.draining) this.emitView();
   }
 
   /**
@@ -937,21 +997,23 @@ export default class LogicSnake extends EventEmitter {
         rp.length = s.length || rp.length;
         continue;
       }
-      // 渐进修正：一次吃掉 25% 的偏差
+      // 渐进修正：一次吃掉 25% 的偏差。
+      // 走 pushPathHead：偏差向后（本地超前）时它只替换头点、不插点，
+      // 不会在头部留下一段折返（那正是"某一节超前"的根源）。
       const k = 0.25;
-      rp.path[0] = [rp.path[0][0] + dx * k, rp.path[0][1] + dy * k];
+      pushPathHead(rp.path, rp.path[0][0] + dx * k, rp.path[0][1] + dy * k, 0.3);
     }
   }
 
   /**
    * 推进自己那条蛇的本地路径，返回渲染用的身体折线。
    *
-   * 与远端蛇同一套机制：每帧把蛇头沿**本地预测的朝向**往前推，
-   * 尾巴按身长连续收缩 → 路径连续，尾巴贴着身体滑动（而不是每 50ms 跳一格）。
+   * **身体 = 蛇头自己走过的轨迹**：每帧把本地预测的头位置接到
+   * 路径头部，再按身长从尾部截断 → 尾巴贴着身体连续滑动
+   * （而不是每 50ms 跳一格）。
    *
-   * 推完把头**吸附**到本地预测位置（pred.x/pred.y）：预测是每帧从最新快照
-   * 重算的，比本地路径更准；渲染时整体还会叠加 corr 平移，
-   * 所以吸附之后头与身体严丝合缝，不会错位。
+   * 预测头每帧都从最新快照重算，渲染时整体叠加 corr 平移，
+   * 所以头与身体严丝合缝。
    */
   private advanceMyPath(
     now: number,
@@ -959,13 +1021,6 @@ export default class LogicSnake extends EventEmitter {
   ): [number, number][] | null {
     const mp = this.myPath;
     if (!mp || !pred || mp.path.length < 2) return null;
-    const dt = Math.min(0.2, Math.max(0, (now - mp.at) / 1000));
-    if (dt > 0) {
-      const boosting = this.boostHeld && mp.length > this.params.boostMinLen;
-      const speed = snakeMoveSpeed(mp.length, boosting, this.params);
-      advanceLocalPath(mp, pred.angle, speed, dt, boosting);
-      mp.at = now;
-    }
     const dx = pred.x - mp.path[0][0];
     const dy = pred.y - mp.path[0][1];
     if (Math.hypot(dx, dy) > 60) {
@@ -974,15 +1029,24 @@ export default class LogicSnake extends EventEmitter {
       if (src && src.pts.length >= 2) {
         mp.path = src.pts.map(([x, y]) => [x, y] as [number, number]);
         mp.length = src.length || mp.length;
+        mp.at = now;
+        return mp.path;
       }
     }
-    // 头吸附到预测位置（预测本身已被 corr 平滑过，吸附不会造成抖动）
-    mp.path[0] = [pred.x, pred.y];
+    // 身体 = 蛇头自己走过的轨迹（GM-snake-45）：每帧只把**预测头位置**接到
+    // 路径头部，再按身长从尾部截断。旧实现先按速度推进路径、再把头"吸附到"
+    // 预测位置 —— 两个来源互相打架：预测偶尔落在上一点后面时，路径头部就多了一
+    // 段折返，按弧长取锚点时那一节就永远是错位的（见 pushPathHead）。
+    pushPathHead(mp.path, pred.x, pred.y, 0.4);
+    truncatePathInPlace(mp.path, mp.length);
+    mp.at = now;
     return mp.path;
   }
 
   // ===== 渲染数据 =====
   view(): SnakeView {
+    // 网络抖动积压的快照在这里统一消化：每帧最多一条，突发再多也只算一次
+    this.drainPendingSnapshot();
     const now = Date.now();
     const mySnake = this.snakes.find(s => s.mine);
     const pred = this.predict(now);
@@ -1025,7 +1089,7 @@ export default class LogicSnake extends EventEmitter {
           x: headX,
           y: headY,
           angle: normalizeAngle(pred.angle + this.corr.a),
-          // 身体整条跟着平移，头与身子不会错位
+          // 身体整条跟着平移，头与身子不会错位（实测：给身体单独加低通反而让头身相对运动更抖）
           pts: (shiftX || shiftY)
             ? body.map(([x, y]) => [x + shiftX, y + shiftY] as [number, number])
             : body,
@@ -1088,6 +1152,7 @@ export default class LogicSnake extends EventEmitter {
       winner: this.winner,
       teamScores: this.teamScores,
       endsIn: this.endsAt ? Math.max(0, this.endsAt - now) : 0,
+      todayBest: this.todayBest,
       params: this.params,
     };
   }
@@ -1104,14 +1169,42 @@ export default class LogicSnake extends EventEmitter {
 }
 
 /**
- * 把一条蛇的本地路径往前推 dt 秒（与服务端 stepSnake 的同一套模型）。
+ * 把新的蛇头位置接到路径头部，**保证弧长单调前进**（绝不产生折返段）。
  *
- * - 头沿当前朝向前进 `speed * dt`；
- * - 路径头部插入新位置；
- * - 尾部按身长收缩（身长不变时，收缩量正好等于前进量 → 尾巴连续往前爬）。
+ * 为什么需要它（GM-snake-45）：旧实现把一帧内分出的若干个提前点
+ * 一次 `path.unshift(...insert)` 插进去，而 `insert` 是按「由近到远」生成的 ——
+ * unshift 之后 `path[0]` 是**最靠后**的那个点，紧跟其后的点反而更靠前，
+ * 于是路径头部留下一段来回折返的「死弧」。按弧长取锚点时，这段死弧被
+ * 当成身体长度吃掉：一次掉帧（dt>36ms → 分两小步）就在路径里**永久**
+ * 刻下一个 4px 的压缩量 —— 一个个圆沿身体排下去，到那一段就「超前半个身位」，
+ * 随着身体前进慢慢移到尾巴，看起来就是「某一节始终错位」。
  *
- * 路径连续 → 尾巴连续。这是"尾部不跳"的关键。
+ * 语义归一为「只往前接」：
+ * - 离头不足 `minStep`（亚像素抖动）→ 只挪头点，不新增点；
+ * - 新头落在头的**后方**（预测被服务端回拉）→ 替换头点，不插点；
+ * - 其余 → 插到最前面。多次调用天然有序（每次插入的点都成为新的头）。
  */
+export function pushPathHead(
+  path: [number, number][],
+  x: number,
+  y: number,
+  minStep = 0.5,
+): void {
+  if (!path.length) { path.push([x, y]); return; }
+  const hx = path[0][0];
+  const hy = path[0][1];
+  const dx = x - hx;
+  const dy = y - hy;
+  if (Math.hypot(dx, dy) < minStep) { path[0] = [x, y]; return; }
+  if (path.length > 1) {
+    // 头 → 第二节 的方向就是「前方」；新头在反方向就是回拉
+    const bx = hx - path[1][0];
+    const by = hy - path[1][1];
+    if (dx * bx + dy * by < 0) { path[0] = [x, y]; return; }
+  }
+  path.unshift([x, y]);
+}
+
 export function advanceLocalPath(
   rp: RemotePath,
   angle: number,
@@ -1124,21 +1217,21 @@ export function advanceLocalPath(
   const step = speed * dt;
   if (step <= 0) return;
 
-  // 沿当前朝向推进头（分小步，走直线不会把弯角切掉）
+  // 沿当前朝向推进头（分小步，走直线不会把弯角切掉）。
+  // 注意每次 pushPathHead 都把新点插在最前面，所以「由近到远」依次接就天然有序；
+  // 不能先攒一个数组再整体 unshift —— 顺序一反就是折返。
   const steps = Math.max(1, Math.min(16, Math.ceil(step / 4)));
   const sub = step / steps;
-  const insert: [number, number][] = [];
   let hx = path[0][0];
   let hy = path[0][1];
   for (let i = 0; i < steps; i++) {
     hx += Math.cos(angle) * sub;
     hy += Math.sin(angle) * sub;
-    insert.push([hx, hy]);
+    pushPathHead(path, hx, hy, 0.25);
   }
-  path.unshift(...insert);
 
   // 尾部收缩：身长不变 → 砍掉前进量那么多；加速时身长在扣 → 砍更多
-  const target = boosting ? rp.length - 18 * dt : rp.length;
+  const target = boosting ? rp.length - DEFAULT_SNAKE_PARAMS.boostDrain * dt : rp.length;
   rp.length = Math.max(60, target);
   truncatePathInPlace(path, rp.length);
 }
