@@ -246,13 +246,15 @@
 }
 
 /* 蛇皮肤缩略图：贴图是可平铺的 96px 方块，缩略图直接当色卡看 */
+/* 皮肤缩略图：比原来的方块宽一点，能画出「头 + 几节身体 + 尾」看出皮肤类型（GM-snake-39） */
 .settings-skin-swatch {
-  width: 26px;
+  width: 58px;
   height: 26px;
   border-radius: 6px;
   object-fit: cover;
   border: 1px solid rgba(0, 0, 0, 0.12);
   background: #f5f5f8;
+  display: block;
 }
 
 /* 未获得的皮肤：占位但不可选，避免"点了没反应" */

@@ -4,6 +4,7 @@ import store from '../stores';
 import { getManifest, subscribeAssets, loadGameAssets, markEquipped } from '../services/assets';
 import { assetSections, type AssetSection } from '../services/assetSections';
 import { equipSkin, type AssetManifest, type AssetManifestItem } from '../services/api';
+import SkinPreview from './SkinPreview';
 import '../styles/game-settings.css';
 
 /**
@@ -141,9 +142,11 @@ export const GameSettingsDialog = observer(({
               <div className="settings-packs">
                 {items.map(item => {
                   const active = item.id === equippedIdOf(section.group);
-                  const swatch = (
-                    <img className="settings-skin-swatch" src={item.url} alt={item.label} />
-                  );
+                  // GM-snake-39：皮肤画一条迷你蛇（能看出有没有头/尾、身体是否交替），
+                  // 其它外观（残骸）还是用原图缩略
+                  const swatch = section.group === 'snake'
+                    ? <SkinPreview game={game} item={item} />
+                    : <img className="settings-skin-swatch" src={item.url} alt={item.label} />;
                   const name = <span className="settings-pack-name">{item.label}</span>;
                   // 主题资源（食物、道具、棋盘…）随包整体生效，玩家不能单独换 → 只展示
                   if (!item.equippable) {

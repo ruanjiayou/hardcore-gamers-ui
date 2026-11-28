@@ -130,6 +130,33 @@ export function assetHeadImage(game: string, assetId: string): HTMLImageElement 
   return images.get(imgKey(game, `${assetId}:head`)) || null;
 }
 
+/** 取皮肤对应的尾巴图（`head_body_tail` / `head_alt_body_tail` 才有）；没配返回 null */
+export function assetTailImage(game: string, assetId: string): HTMLImageElement | null {
+  if (!assetId) return null;
+  return images.get(imgKey(game, `${assetId}:tail`)) || null;
+}
+
+/**
+ * 取交替身体的第二张图（`alt_body` 系才有）；没配返回 null。
+ * 有这张就代表身体要沿路径分节交替贴图，而不是整条用一张可平铺纹理。
+ */
+export function assetAltImage(game: string, assetId: string): HTMLImageElement | null {
+  if (!assetId) return null;
+  return images.get(imgKey(game, `${assetId}:alt`)) || null;
+}
+
+/** 某个外观资源的清单条目（拿 skinType / 展示名等元信息） */
+export function assetItem(game: string, assetId: string): AssetManifestItem | undefined {
+  if (!assetId) return undefined;
+  const m = manifests.get(game);
+  if (!m) return undefined;
+  for (const group of Object.values(m.groups || {})) {
+    const hit = group.items.find(i => i.id === assetId);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
 /** 某类外观当前装备的 asset_id（snake / corpse） */
 export function equippedAsset(game: string, group: 'snake' | 'corpse'): string {
   return manifests.get(game)?.equippedByGroup?.[group] || '';

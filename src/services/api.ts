@@ -301,6 +301,15 @@ export interface AssetManifestItem {
   body: string;
   /** 蛇头图（只有皮肤配了才有） */
   head?: string;
+  /** 交替身体的第二张图（`alt_body` 系皮肤才有，沿路径分节交替贴） */
+  bodyAlt?: string;
+  /** 尾巴图（`*_tail` 类皮肤才有） */
+  tail?: string;
+  /**
+   * 皮肤类型（GM-snake-39）：决定这张皮肤怎么画。
+   * 缺失时按「有 head 就头身图、否则单图」处理（旧服务端兼容）。
+   */
+  skinType?: 'single' | 'head_body' | 'head_body_tail' | 'alt_body' | 'head_alt_body_tail';
   /** 玩家级可装备（能在设置里勾选装备） */
   equippable: boolean;
   /** 玩家是否有权使用（free 或已授权） */

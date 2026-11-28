@@ -17,7 +17,8 @@ import LogicSnake, {
   type SnakeView,
   normalizeAngle,
 } from './Logic';
-import { assetHeadImage, assetImage, defaultSkinAsset, equippedAsset, foodAssetId, itemAssetId } from '../../services/assets';
+import { assetAltImage, assetHeadImage, assetImage, assetTailImage, defaultSkinAsset, equippedAsset, foodAssetId, itemAssetId } from '../../services/assets';
+import { bodySegments, partAngle, tailCenter } from './skin';
 
 const BG = '#0b0b14';
 const OUTSIDE = '#06060b';
@@ -131,6 +132,23 @@ const DOWNGRADE_FRAMES = 45;
  * 现在 60 帧（1 秒）就升回去，掉一次档很快能恢复。
  */
 const UPGRADE_FRAMES = 60;
+
+/**
+ * 身体贴图锚点间距（× 半径×2）：1.0 = 相邻两节刚好相切。
+ *
+ * GM-snake-39：交替皮肤的身体是「一节蛇身」的贴图，锚点**按弧长**排（不是按路径点下标），
+ * 所以蛇再长、走得再快，节距也只由半径决定。
+ */
+const SKIN_STEP = 1.0;
+/**
+ * 身体贴图边长（× 半径×2）：**大于 1 才会重叠**。
+ *
+ * 蛇是折线拼的，弯道外侧相邻两节的间距会被拉开，不重叠就露「关节缝」。
+ * 取 1.3 → 相邻重叠约 23%，弯到 90° 也不露缝；代价是后画的盖住前画的
+ * （从尾向头画，所以靠头的那节压在上面）。蛇变粗时 step 与 size 等比放大，
+ * **重叠比例恒定**，不会因为蛇变长就糊成一团。
+ */
+const SKIN_SIZE = 1.3;
 /**
  * 目标渲染帧间隔（ms）：约 60fps。
  * 120Hz 屏幕上按这个间隔只画一半的帧 —— 游戏本身是 60fps 节奏，
@@ -1245,16 +1263,89 @@ export default class Scene2DSnake {
     // 没装备皮肤（空串）用默认皮肤资源，保证「有主题就统一画风」
     const key = assetId || defaultSkinAsset(GAME_SLUG);
     if (!key) return null;
-    if (this.skinPatterns.has(key)) {
-      const cached = this.skinPatterns.get(key) || null;
-      if (cached) cached.setTransform(new DOMMatrix([1, 0, 0, 1, this.sx(0) % 96, this.sy(0) % 96]));
+    const cached = this.skinPatterns.get(key);
+    if (cached) {
+      cached.setTransform(this.patternShift(key));
       return cached;
     }
     const img = this.skinImage(key);
-    const pattern = img ? this.ctx.createPattern(img, 'repeat') : null;
+    // 图还没解码完：**绝对不能**把 null 缓存进去，否则这一整局都不会再试（只剩纯色蛇）
+    if (!img) return null;
+    const pattern = this.ctx.createPattern(img, 'repeat');
+    if (!pattern) return null;
     this.skinPatterns.set(key, pattern);
-    if (pattern) pattern.setTransform(new DOMMatrix([1, 0, 0, 1, this.sx(0) % 96, this.sy(0) % 96]));
+    pattern.setTransform(this.patternShift(key));
     return pattern;
+  }
+
+  /**
+   * 图案随镜头滚动的平移量，按**贴图自身尺寸**取模。
+   *
+   * 原来写死 `% 96`（那张默认纹理正好 96px），换任何尺寸的素材都会在每 96px 边界
+   * 跳一下 —— 交替身体拼接、或者用户上传 128/256 的图时非常明显。
+   */
+  private patternShift(key: string): DOMMatrix {
+    const img = this.skinImage(key);
+    const w = img?.naturalWidth || 96;
+    const h = img?.naturalHeight || 96;
+    return new DOMMatrix([1, 0, 0, 1, this.sx(0) % w, this.sy(0) % h]);
+  }
+
+  /**
+   * 交替身体：沿路径按弧长分节贴图（GM-snake-39）。
+   *
+   * 只处理 `alt_body` 系（有第二张身体图）的皮肤；单图/头身/头身尾的 body 是
+   * 可平铺纹理，用 `CanvasPattern` 描边就够了（蛇怎么弯都自然，还不用逐节画）。
+   *
+   * 绘制顺序**从尾向头**：靠头的锚点最后画、压在最上层，蛇头方向看起来最干净；
+   * 相邻贴图刻意重叠（`SKIN_SIZE > SKIN_STEP`），弯道外侧不会露缝。
+   * 视口外的锚点直接跳过 —— 一局 80 节 × 10 条蛇全画会掉帧。
+   */
+  private drawBodySkin(
+    ctx: CanvasRenderingContext2D,
+    pts: [number, number][],
+    body: HTMLImageElement | null,
+    alt: HTMLImageElement,
+    view: WorldRect,
+  ) {
+    const worldR = this.state.radius;
+    const step = worldR * 2 * SKIN_STEP;
+    const world = worldR * 2 * SKIN_SIZE;
+    const size = world * this.zoom;
+    const half = size / 2;
+    const segs = bodySegments(pts, step, 2);
+    for (let i = segs.length - 1; i >= 0; i--) {
+      const s = segs[i];
+      if (s.x < view.x0 - world || s.x > view.x1 + world) continue;
+      if (s.y < view.y0 - world || s.y > view.y1 + world) continue;
+      const img = s.slot === 0 ? body : alt;
+      if (!img) continue;
+      ctx.save();
+      ctx.translate(this.sx(s.x), this.sy(s.y));
+      // 部件图约定「图像上方（-Y）对准前进方向」
+      ctx.rotate(s.angle + Math.PI / 2);
+      ctx.drawImage(img, -half, -half, size, size);
+      ctx.restore();
+    }
+  }
+
+  /** 尾巴贴图：中心内缩一个半径，尖端正好落在路径末端（不超出碰撞长度） */
+  private drawTailSkin(
+    ctx: CanvasRenderingContext2D,
+    pts: [number, number][],
+    img: HTMLImageElement,
+  ) {
+    const c = tailCenter(pts, this.state.radius);
+    if (!c) return;
+    const d = this.state.radius * 2.12 * this.zoom;
+    const x = this.sx(c[0]);
+    const y = this.sy(c[1]);
+    if (x < -d || x > this.cssW + d || y < -d || y > this.cssH + d) return;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(partAngle('tail', 0, pts) + Math.PI / 2);
+    ctx.drawImage(img, -d / 2, -d / 2, d, d);
+    ctx.restore();
   }
 
   /** 刷新配色槽位：按玩家 id 首次出现顺序分配，已有 id 保留原槽位（GM-snake-23） */
@@ -1290,6 +1381,9 @@ export default class Scene2DSnake {
       if (!snake.alive) return;
       // 团队模式按队伍取色（队友同色），无尽模式按玩家固定槽位取色
       const color = this.colorOf(snake);
+      // 没装备（人机/游客）就用默认皮肤：四个部件都按这个 id 取图，
+      // 否则默认皮肤被换成多段式时（头/尾/交替），空 skin 的蛇只有身体没有头尾。
+      const skinId = snake.skin || defaultSkinAsset(GAME_SLUG);
       const disp = snake.mine ? null : this.disp.get(snake.id);
       const pts = disp ? disp.pts : snake.pts;
       if (!pts.length) return;
@@ -1322,10 +1416,19 @@ export default class Scene2DSnake {
       ctx.lineWidth = radius * 2 + Math.max(2, radius * 0.32);
       ctx.stroke();
       // 有皮肤贴图就用图案描边（画风随资源包），没有就用单色
-      const skinPattern = this.skinPattern(snake.skin);
+      const skinPattern = this.skinPattern(skinId);
       ctx.strokeStyle = skinPattern || color;
       ctx.lineWidth = radius * 2;
       ctx.stroke();
+      // 交替身体：两张「一节蛇身」的贴图沿路径轮换（叠在上面那遍底色描边之上，
+      // 所以弯道露出的缝也是皮肤底色，不会看到黑色外描边）
+      const altImg = assetAltImage(GAME_SLUG, skinId);
+      if (altImg) {
+        this.drawBodySkin(ctx, pts, this.skinImage(skinId), altImg, view);
+      }
+      // 尾巴：画在身体之上、蛇头之前
+      const tailImg = assetTailImage(GAME_SLUG, skinId);
+      if (tailImg) this.drawTailSkin(ctx, pts, tailImg);
       // 高光只给玩家自己那条：远端蛇省掉一整遍宽描边（多人局里这是笔不小的光栅开销）
       if (snake.mine) {
         ctx.strokeStyle = 'rgba(255,255,255,0.13)';
@@ -1360,10 +1463,16 @@ export default class Scene2DSnake {
         ctx.fillStyle = color;
         ctx.fill();
         // 贴图皮肤：优先用专门的蛇头图；没配头图才回退身体图案，避免纯色头+花纹身的接缝
-        const headImg = assetHeadImage(GAME_SLUG, snake.skin);
+        const headImg = assetHeadImage(GAME_SLUG, skinId);
         if (headImg) {
           const d = radius * 2.12;
-          ctx.drawImage(headImg, hx - d / 2, hy - d / 2, d, d);
+          // 必须按朝向旋转：头图是有「正脸」的（眼睛/角），不转的话往回走时脸朝后。
+          // 约定与身体贴图一致：图像上方（-Y）对准前进方向。
+          ctx.save();
+          ctx.translate(hx, hy);
+          ctx.rotate(angle + Math.PI / 2);
+          ctx.drawImage(headImg, -d / 2, -d / 2, d, d);
+          ctx.restore();
         } else if (skinPattern) {
           ctx.fillStyle = skinPattern;
           ctx.fill();
